@@ -10,7 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "zkp", "zero-knowledge", "privacy", "cryptography"]
 categories = ["cryptography"]
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.83"
 
 [features]
 default = ["std"]

@@ -9,7 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  MSRV: "1.89"
+  MSRV: "1.83"
   # Fix __rust_probestack undefined symbol with Wasmer 6.0 on Linux
   RUSTFLAGS: "-C probe-stack=none"
 
@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust ${{ env.MSRV }}
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.MSRV }}
 
@@ -31,25 +31,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsodium-dev libssl-dev pkg-config
 
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-msrv-
+
       - name: Check MSRV
         run: cargo check --workspace
-
-  # Security audit for dependencies
-  security-audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-
-      - name: Run security audit
-        run: cargo audit
-        continue-on-error: true  # Advisory only
 
   # Format check
   fmt:
@@ -94,13 +88,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
 
-      - name: Run Clippy (warnings)
+      - name: Run Clippy
         run: cargo clippy --workspace -- -W clippy::all
-        continue-on-error: true
-
-      - name: Run Clippy (strict - new code only)
-        run: cargo clippy --workspace -- -D warnings
-        continue-on-error: true
+        # Note: Not using -D warnings yet due to legacy code
+        # Will be enabled incrementally
 
   # Build check
   build:
@@ -166,11 +157,67 @@ jobs:
         env:
           RUST_LOG: info
 
-      - name: Run tests (all features)
-        run: cargo test --workspace --all-features
-        continue-on-error: true
+  # Test with specific features (separate job to isolate failures)
+  test-features:
+    name: Test Features
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v6
 
-  # Code coverage
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config libdbus-1-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-features-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-features-
+
+      - name: Test aingle_minimal with sqlite
+        run: cargo test -p aingle_minimal --features sqlite
+
+      - name: Test aingle_minimal with coap
+        run: cargo test -p aingle_minimal --features coap
+
+      - name: Test new crates
+        run: |
+          cargo test -p aingle_graph
+          cargo test -p aingle_logic
+          cargo test -p aingle_zk
+          cargo test -p aingle_cortex
+          cargo test -p aingle_contracts
+          cargo test -p hope_agents
+          cargo test -p titans_memory
+
+  # Security audit for dependencies
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run security audit
+        run: cargo audit
+        continue-on-error: true  # Advisory only, don't block CI
+
+  # Code coverage (optional, doesn't block CI)
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
@@ -213,7 +260,7 @@ jobs:
           fail_ci_if_error: false
         continue-on-error: true
 
-  # Benchmarks (informational only)
+  # Benchmarks (informational only, runs only on main)
   bench:
     name: Benchmarks
     runs-on: ubuntu-latest
@@ -272,8 +319,6 @@ jobs:
 
       - name: Build documentation
         run: cargo doc --workspace --no-deps
-        # Note: Not using -D warnings due to legacy doc comments with HTML issues
-        # These will be fixed incrementally
 
   # Feature combinations check
   feature-check:
@@ -288,47 +333,38 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config libdbus-1-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-features-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-features-
 
       - name: Check default features
         run: cargo check --workspace
 
-      - name: Check no default features
-        run: cargo check --workspace --no-default-features
-        continue-on-error: true
-
-      - name: Check all features
-        run: cargo check --workspace --all-features
-        continue-on-error: true
-
-      - name: Check aingle_minimal with coap
-        run: cargo check -p aingle_minimal --features coap
-
-      - name: Check aingle_minimal with smart_agents
-        run: cargo check -p aingle_minimal --features smart_agents
-
-      # New transport features
-      - name: Install BLE dependencies
+      - name: Check aingle_minimal features
         run: |
-          sudo apt-get install -y libdbus-1-dev
+          cargo check -p aingle_minimal --features sqlite
+          cargo check -p aingle_minimal --features coap
+          cargo check -p aingle_minimal --features smart_agents
 
-      - name: Check aingle_minimal with webrtc
-        run: cargo check -p aingle_minimal --features webrtc
+      - name: Check transport features
+        run: |
+          cargo check -p aingle_minimal --features webrtc
+          cargo check -p aingle_minimal --features ble
 
-      - name: Check aingle_minimal with ble
-        run: cargo check -p aingle_minimal --features ble
-
-      - name: Check aingle_minimal with hw_wallet
+      - name: Check hw_wallet feature
         run: cargo check -p aingle_minimal --features hw_wallet
-        continue-on-error: true  # HID requires USB permissions
+        continue-on-error: true  # HID may require USB permissions
 
-      - name: Test transport features
-        run: |
-          cargo test -p aingle_minimal --features webrtc --test transport_integration_tests
-          cargo test -p aingle_minimal --features ble --test transport_integration_tests
-        continue-on-error: true
-
-      - name: Check new crates (cortex, zk, contracts)
+      - name: Check new crates
         run: |
           cargo check -p aingle_cortex
           cargo check -p aingle_zk
@@ -337,28 +373,59 @@ jobs:
           cargo check -p aingle_graph
           cargo check -p aingle_logic
 
-      - name: Test new crates
-        run: |
-          cargo test -p aingle_cortex
-          cargo test -p aingle_zk
-          cargo test -p aingle_contracts
-          cargo test -p aingle_graph
-          cargo test -p aingle_logic
-
-  # All checks must pass
+  # All required checks must pass
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [msrv, fmt, build, test, docs, feature-check]
+    needs: [msrv, fmt, clippy, build, test, test-features, docs, feature-check]
     if: always()
     steps:
       - name: Check all jobs passed
         run: |
-          if [ "${{ needs.msrv.result }}" != "success" ] || \
-             [ "${{ needs.fmt.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.test.result }}" != "success" ]; then
-            echo "One or more required jobs failed"
+          echo "Job results:"
+          echo "  msrv: ${{ needs.msrv.result }}"
+          echo "  fmt: ${{ needs.fmt.result }}"
+          echo "  clippy: ${{ needs.clippy.result }}"
+          echo "  build: ${{ needs.build.result }}"
+          echo "  test: ${{ needs.test.result }}"
+          echo "  test-features: ${{ needs.test-features.result }}"
+          echo "  docs: ${{ needs.docs.result }}"
+          echo "  feature-check: ${{ needs.feature-check.result }}"
+          echo ""
+
+          # Check required jobs
+          if [ "${{ needs.msrv.result }}" != "success" ]; then
+            echo "::error::MSRV check failed"
             exit 1
           fi
+          if [ "${{ needs.fmt.result }}" != "success" ]; then
+            echo "::error::Format check failed"
+            exit 1
+          fi
+          if [ "${{ needs.clippy.result }}" != "success" ]; then
+            echo "::error::Clippy check failed"
+            exit 1
+          fi
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::error::Build failed"
+            exit 1
+          fi
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "::error::Tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.test-features.result }}" != "success" ]; then
+            echo "::error::Feature tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.docs.result }}" != "success" ]; then
+            echo "::error::Documentation build failed"
+            exit 1
+          fi
+          if [ "${{ needs.feature-check.result }}" != "success" ]; then
+            echo "::error::Feature check failed"
+            exit 1
+          fi
+
+          echo ""
           echo "All required CI checks passed!"

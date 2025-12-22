@@ -5,7 +5,7 @@
 name = "deep-context"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.83"
 authors = ["AIngle Contributors <hello@apilium.com>"]
 description = "Deep Context - Semantic Git that captures the 'why' behind code decisions"
 license = "Apache-2.0"

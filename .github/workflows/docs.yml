@@ -16,6 +16,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Fix __rust_probestack undefined symbol with Wasmer 6.0 on Linux
+  RUSTFLAGS: "-C probe-stack=none"
 
 jobs:
   build-docs:
@@ -39,9 +41,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-docs-nightly-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-docs-
+            ${{ runner.os }}-cargo-docs-nightly-
 
       - name: Build rustdoc
         run: |

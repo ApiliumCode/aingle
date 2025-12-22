@@ -69,19 +69,19 @@ jobs:
         run: cargo deny check licenses
         continue-on-error: true
 
-  # SAST with semgrep (optional)
+  # SAST with semgrep
   sast:
     name: Static Analysis
     runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
     steps:
       - uses: actions/checkout@v6
 
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            p/rust
-            p/security-audit
+        run: semgrep ci --config auto --config p/rust --config p/security-audit
+        env:
+          SEMGREP_RULES: p/rust p/security-audit
         continue-on-error: true
 
   # Check for secrets
@@ -100,3 +100,21 @@ jobs:
           base: main
           head: HEAD
         continue-on-error: true
+
+  # Supply chain security
+  supply-chain:
+    name: Supply Chain Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-vet
+        run: cargo install cargo-vet
+        continue-on-error: true
+
+      - name: Check supply chain
+        run: cargo vet --locked
+        continue-on-error: true  # May not be configured yet

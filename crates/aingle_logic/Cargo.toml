@@ -10,7 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "logic", "reasoning", "validation", "rules"]
 categories = ["algorithms", "data-structures"]
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.83"
 
 [features]
 default = []

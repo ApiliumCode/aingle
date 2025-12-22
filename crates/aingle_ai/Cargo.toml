@@ -10,7 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "ai", "titans", "nested-learning", "memory"]
 categories = ["science", "algorithms"]
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.83"
 
 [dependencies]
 # Serialization
