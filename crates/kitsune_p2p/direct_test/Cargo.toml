@@ -1,0 +1,18 @@
+[package]
+name = "kitsune_p2p_direct_test"
+version = "0.0.1"
+description = "Kitsune P2p Direct Application Framework Test Harness"
+license = "Apache-2.0"
+homepage = "https://apilium.com"
+repository = "https://github.com/ApiliumCode/aingle"
+documentation = "https://docs.rs/kitsune_p2p_direct_test"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = [ "aingle", "ai", "p2p", "sgd", "networking" ]
+categories = [ "network-programming" ]
+edition = "2018"
+
+[dependencies]
+kitsune_p2p_direct = { version = "0.0.1", path = "../direct" }
+kitsune_p2p_transport_quic = { version = "0.0.1", path = "../transport_quic" }
+kitsune_p2p_proxy = { version = "0.0.1", path = "../proxy" }
+tokio = { version = "1", features = ["full"] }

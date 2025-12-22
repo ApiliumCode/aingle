@@ -1,0 +1,983 @@
+openapi: 3.1.0
+info:
+  title: AIngle Córtex API
+  version: 1.0.0
+  description: |
+    External REST API for querying and interacting with AIngle semantic graphs.
+
+    ## Features
+
+    - **Triple Management**: CRUD operations for RDF triples
+    - **Pattern Queries**: Flexible pattern matching queries
+    - **SPARQL**: Full SPARQL 1.1 query support
+    - **Proof System**: Zero-knowledge proof storage and verification
+    - **Authentication**: JWT-based authentication with role-based access
+    - **Rate Limiting**: Token bucket algorithm (100 req/min default)
+
+    ## Rate Limiting
+
+    All endpoints are rate limited to 100 requests per minute per IP address.
+    Rate limit information is returned in response headers:
+    - `X-RateLimit-Limit`: Maximum requests per minute
+    - `X-RateLimit-Remaining`: Remaining requests in current window
+    - `Retry-After`: Seconds to wait before retrying (on 429 errors)
+
+    ## Authentication
+
+    Protected endpoints require a JWT token in the Authorization header:
+    ```
+    Authorization: Bearer <token>
+    ```
+
+    Obtain a token via `POST /api/v1/auth/login`.
+
+  contact:
+    name: Apilium Technologies
+    email: hello@apilium.com
+    url: https://apilium.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.aingle.apilium.com
+    description: Production server
+
+tags:
+  - name: Triples
+    description: CRUD operations for RDF triples
+  - name: Queries
+    description: Pattern matching and search queries
+  - name: Proofs
+    description: Zero-knowledge proof storage and verification
+  - name: SPARQL
+    description: SPARQL query endpoint
+  - name: Stats
+    description: Graph statistics and health checks
+  - name: Auth
+    description: Authentication and authorization
+
+paths:
+  # === TRIPLES ===
+
+  /api/v1/triples:
+    post:
+      tags: [Triples]
+      summary: Create a new triple
+      description: Add a new RDF triple to the graph
+      operationId: createTriple
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripleInput'
+            examples:
+              stringObject:
+                summary: Triple with string object
+                value:
+                  subject: "ex:Alice"
+                  predicate: "foaf:name"
+                  object:
+                    string: "Alice Smith"
+              nodeObject:
+                summary: Triple with node object
+                value:
+                  subject: "ex:Alice"
+                  predicate: "foaf:knows"
+                  object:
+                    node: "ex:Bob"
+      responses:
+        '201':
+          description: Triple created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Triple'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      tags: [Triples]
+      summary: List triples
+      description: Retrieve triples with optional filters
+      operationId: listTriples
+      parameters:
+        - name: subject
+          in: query
+          description: Filter by exact subject
+          schema:
+            type: string
+          example: "ex:Alice"
+        - name: predicate
+          in: query
+          description: Filter by exact predicate
+          schema:
+            type: string
+          example: "foaf:knows"
+        - name: subject_prefix
+          in: query
+          description: Filter by subject prefix
+          schema:
+            type: string
+          example: "ex:"
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: offset
+          in: query
+          description: Number of results to skip
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of triples
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  triples:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Triple'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/triples/{id}:
+    get:
+      tags: [Triples]
+      summary: Get triple by hash
+      description: Retrieve a specific triple by its hash identifier
+      operationId: getTriple
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Triple hash (hex-encoded BLAKE3)
+          schema:
+            type: string
+          example: "a3f5d8c9e7b2..."
+      responses:
+        '200':
+          description: Triple found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Triple'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+    delete:
+      tags: [Triples]
+      summary: Delete triple
+      description: Remove a triple from the graph
+      operationId: deleteTriple
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Triple hash
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Triple deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  # === QUERIES ===
+
+  /api/v1/query:
+    post:
+      tags: [Queries]
+      summary: Pattern matching query
+      description: Find triples matching a pattern (wildcards supported)
+      operationId: queryPattern
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatternQuery'
+            examples:
+              findAllKnows:
+                summary: Find all 'knows' relationships
+                value:
+                  predicate: "foaf:knows"
+              findAliceTriples:
+                summary: Find all triples about Alice
+                value:
+                  subject: "ex:Alice"
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/query/subjects:
+    get:
+      tags: [Queries]
+      summary: List unique subjects
+      description: Get all unique subject nodes in the graph
+      operationId: listSubjects
+      parameters:
+        - name: prefix
+          in: query
+          description: Filter by prefix
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of subjects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subjects:
+                    type: array
+                    items:
+                      type: string
+                  total:
+                    type: integer
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/query/predicates:
+    get:
+      tags: [Queries]
+      summary: List unique predicates
+      description: Get all unique predicates in the graph
+      operationId: listPredicates
+      responses:
+        '200':
+          description: List of predicates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  predicates:
+                    type: array
+                    items:
+                      type: string
+                  total:
+                    type: integer
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  # === PROOFS ===
+
+  /api/v1/proofs:
+    post:
+      tags: [Proofs]
+      summary: Submit a proof
+      description: Store a zero-knowledge proof
+      operationId: submitProof
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProofSubmission'
+      responses:
+        '201':
+          description: Proof stored successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+    get:
+      tags: [Proofs]
+      summary: List proofs
+      description: Retrieve stored proofs with optional filters
+      operationId: listProofs
+      parameters:
+        - name: proof_type
+          in: query
+          description: Filter by proof type
+          schema:
+            type: string
+            enum: [plonk, groth16, bulletproofs, stark]
+        - name: verified
+          in: query
+          description: Filter by verification status
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+      responses:
+        '200':
+          description: List of proofs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proofs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProofResponse'
+                  total:
+                    type: integer
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/proofs/{id}:
+    get:
+      tags: [Proofs]
+      summary: Get proof by ID
+      description: Retrieve a specific proof
+      operationId: getProof
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Proof ID (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Proof found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+    delete:
+      tags: [Proofs]
+      summary: Delete proof
+      description: Remove a proof from storage
+      operationId: deleteProof
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Proof deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/proofs/{id}/verify:
+    get:
+      tags: [Proofs]
+      summary: Verify proof
+      description: Verify a stored proof
+      operationId: verifyProof
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Verification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/proofs/batch:
+    post:
+      tags: [Proofs]
+      summary: Submit multiple proofs
+      description: Batch submission of proofs
+      operationId: submitProofsBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                proofs:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ProofSubmission'
+      responses:
+        '201':
+          description: Proofs submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submitted:
+                    type: integer
+                  proof_ids:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/proofs/stats:
+    get:
+      tags: [Proofs]
+      summary: Proof statistics
+      description: Get statistics about stored proofs
+      operationId: getProofStats
+      responses:
+        '200':
+          description: Proof statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_proofs:
+                    type: integer
+                  verified_proofs:
+                    type: integer
+                  by_type:
+                    type: object
+                    additionalProperties:
+                      type: integer
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  # === SPARQL ===
+
+  /api/v1/sparql:
+    post:
+      tags: [SPARQL]
+      summary: Execute SPARQL query
+      description: Run a SPARQL 1.1 SELECT query
+      operationId: executeSparql
+      requestBody:
+        required: true
+        content:
+          application/sparql-query:
+            schema:
+              type: string
+            example: |
+              PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+              SELECT ?person ?name
+              WHERE {
+                ?person foaf:name ?name .
+              }
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+            example:
+              query: |
+                PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+                SELECT ?person ?name
+                WHERE {
+                  ?person foaf:name ?name .
+                }
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/sparql-results+json:
+              schema:
+                $ref: '#/components/schemas/SparqlResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  # === STATS ===
+
+  /api/v1/stats:
+    get:
+      tags: [Stats]
+      summary: Graph statistics
+      description: Get overall graph statistics
+      operationId: getStats
+      responses:
+        '200':
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphStats'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/health:
+    get:
+      tags: [Stats]
+      summary: Health check
+      description: Check if the server is running
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  uptime:
+                    type: integer
+                    description: Server uptime in seconds
+
+  # === AUTH ===
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      description: Authenticate and receive JWT token
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT token
+                  expires_in:
+                    type: integer
+                    description: Token expiration in seconds
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      description: Create a new user account
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, email]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                email:
+                  type: string
+                  format: email
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                  username:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+# === COMPONENTS ===
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Triple:
+      type: object
+      required: [id, subject, predicate, object, created_at]
+      properties:
+        id:
+          type: string
+          description: BLAKE3 hash of triple (hex-encoded)
+        subject:
+          type: string
+          description: Subject IRI
+        predicate:
+          type: string
+          description: Predicate IRI
+        object:
+          oneOf:
+            - $ref: '#/components/schemas/StringValue'
+            - $ref: '#/components/schemas/IntegerValue'
+            - $ref: '#/components/schemas/FloatValue'
+            - $ref: '#/components/schemas/BooleanValue'
+            - $ref: '#/components/schemas/NodeValue'
+        created_at:
+          type: string
+          format: date-time
+
+    TripleInput:
+      type: object
+      required: [subject, predicate, object]
+      properties:
+        subject:
+          type: string
+          description: Subject IRI
+        predicate:
+          type: string
+          description: Predicate IRI
+        object:
+          type: object
+          properties:
+            string:
+              type: string
+            integer:
+              type: integer
+            float:
+              type: number
+            boolean:
+              type: boolean
+            node:
+              type: string
+              description: Node IRI
+
+    StringValue:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [string]
+        value:
+          type: string
+
+    IntegerValue:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [integer]
+        value:
+          type: integer
+
+    FloatValue:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [float]
+        value:
+          type: number
+
+    BooleanValue:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [boolean]
+        value:
+          type: boolean
+
+    NodeValue:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [node]
+        iri:
+          type: string
+
+    PatternQuery:
+      type: object
+      properties:
+        subject:
+          type: string
+          nullable: true
+        predicate:
+          type: string
+          nullable: true
+        object:
+          type: object
+          nullable: true
+        limit:
+          type: integer
+          default: 100
+
+    QueryResult:
+      type: object
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/Triple'
+        total:
+          type: integer
+
+    ProofSubmission:
+      type: object
+      required: [proof_type, proof_data]
+      properties:
+        proof_type:
+          type: string
+          enum: [plonk, groth16, bulletproofs, stark]
+        proof_data:
+          type: string
+          format: byte
+          description: Base64-encoded proof bytes
+        public_inputs:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ProofResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        proof_type:
+          type: string
+        proof_data:
+          type: string
+        public_inputs:
+          type: array
+          items:
+            type: string
+        verified:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+
+    VerificationResult:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        verified_at:
+          type: string
+          format: date-time
+        execution_time_ms:
+          type: integer
+
+    SparqlResult:
+      type: object
+      properties:
+        head:
+          type: object
+          properties:
+            vars:
+              type: array
+              items:
+                type: string
+        results:
+          type: object
+          properties:
+            bindings:
+              type: array
+              items:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    value:
+                      type: string
+
+    GraphStats:
+      type: object
+      properties:
+        triple_count:
+          type: integer
+        subject_count:
+          type: integer
+        predicate_count:
+          type: integer
+        object_count:
+          type: integer
+        connected_clients:
+          type: integer
+
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+        code:
+          type: string
+          description: Machine-readable error code
+        details:
+          type: string
+          description: Additional error details
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Invalid input"
+            code: "INVALID_INPUT"
+
+    Unauthorized:
+      description: Unauthorized - authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Authentication failed"
+            code: "AUTH_ERROR"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Triple not found"
+            code: "NOT_FOUND"
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Request limit per minute
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retry
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Rate limit exceeded. Retry after 30 seconds"
+            code: "RATE_LIMIT_EXCEEDED"
+            retry_after: 30
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal error"
+            code: "INTERNAL_ERROR"

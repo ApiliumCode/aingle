@@ -1,0 +1,129 @@
+# Build artifacts
+target/
+*.rlib
+*.rmeta
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ===========================================
+# AI Assistants - CLI & IDE Extensions
+# ===========================================
+
+# Claude Code (Anthropic)
+.claude/
+CLAUDE.md
+.claude_settings
+.claudeignore
+
+# GitHub Copilot
+.copilot/
+.github/copilot/
+copilot-instructions.md
+
+# Cursor IDE
+.cursor/
+.cursorignore
+.cursorrules
+
+# Codeium
+.codeium/
+.codeiumignore
+
+# Amazon CodeWhisperer / Amazon Q
+.aws/codewhisperer/
+.amazonq/
+.q/
+
+# Google Gemini / IDX
+.gemini/
+.idx/
+.google-ai/
+
+# Tabnine
+.tabnine/
+.tabnine_root
+
+# Sourcegraph Cody
+.cody/
+.sourcegraph/
+
+# Replit AI
+.replit
+replit.nix
+.replit-ai/
+
+# Windsurf (Codeium)
+.windsurf/
+
+# Aider
+.aider*
+.aider.conf.yml
+.aiderignore
+
+# Continue.dev
+.continue/
+.continuerc.json
+
+# Codestory
+.codestory/
+
+# JetBrains AI Assistant
+.jb-ai/
+
+# Supermaven
+.supermaven/
+
+# Pieces
+.pieces/
+
+# Bito AI
+.bito/
+
+# Blackbox AI
+.blackbox/
+
+# CodeGPT
+.codegpt/
+
+# Phind
+.phind/
+
+# ===========================================
+# General AI/ML artifacts
+# ===========================================
+*.ai.json
+*.ai.yaml
+*.llm-context
+.ai-context/
+.context/
+ai-instructions.md
+llm-instructions.md
+
+# ===========================================
+# Test artifacts
+# ===========================================
+*.profraw
+*.profdata
+
+# Logs
+*.log
+
+# ===========================================
+# Local/Private settings (keep last)
+# ===========================================
+*.local
+*.local.json
+*.local.yaml
+*.local.yml
+.env.local
+.secrets
+contexto/
+contexto/*

@@ -1,0 +1,16 @@
+[package]
+name = "semantic_queries"
+version = "0.1.0"
+edition = "2021"
+description = "Semantic graph queries example using AIngle Graph"
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "semantic-queries"
+path = "src/main.rs"
+
+[dependencies]
+aingle_graph = { path = "../../crates/aingle_graph" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

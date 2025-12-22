@@ -1,0 +1,61 @@
+[package]
+name = "aingle_zk"
+version = "0.2.0"
+description = "Zero-Knowledge Proofs for AIngle - privacy-preserving cryptographic primitives"
+license = "Apache-2.0"
+repository = "https://github.com/ApiliumCode/aingle"
+homepage = "https://apilium.com"
+documentation = "https://docs.rs/aingle_zk"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "zkp", "zero-knowledge", "privacy", "cryptography"]
+categories = ["cryptography"]
+edition = "2021"
+rust-version = "1.89"
+
+[features]
+default = ["std"]
+std = []
+bulletproofs = ["dep:bulletproofs", "dep:merlin", "dep:curve25519-dalek-ng"]
+
+[dependencies]
+# Elliptic curve cryptography
+curve25519-dalek = { version = "4.1", features = ["serde", "rand_core"] }
+
+# Bulletproofs for range proofs (optional)
+# Note: bulletproofs uses curve25519-dalek-ng, so we need both versions
+bulletproofs = { version = "4.0", optional = true }
+curve25519-dalek-ng = { version = "4.1", optional = true }
+merlin = { version = "3.0", optional = true }
+
+# Hashing
+sha2 = "0.10"
+blake3 = "1.5"
+
+# Randomness
+rand = "0.8"
+rand_core = "0.6"
+
+# Parallelization for batch verification
+rayon = "1.8"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+
+# Error handling
+thiserror = "2.0"
+
+# Hex encoding
+hex = "0.4"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "zk_benchmarks"
+harness = false
+
+[[bench]]
+name = "full_benchmarks"
+harness = false

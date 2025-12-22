@@ -1,0 +1,45 @@
+[package]
+name = "kitsune_p2p"
+version = "0.0.1"
+description = "p2p / sgd communication framework"
+license = "Apache-2.0"
+homepage = "https://apilium.com"
+repository = "https://github.com/ApiliumCode/aingle"
+documentation = "https://docs.rs/kitsune_p2p"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = [ "aingle", "ai", "p2p", "sgd", "networking" ]
+categories = [ "network-programming" ]
+edition = "2018"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("test_utils"))'] }
+
+[dependencies]
+arrayref = "0.3.6"
+base64 = "0.21"
+bloomfilter = { version = "1.0.5", features = [ "serde" ] }
+derive_more = "0.99.11"
+futures = "0.3"
+ghost_actor = "0.3.0-alpha.1"
+kitsune_p2p_mdns = { version = "0.0.1", path = "../mdns" }
+kitsune_p2p_types = { version = "0.0.1", path = "../types" }
+kitsune_p2p_proxy = { version = "0.0.1", path = "../proxy" }
+kitsune_p2p_transport_quic = { version = "0.0.1", path = "../transport_quic" }
+lair_keystore_api = "0.0.11"
+rand = "0.8"
+shrinkwraprs = "0.3.0"
+thiserror = "2.0"
+tokio = { version = "1", features = [ "full" ] }
+tokio-stream = "0.1"
+url2 = "0.0.6"
+serde = { version = "1.0", features = [ "derive" ] }
+serde_bytes = "0.11"
+reqwest = "0.12"
+once_cell = "1.4.1"
+fixt = { path = "../../fixt", version = "0.0.1" }
+observability = { version = "0.1", package = "aingle-observability" }
+tracing = "0.1"
+
+[dev-dependencies]
+matches = "0.1"
+tracing-subscriber = "0.3"

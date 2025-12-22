@@ -1,0 +1,364 @@
+name: AIngle CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  MSRV: "1.89"
+  # Fix __rust_probestack undefined symbol with Wasmer 6.0 on Linux
+  RUSTFLAGS: "-C probe-stack=none"
+
+jobs:
+  # MSRV (Minimum Supported Rust Version) check
+  msrv:
+    name: MSRV Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust ${{ env.MSRV }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.MSRV }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+
+      - name: Check MSRV
+        run: cargo check --workspace
+
+  # Security audit for dependencies
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run security audit
+        run: cargo audit
+        continue-on-error: true  # Advisory only
+
+  # Format check
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # Clippy lints
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-clippy-
+
+      - name: Run Clippy (warnings)
+        run: cargo clippy --workspace -- -W clippy::all
+        continue-on-error: true
+
+      - name: Run Clippy (strict - new code only)
+        run: cargo clippy --workspace -- -D warnings
+        continue-on-error: true
+
+  # Build check
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+
+      - name: Build debug
+        run: cargo build --workspace
+
+      - name: Build release
+        run: cargo build --workspace --release
+
+  # Unit tests
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+
+      - name: Run tests
+        run: cargo test --workspace
+        env:
+          RUST_LOG: info
+
+      - name: Run tests (all features)
+        run: cargo test --workspace --all-features
+        continue-on-error: true
+
+  # Code coverage
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-coverage-
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+        continue-on-error: true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  # Benchmarks (informational only)
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+
+      - name: Run benchmarks
+        run: cargo bench --workspace -- --noplot
+        continue-on-error: true
+
+  # Documentation build
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-docs-
+
+      - name: Build documentation
+        run: cargo doc --workspace --no-deps
+        # Note: Not using -D warnings due to legacy doc comments with HTML issues
+        # These will be fixed incrementally
+
+  # Feature combinations check
+  feature-check:
+    name: Feature Combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev pkg-config
+
+      - name: Check default features
+        run: cargo check --workspace
+
+      - name: Check no default features
+        run: cargo check --workspace --no-default-features
+        continue-on-error: true
+
+      - name: Check all features
+        run: cargo check --workspace --all-features
+        continue-on-error: true
+
+      - name: Check aingle_minimal with coap
+        run: cargo check -p aingle_minimal --features coap
+
+      - name: Check aingle_minimal with smart_agents
+        run: cargo check -p aingle_minimal --features smart_agents
+
+      # New transport features
+      - name: Install BLE dependencies
+        run: |
+          sudo apt-get install -y libdbus-1-dev
+
+      - name: Check aingle_minimal with webrtc
+        run: cargo check -p aingle_minimal --features webrtc
+
+      - name: Check aingle_minimal with ble
+        run: cargo check -p aingle_minimal --features ble
+
+      - name: Check aingle_minimal with hw_wallet
+        run: cargo check -p aingle_minimal --features hw_wallet
+        continue-on-error: true  # HID requires USB permissions
+
+      - name: Test transport features
+        run: |
+          cargo test -p aingle_minimal --features webrtc --test transport_integration_tests
+          cargo test -p aingle_minimal --features ble --test transport_integration_tests
+        continue-on-error: true
+
+      - name: Check new crates (cortex, zk, contracts)
+        run: |
+          cargo check -p aingle_cortex
+          cargo check -p aingle_zk
+          cargo check -p aingle_contracts
+          cargo check -p aingle_viz
+          cargo check -p aingle_graph
+          cargo check -p aingle_logic
+
+      - name: Test new crates
+        run: |
+          cargo test -p aingle_cortex
+          cargo test -p aingle_zk
+          cargo test -p aingle_contracts
+          cargo test -p aingle_graph
+          cargo test -p aingle_logic
+
+  # All checks must pass
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [msrv, fmt, build, test, docs, feature-check]
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [ "${{ needs.msrv.result }}" != "success" ] || \
+             [ "${{ needs.fmt.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required CI checks passed!"

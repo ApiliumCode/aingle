@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIngle DAG Visualization</title>
+    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
+    <link rel="shortcut icon" type="image/x-icon" href="/assets/favicon.ico">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        #sidebar {
+            width: 300px;
+            background: #16213e;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #0f3460;
+        }
+
+        .logo-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .logo {
+            width: 60px;
+            height: 60px;
+            filter: drop-shadow(0 0 10px rgba(232, 119, 34, 0.4));
+        }
+
+        #sidebar h1 {
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+            color: #E87722;
+        }
+
+        #sidebar h2 {
+            font-size: 1rem;
+            margin: 20px 0 10px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-card {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card .label {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .stat-card .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.85rem;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        /* Controls */
+        .controls {
+            margin-top: 20px;
+        }
+
+        .btn {
+            background: #E87722;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+
+        .btn:hover {
+            background: #ff6b6b;
+        }
+
+        .btn.secondary {
+            background: #0f3460;
+        }
+
+        .btn.secondary:hover {
+            background: #1a4a7a;
+        }
+
+        /* Main view */
+        #main {
+            flex: 1;
+            position: relative;
+        }
+
+        #graph {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Node tooltip */
+        .tooltip {
+            position: absolute;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            max-width: 300px;
+            z-index: 1000;
+        }
+
+        .tooltip.visible {
+            opacity: 1;
+        }
+
+        .tooltip h3 {
+            color: #E87722;
+            margin-bottom: 10px;
+        }
+
+        .tooltip .detail {
+            margin: 5px 0;
+            font-size: 0.85rem;
+        }
+
+        .tooltip .detail .key {
+            color: #888;
+        }
+
+        /* Status indicator */
+        #status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #16213e;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        #status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f44336;
+        }
+
+        #status .dot.connected {
+            background: #4CAF50;
+        }
+
+        /* Node details panel */
+        #details {
+            display: none;
+            position: absolute;
+            right: 20px;
+            top: 60px;
+            width: 350px;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 20px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+        }
+
+        #details.visible {
+            display: block;
+        }
+
+        #details h3 {
+            color: #E87722;
+            margin-bottom: 15px;
+        }
+
+        #details .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        #details .close-btn:hover {
+            color: #fff;
+        }
+
+        .detail-row {
+            margin: 10px 0;
+            padding: 10px;
+            background: #0f3460;
+            border-radius: 5px;
+        }
+
+        .detail-row .label {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .detail-row .value {
+            word-break: break-all;
+        }
+
+        /* Graph styles */
+        .node {
+            cursor: pointer;
+        }
+
+        .node circle {
+            stroke: #fff;
+            stroke-width: 1.5px;
+        }
+
+        .node text {
+            font-size: 10px;
+            fill: #fff;
+            pointer-events: none;
+        }
+
+        .link {
+            stroke-opacity: 0.6;
+        }
+
+        .link-label {
+            font-size: 8px;
+            fill: #888;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="sidebar">
+            <div class="logo-header">
+                <img src="/assets/logo.svg" alt="AIngle Logo" class="logo">
+                <div>
+                    <h1>AIngle DAG</h1>
+                    <p style="color: #888; font-size: 0.85rem;">Real-time DAG Visualization</p>
+                </div>
+            </div>
+
+            <h2>Statistics</h2>
+            <div class="stat-card">
+                <div class="label">Nodes</div>
+                <div class="value" id="stat-nodes">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Edges</div>
+                <div class="value" id="stat-edges">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Agents</div>
+                <div class="value" id="stat-agents">0</div>
+            </div>
+
+            <h2>Legend</h2>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #FFD700;"></div>
+                    <span>Genesis</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4CAF50;"></div>
+                    <span>Entry</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #2196F3;"></div>
+                    <span>Action</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #9C27B0;"></div>
+                    <span>Agent</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #FF9800;"></div>
+                    <span>Link</span>
+                </div>
+            </div>
+
+            <h2>Controls</h2>
+            <div class="controls">
+                <button class="btn" onclick="resetZoom()">Reset View</button>
+                <button class="btn secondary" onclick="toggleSimulation()">Pause/Play</button>
+                <button class="btn secondary" onclick="exportSVG()">Export SVG</button>
+                <button class="btn secondary" onclick="refreshData()">Refresh</button>
+            </div>
+        </div>
+
+        <div id="main">
+            <svg id="graph"></svg>
+            <div class="tooltip" id="tooltip"></div>
+            <div id="details">
+                <button class="close-btn" onclick="closeDetails()">&times;</button>
+                <h3>Node Details</h3>
+                <div id="details-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="status">
+        <div class="dot" id="status-dot"></div>
+        <span id="status-text">Connecting...</span>
+    </div>
+
+    <script>
+        // Configuration
+        const config = {
+            nodeRadius: 10,
+            linkDistance: 80,
+            chargeStrength: -300,
+            collisionRadius: 20,
+        };
+
+        // State
+        let simulation, svg, g, link, node, linkLabels;
+        let nodes = [];
+        let links = [];
+        let ws = null;
+        let isPaused = false;
+
+        // Colors
+        const colors = {
+            genesis: '#FFD700',
+            entry: '#4CAF50',
+            action: '#2196F3',
+            agent: '#9C27B0',
+            link: '#FF9800',
+            system: '#607D8B',
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initGraph();
+            connectWebSocket();
+            fetchInitialData();
+        });
+
+        function initGraph() {
+            const container = document.getElementById('main');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            svg = d3.select('#graph')
+                .attr('width', width)
+                .attr('height', height);
+
+            // Add zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+
+            svg.call(zoom);
+
+            // Main group for zoom/pan
+            g = svg.append('g');
+
+            // Arrow markers for directed edges
+            svg.append('defs').selectAll('marker')
+                .data(['end'])
+                .enter().append('marker')
+                .attr('id', 'arrow')
+                .attr('viewBox', '0 -5 10 10')
+                .attr('refX', 20)
+                .attr('refY', 0)
+                .attr('markerWidth', 6)
+                .attr('markerHeight', 6)
+                .attr('orient', 'auto')
+                .append('path')
+                .attr('fill', '#666')
+                .attr('d', 'M0,-5L10,0L0,5');
+
+            // Create simulation
+            simulation = d3.forceSimulation()
+                .force('link', d3.forceLink().id(d => d.id).distance(config.linkDistance))
+                .force('charge', d3.forceManyBody().strength(config.chargeStrength))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(config.collisionRadius))
+                .on('tick', ticked);
+
+            // Create groups
+            link = g.append('g').attr('class', 'links').selectAll('line');
+            linkLabels = g.append('g').attr('class', 'link-labels').selectAll('text');
+            node = g.append('g').attr('class', 'nodes').selectAll('g');
+        }
+
+        function updateGraph() {
+            // Update links
+            link = link.data(links, d => `${d.source.id || d.source}-${d.target.id || d.target}`);
+            link.exit().remove();
+            link = link.enter().append('line')
+                .attr('class', 'link')
+                .attr('stroke', d => d.color || '#666')
+                .attr('stroke-width', 1.5)
+                .attr('marker-end', 'url(#arrow)')
+                .merge(link);
+
+            // Update link labels
+            linkLabels = linkLabels.data(links.filter(d => d.label), d => `${d.source.id || d.source}-${d.target.id || d.target}`);
+            linkLabels.exit().remove();
+            linkLabels = linkLabels.enter().append('text')
+                .attr('class', 'link-label')
+                .text(d => d.label)
+                .merge(linkLabels);
+
+            // Update nodes
+            node = node.data(nodes, d => d.id);
+            node.exit().remove();
+
+            const nodeEnter = node.enter().append('g')
+                .attr('class', 'node')
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended))
+                .on('mouseover', showTooltip)
+                .on('mouseout', hideTooltip)
+                .on('click', showDetails);
+
+            nodeEnter.append('circle')
+                .attr('r', config.nodeRadius)
+                .attr('fill', d => d.color || colors[d.group] || '#666');
+
+            nodeEnter.append('text')
+                .attr('dx', 15)
+                .attr('dy', 4)
+                .text(d => d.label.substring(0, 15));
+
+            node = nodeEnter.merge(node);
+
+            // Update simulation
+            simulation.nodes(nodes);
+            simulation.force('link').links(links);
+            simulation.alpha(0.3).restart();
+
+            updateStats();
+        }
+
+        function ticked() {
+            link
+                .attr('x1', d => d.source.x)
+                .attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x)
+                .attr('y2', d => d.target.y);
+
+            linkLabels
+                .attr('x', d => (d.source.x + d.target.x) / 2)
+                .attr('y', d => (d.source.y + d.target.y) / 2);
+
+            node.attr('transform', d => `translate(${d.x},${d.y})`);
+        }
+
+        // Drag handlers
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        // Tooltip
+        function showTooltip(event, d) {
+            const tooltip = document.getElementById('tooltip');
+            tooltip.innerHTML = `
+                <h3>${d.label}</h3>
+                <div class="detail"><span class="key">ID:</span> ${d.id.substring(0, 20)}...</div>
+                <div class="detail"><span class="key">Type:</span> ${d.group}</div>
+                ${d.author ? `<div class="detail"><span class="key">Author:</span> ${d.author}</div>` : ''}
+            `;
+            tooltip.style.left = event.pageX + 10 + 'px';
+            tooltip.style.top = event.pageY + 10 + 'px';
+            tooltip.classList.add('visible');
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').classList.remove('visible');
+        }
+
+        // Details panel
+        function showDetails(event, d) {
+            const details = document.getElementById('details');
+            const content = document.getElementById('details-content');
+            
+            content.innerHTML = `
+                <div class="detail-row">
+                    <div class="label">ID</div>
+                    <div class="value">${d.id}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="label">Label</div>
+                    <div class="value">${d.label}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="label">Type</div>
+                    <div class="value">${d.group}</div>
+                </div>
+                ${d.author ? `
+                <div class="detail-row">
+                    <div class="label">Author</div>
+                    <div class="value">${d.author}</div>
+                </div>` : ''}
+                ${d.timestamp ? `
+                <div class="detail-row">
+                    <div class="label">Timestamp</div>
+                    <div class="value">${new Date(d.timestamp * 1000).toLocaleString()}</div>
+                </div>` : ''}
+            `;
+            
+            details.classList.add('visible');
+        }
+
+        function closeDetails() {
+            document.getElementById('details').classList.remove('visible');
+        }
+
+        // WebSocket connection
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/updates`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                document.getElementById('status-dot').classList.add('connected');
+                document.getElementById('status-text').textContent = 'Connected';
+            };
+            
+            ws.onclose = () => {
+                document.getElementById('status-dot').classList.remove('connected');
+                document.getElementById('status-text').textContent = 'Disconnected';
+                // Reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleEvent(data);
+            };
+        }
+
+        function handleEvent(event) {
+            switch(event.type) {
+                case 'initial_state':
+                    nodes = event.data.nodes || [];
+                    links = event.data.links || [];
+                    updateGraph();
+                    break;
+                case 'node_added':
+                    nodes.push(event.node);
+                    updateGraph();
+                    break;
+                case 'edge_added':
+                    links.push(event.edge);
+                    updateGraph();
+                    break;
+                case 'refresh':
+                    fetchInitialData();
+                    break;
+                case 'stats_updated':
+                    updateStatsFromData(event.stats);
+                    break;
+            }
+        }
+
+        // Fetch initial data
+        async function fetchInitialData() {
+            try {
+                const response = await fetch('/api/dag/d3');
+                const data = await response.json();
+                nodes = data.nodes || [];
+                links = data.links || [];
+                updateGraph();
+            } catch (e) {
+                console.error('Failed to fetch data:', e);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('stat-nodes').textContent = nodes.length;
+            document.getElementById('stat-edges').textContent = links.length;
+            document.getElementById('stat-agents').textContent = 
+                nodes.filter(n => n.group === 'agent').length;
+        }
+
+        function updateStatsFromData(stats) {
+            if (stats.node_count !== undefined) {
+                document.getElementById('stat-nodes').textContent = stats.node_count;
+            }
+            if (stats.edge_count !== undefined) {
+                document.getElementById('stat-edges').textContent = stats.edge_count;
+            }
+            if (stats.agent_count !== undefined) {
+                document.getElementById('stat-agents').textContent = stats.agent_count;
+            }
+        }
+
+        // Control functions
+        function resetZoom() {
+            const width = document.getElementById('main').clientWidth;
+            const height = document.getElementById('main').clientHeight;
+            svg.transition().duration(750).call(
+                d3.zoom().transform,
+                d3.zoomIdentity.translate(0, 0).scale(1)
+            );
+        }
+
+        function toggleSimulation() {
+            if (isPaused) {
+                simulation.alpha(0.3).restart();
+                isPaused = false;
+            } else {
+                simulation.stop();
+                isPaused = true;
+            }
+        }
+
+        function exportSVG() {
+            const svgElement = document.getElementById('graph');
+            const svgData = new XMLSerializer().serializeToString(svgElement);
+            const blob = new Blob([svgData], {type: 'image/svg+xml'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'aingle-dag.svg';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function refreshData() {
+            fetchInitialData();
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            const width = document.getElementById('main').clientWidth;
+            const height = document.getElementById('main').clientHeight;
+            svg.attr('width', width).attr('height', height);
+            simulation.force('center', d3.forceCenter(width / 2, height / 2));
+            simulation.alpha(0.3).restart();
+        });
+    </script>
+</body>
+</html>

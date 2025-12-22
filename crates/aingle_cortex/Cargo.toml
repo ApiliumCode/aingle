@@ -1,0 +1,87 @@
+[package]
+name = "aingle_cortex"
+version = "0.2.0"
+description = "Córtex API - REST/GraphQL/SPARQL interface for AIngle semantic graphs"
+license = "Apache-2.0"
+repository = "https://github.com/ApiliumCode/aingle"
+homepage = "https://apilium.com"
+documentation = "https://docs.rs/aingle_cortex"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "api", "graphql", "sparql", "rest"]
+categories = ["web-programming", "database"]
+edition = "2021"
+rust-version = "1.89"
+
+[features]
+default = ["rest", "sparql", "auth"]
+rest = []
+graphql = ["dep:async-graphql", "dep:async-graphql-axum"]
+sparql = ["dep:spargebra"]
+auth = ["dep:jsonwebtoken", "dep:argon2"]
+full = ["rest", "graphql", "sparql", "auth"]
+
+[[bin]]
+name = "aingle-cortex"
+path = "src/main.rs"
+
+[dependencies]
+# Core AIngle crates
+aingle_graph = { version = "0.2", path = "../aingle_graph" }
+aingle_logic = { version = "0.2", path = "../aingle_logic" }
+aingle_zk = { version = "0.2", path = "../aingle_zk" }
+
+# Web framework (use 0.7 for async-graphql-axum compatibility)
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+
+# GraphQL (optional)
+async-graphql = { version = "7.0", features = ["chrono", "uuid"], optional = true }
+async-graphql-axum = { version = "7.0", optional = true }
+
+# SPARQL (optional)
+spargebra = { version = "0.3", optional = true }
+
+# Authentication (optional)
+jsonwebtoken = { version = "9.0", optional = true }
+argon2 = { version = "0.5", optional = true }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+log = "0.4"
+rand = "0.8"
+
+# Hashing
+blake3 = "1.5"
+
+# Streaming
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Regular expressions (for SPARQL FILTER)
+regex = "1.10"
+
+# Rate limiting
+dashmap = "6.0"
+
+# IP address handling
+axum-client-ip = "0.7"
+
+[dev-dependencies]
+tempfile = "3.10"
+reqwest = { version = "0.12", features = ["json"] }
+tokio-test = "0.4"

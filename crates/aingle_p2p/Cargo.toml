@@ -1,0 +1,37 @@
+[package]
+name = "aingle_p2p"
+version = "0.0.1"
+description = "aingle specific wrapper around more generic p2p module"
+license = "Apache-2.0"
+homepage = "https://apilium.com"
+repository = "https://github.com/ApiliumCode/aingle"
+documentation = "https://docs.rs/aingle_p2p"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = [ "aingle", "ai", "p2p", "sgd", "networking" ]
+categories = [ "network-programming" ]
+edition = "2018"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("test_utils"))'] }
+
+[dependencies]
+async-trait = "0.1"
+fixt = { path = "../fixt", version = "0.0.1" }
+futures = "0.3"
+ghost_actor = "0.3.0-alpha.1"
+ai_hash = { version = "^0.0.1", path = "../ai_hash" }
+aingle_keystore = { version = "0.0.1", path = "../aingle_keystore" }
+aingle_middleware_bytes = "=0.0.3"
+aingle_types = { version = "0.0.1", path = "../aingle_types" }
+aingle_zome_types = { version = "^0.0.1", path = "../aingle_zome_types" }
+kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p/kitsune_p2p" }
+kitsune_p2p_types = { version = "0.0.1", path = "../kitsune_p2p/types" }
+mockall = "0.11"
+observability = { version = "0.1", package = "aingle-observability" }
+tracing = "0.1"
+serde = { version = "1.0", features = [ "derive" ] }
+serde_bytes = "0.11"
+thiserror = "2.0"
+tokio = { version = "1", features = [ "full" ] }
+tokio-stream = "0.1"
+aingle_util = { version = "0.0.1", path = "../aingle_util" }

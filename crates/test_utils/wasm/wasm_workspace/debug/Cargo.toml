@@ -1,0 +1,20 @@
+[package]
+name = "test_wasm_debug"
+version = "0.0.1"
+authors = [ "thedavidmeister", "thedavidmeister@gmail.com" ]
+edition = "2018"
+
+[lib]
+name = "test_wasm_debug"
+crate-type = [ "cdylib", "rlib" ]
+
+[dependencies]
+serde = "1.0"
+tracing = "0.1"
+tracing-core = "0.1"
+tracing-subscriber = "0.3"
+adk = { path = "../../../../adk" }
+
+[features]
+default = []
+mock = ["adk/mock"]

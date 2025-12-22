@@ -1,0 +1,55 @@
+//! Defines AiHash and its various HashTypes
+
+#![deny(missing_docs)]
+#![allow(rustdoc::bare_urls)]
+#![allow(rustdoc::invalid_html_tags)]
+
+mod aliases;
+pub mod error;
+mod has_hash;
+mod hash;
+pub mod hash_type;
+
+pub use aliases::*;
+pub use encode::{ai_hash_decode, ai_hash_decode_unchecked, ai_hash_encode};
+pub use has_hash::HasHash;
+pub use hash::*;
+pub use hash_b64::*;
+pub use hash_type::HashType;
+pub use hash_type::PrimitiveHashType;
+
+/// By default, disable string encoding and just display raw bytes
+#[cfg(not(feature = "string-encoding"))]
+pub mod encode_raw;
+
+/// Include nice string encoding methods and From impls
+#[cfg(feature = "string-encoding")]
+pub mod encode;
+
+#[cfg(feature = "string-encoding")]
+pub mod hash_b64;
+
+#[cfg(feature = "fixturators")]
+pub mod fixt;
+
+#[cfg(feature = "hashing")]
+mod hash_ext;
+
+#[cfg(feature = "serialized-bytes")]
+mod hashable_content;
+#[cfg(feature = "serialized-bytes")]
+mod hashed;
+#[cfg(feature = "serialized-bytes")]
+mod ser;
+
+#[cfg(feature = "hashing")]
+pub use hash_ext::MAX_HASHABLE_CONTENT_LEN;
+#[cfg(feature = "serialized-bytes")]
+pub use hashable_content::*;
+#[cfg(feature = "serialized-bytes")]
+pub use hashed::*;
+
+/// A convenience type, for specifying a hash by HashableContent rather than
+/// by its HashType
+#[cfg(feature = "serialized-bytes")]
+pub type AiHashOf<C> = AiHash<<C as HashableContent>::HashType>;

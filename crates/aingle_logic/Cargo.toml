@@ -1,0 +1,49 @@
+[package]
+name = "aingle_logic"
+version = "0.2.0"
+description = "Proof-of-Logic validation engine for AIngle semantic graphs"
+license = "Apache-2.0"
+repository = "https://github.com/ApiliumCode/aingle"
+homepage = "https://apilium.com"
+documentation = "https://docs.rs/aingle_logic"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "logic", "reasoning", "validation", "rules"]
+categories = ["algorithms", "data-structures"]
+edition = "2021"
+rust-version = "1.89"
+
+[features]
+default = []
+# Enable SPARQL-like query rules
+sparql = []
+# Enable OWL reasoning
+owl = []
+
+[dependencies]
+# Graph database
+aingle_graph = { version = "0.2", path = "../aingle_graph" }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+
+# Logging
+log = "0.4"
+
+# Time for temporal rules
+chrono = { version = "0.4", features = ["serde"] }
+
+# Collections
+indexmap = { version = "2.0", features = ["serde"] }
+
+# Pattern matching
+regex = "1.10"
+
+# Hex encoding
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3.10"

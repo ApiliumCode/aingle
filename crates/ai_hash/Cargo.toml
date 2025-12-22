@@ -1,0 +1,44 @@
+[package]
+name = "ai_hash"
+version = "0.0.1"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = [ "aingle", "ai", "hash", "blake", "blake2b" ]
+categories = [ "cryptography" ]
+edition = "2018"
+description = "hashing helpers supporting sgd sharding"
+license = "Apache-2.0"
+homepage = "https://apilium.com"
+repository = "https://github.com/ApiliumCode/aingle"
+documentation = "https://docs.rs/ai_hash"
+
+[dependencies]
+serde = "1"
+serde_bytes = "0.11"
+
+arbitrary = {version = "1.0", optional = true}
+base64 = {version = "0.21", optional = true}
+blake2b_simd = {version = "0.5.10", optional = true}
+derive_more = { version = "0.99", optional = true }
+fixt = { version = "^0.0.1", path = "../fixt", optional = true }
+aingle_middleware_bytes = {version = "=0.0.3", optional = true }
+rand = {version = "0.8", optional = true}
+rusqlite = { version = "0.25", optional = true }
+tracing = { version = "0.1", optional = true}
+thiserror = "2.0"
+
+[dev-dependencies]
+serde_json = { version = "1.0", features = [ "preserve_order" ] }
+
+[features]
+
+default = ["serialized-bytes", "fixturators"]
+full = ["fixturators", "hashing", "string-encoding", "rusqlite"]
+
+fixturators = ["fixt", "rand", "serialized-bytes", "string-encoding"]
+serialized-bytes = ["aingle_middleware_bytes"]
+string-encoding = ["base64", "blake2b_simd", "derive_more"]
+hashing = ["blake2b_simd", "serialized-bytes"]
+test_utils = []
+
+[package.metadata.cargo-udeps.ignore]
+normal = ["tracing"]

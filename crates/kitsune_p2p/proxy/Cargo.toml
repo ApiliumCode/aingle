@@ -1,0 +1,49 @@
+[package]
+name = "kitsune_p2p_proxy"
+version = "0.0.1"
+description = "Proxy transport module for kitsune-p2p"
+license = "Apache-2.0"
+homepage = "https://apilium.com"
+repository = "https://github.com/ApiliumCode/aingle"
+documentation = "https://docs.rs/kitsune_p2p_proxy"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = [ "aingle", "ai", "p2p", "sgd", "networking" ]
+categories = [ "network-programming" ]
+edition = "2018"
+
+[lints.rust]
+# Allow test_utils cfg used by ghost_actor macro
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("test_utils"))'] }
+
+[dependencies]
+base64 = "0.21"
+blake2b_simd = "0.5.10"
+derive_more = "0.99.7"
+futures = "0.3"
+kitsune_p2p_types = { version = "0.0.1", path = "../types" }
+kitsune_p2p_transport_quic = { version = "0.0.1", path = "../transport_quic" }
+lair_keystore_api = "0.0.11"
+nanoid = "0.4"
+observability = { version = "0.1", package = "aingle-observability" }
+parking_lot = "0.12"
+rmp-serde = "0.15"
+rustls = "0.23"
+rustls-pki-types = "1"
+serde = { version = "1", features = [ "derive" ] }
+serde_bytes = "0.11"
+structopt = "0.3"
+tokio = { version = "1", features = [ "full" ] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[dev-dependencies]
+criterion = "0.5"
+crossterm = "0.19"
+
+[[bench]]
+name = "old_proxy_thru"
+harness = false
+
+[[bench]]
+name = "thru"
+harness = false

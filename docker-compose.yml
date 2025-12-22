@@ -1,0 +1,121 @@
+# AIngle Docker Compose
+# https://github.com/ApiliumCode/aingle
+
+services:
+  # ==========================================================================
+  # AIngle Node
+  # ==========================================================================
+  aingle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: apiliumcode/aingle:latest
+    container_name: aingle-node
+    restart: unless-stopped
+    ports:
+      - "8888:8888"   # Admin API
+      - "8889:8889"   # App API
+      - "5353:5353/udp"  # mDNS
+      - "5684:5684/udp"  # CoAP
+    volumes:
+      - aingle-data:/app/data
+      - ./config:/app/config:ro
+    environment:
+      - RUST_LOG=info
+      - AINGLE_DATA_DIR=/app/data
+      - AINGLE_CONFIG_DIR=/app/config
+    networks:
+      - aingle-network
+    healthcheck:
+      test: ["CMD", "aingle", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================================================
+  # AIngle Visualization (DAG Viewer)
+  # ==========================================================================
+  aingle-viz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: apiliumcode/aingle-viz:latest
+    container_name: aingle-viz
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Web UI
+    environment:
+      - RUST_LOG=info
+      - AINGLE_ADMIN_URL=ws://aingle:8888
+    depends_on:
+      - aingle
+    networks:
+      - aingle-network
+    command: ["aingle-viz", "--port", "3000"]
+
+  # ==========================================================================
+  # AIngle Cortex (API Server)
+  # ==========================================================================
+  aingle-cortex:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: apiliumcode/aingle-cortex:latest
+    container_name: aingle-cortex
+    restart: unless-stopped
+    ports:
+      - "4000:4000"   # REST/GraphQL API
+    environment:
+      - RUST_LOG=info
+      - CORTEX_PORT=4000
+      - AINGLE_ADMIN_URL=ws://aingle:8888
+    depends_on:
+      - aingle
+    networks:
+      - aingle-network
+    command: ["aingle-cortex", "--port", "4000"]
+
+  # ==========================================================================
+  # Development Environment
+  # ==========================================================================
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    image: apiliumcode/aingle-dev:latest
+    container_name: aingle-dev
+    volumes:
+      - .:/app
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    networks:
+      - aingle-network
+    stdin_open: true
+    tty: true
+    profiles:
+      - dev
+
+# ==========================================================================
+# Networks
+# ==========================================================================
+networks:
+  aingle-network:
+    driver: bridge
+
+# ==========================================================================
+# Volumes
+# ==========================================================================
+volumes:
+  aingle-data:
+    driver: local
+  cargo-cache:
+    driver: local
+  target-cache:
+    driver: local

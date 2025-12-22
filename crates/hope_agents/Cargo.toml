@@ -1,0 +1,47 @@
+[package]
+name = "hope_agents"
+version = "0.2.0"
+description = "HOPE Agents: Hierarchical Optimizing Policy Engine for AIngle AI agents"
+license = "Apache-2.0"
+repository = "https://github.com/ApiliumCode/aingle"
+homepage = "https://apilium.com"
+documentation = "https://docs.rs/hope_agents"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "ai", "agents", "rl", "iot"]
+categories = ["science", "network-programming"]
+edition = "2021"
+rust-version = "1.89"
+
+[features]
+default = ["std"]
+std = []
+# Enable Titans Memory integration
+memory = ["titans_memory"]
+# Enable async operations
+async = []
+# Enable learning capabilities
+learning = []
+
+[dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+log = "0.4"
+
+# AI Memory integration
+titans_memory = { version = "0.2", path = "../titans_memory", optional = true }
+
+# Random for exploration (updated from 0.7)
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+
+# Time
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "agent_bench"
+harness = false

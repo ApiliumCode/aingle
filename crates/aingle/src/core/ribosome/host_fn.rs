@@ -1,0 +1,175 @@
+use super::CallContext;
+use super::RibosomeT;
+use aingle_types::prelude::*;
+use std::sync::Arc;
+
+pub struct HostFnApi<Ribosome: RibosomeT> {
+    ribosome: Arc<Ribosome>,
+    call_context: Arc<CallContext>,
+}
+
+impl<Ribosome: RibosomeT> HostFnApi<Ribosome> {
+    pub fn new(ribosome: Arc<Ribosome>, call_context: Arc<CallContext>) -> Self {
+        Self {
+            ribosome,
+            call_context,
+        }
+    }
+}
+
+macro_rules! host_fn_api_impls {
+    ( $( fn $f:ident ( $input:ty ) -> $output:ty; )* ) => {
+        $(
+            pub(crate) mod $f;
+        )*
+
+        impl<Ribosome: RibosomeT> HostFnApiT for HostFnApi<Ribosome> {
+            $(
+                fn $f(&self, input: $input) -> Result<$output, HostFnApiError> {
+                    $f::$f(
+                        self.ribosome.clone(),
+                        self.call_context.clone(),
+                        input.into()
+                    ).map_err(|e| HostFnApiError::RibosomeError(Box::new(e)))
+                }
+            )*
+        }
+    };
+}
+
+// All host_fn_api_impls below rely on this import
+use aingle_zome_types as zt;
+
+host_fn_api_impls! {
+
+    // ------------------------------------------------------------------
+    // These definitions are copy-pasted from
+    // aingle_zome_types::zome_io
+    // TODO: is there a way to unhygienically import this code in both places?
+
+    // Info about the calling agent.
+    fn agent_info (()) -> zt::info::AgentInfo;
+
+    // @todo
+    fn app_info (()) -> zt::info::AppInfo;
+
+    // @todo
+    fn saf_info (()) -> zt::info::SafInfo;
+
+    // @todo
+    fn call_info (()) -> zt::info::CallInfo;
+
+    fn call (zt::call::Call) -> zt::ZomeCallResponse;
+
+    // Header hash of the DeleteLink element.
+    fn call_remote (zt::call_remote::CallRemote) -> zt::ZomeCallResponse;
+
+    // @todo List all the local capability claims.
+    fn capability_claims (()) -> ();
+
+    // @todo List all the local capability grants.
+    fn capability_grants (()) -> ();
+
+    // @todo Get the capability for the current zome call.
+    fn capability_info (()) -> ();
+
+    // The EntryDefId determines how a create is handled on the host side.
+    // CapGrant and CapClaim are handled natively.
+    // App entries are referenced by entry defs then SerializedBytes stuffed into an Entry::App.
+    // Returns HeaderHash of the newly created element.
+    fn create (zt::entry::EntryWithDefId) -> ai_hash::HeaderHash;
+
+    fn create_x25519_keypair(()) -> aingle_zome_types::x_salsa20_poly1305::x25519::X25519PubKey;
+
+    fn x_salsa20_poly1305_encrypt(
+        aingle_zome_types::x_salsa20_poly1305::XSalsa20Poly1305Encrypt
+    ) -> aingle_zome_types::x_salsa20_poly1305::encrypted_data::XSalsa20Poly1305EncryptedData;
+
+    fn x_salsa20_poly1305_decrypt(
+        aingle_zome_types::x_salsa20_poly1305::XSalsa20Poly1305Decrypt
+    ) -> Option<aingle_zome_types::x_salsa20_poly1305::data::XSalsa20Poly1305Data>;
+
+    // Sender, Recipient, Data.
+    fn x_25519_x_salsa20_poly1305_encrypt (aingle_zome_types::x_salsa20_poly1305::X25519XSalsa20Poly1305Encrypt) -> aingle_zome_types::x_salsa20_poly1305::encrypted_data::XSalsa20Poly1305EncryptedData;
+
+    // Recipient, Sender, Encrypted data.
+    fn x_25519_x_salsa20_poly1305_decrypt (aingle_zome_types::x_salsa20_poly1305::X25519XSalsa20Poly1305Decrypt) -> Option<aingle_zome_types::x_salsa20_poly1305::data::XSalsa20Poly1305Data>;
+
+    // Create a link between two entries.
+    fn create_link (zt::link::CreateLinkInput) -> ai_hash::HeaderHash;
+
+    // Delete an entry.
+    fn delete (ai_hash::HeaderHash) -> ai_hash::HeaderHash;
+
+    // Header hash of the CreateLink element.
+    fn delete_link (ai_hash::HeaderHash) -> ai_hash::HeaderHash;
+
+    // Header hash of the newly committed element.
+    // Emit a Signal::App to subscribers on the interface
+    fn emit_signal (zt::signal::AppSignal) -> ();
+
+    // The trace host import takes a TraceMsg to output wherever the host wants to display it.
+    // TraceMsg includes line numbers. so the wasm tells the host about it's own code structure.
+    fn trace (zt::trace::TraceMsg) -> ();
+
+    // Attempt to get a live entry from the cascade.
+    fn get (zt::entry::GetInput) -> Option<zt::element::Element>;
+
+    fn get_agent_activity (zt::agent_activity::GetAgentActivityInput) -> zt::query::AgentActivity;
+
+    fn get_details (zt::entry::GetInput) -> Option<zt::metadata::Details>;
+
+    // Get links by entry hash from the cascade.
+    fn get_links (zt::link::GetLinksInput) -> zt::link::Links;
+
+    fn get_link_details (zt::link::GetLinksInput) -> zt::link::LinkDetails;
+
+    // Hash an entry on the host.
+    fn hash_entry (zt::entry::Entry) -> ai_hash::EntryHash;
+
+    // Query the source chain for data.
+    fn query (zt::query::ChainQueryFilter) -> Vec<Element>;
+
+    // the length of random bytes to create
+    fn random_bytes (u32) -> zt::bytes::Bytes;
+
+    // Remotely signal many agents without waiting for responses
+    fn remote_signal (zt::signal::RemoteSignal) -> ();
+
+    // // @todo
+    // fn send (()) -> ();
+
+    // @todo
+    fn schedule (core::time::Duration) -> ();
+
+    // @todo
+    fn sleep (core::time::Duration) -> ();
+
+    // @todo
+    fn version (()) -> zt::version::ZomeApiVersion;
+
+    // Attempt to have the keystore sign some data
+    // The pubkey in the input needs to be found in the keystore for this to work
+    fn sign (zt::signature::Sign) -> zt::signature::Signature;
+
+    // Sign a list of datas with an ephemeral, randomly generated keypair.
+    fn sign_ephemeral (zt::signature::SignEphemeral) -> zt::signature::EphemeralSignatures;
+
+    // Current system time, in the opinion of the host, as a `Duration`.
+    fn sys_time (()) -> core::time::Duration;
+
+    // Same as  but also takes the HeaderHash of the updated element.
+    fn update (zt::entry::UpdateInput) -> ai_hash::HeaderHash;
+
+    fn verify_signature (zt::signature::VerifySignature) -> bool;
+
+    // There's nothing to go in or out of a noop.
+    // Used to "defuse" host functions when side effects are not allowed.
+    fn unreachable (()) -> ();
+
+    // The zome and agent info are constants specific to the current zome and chain.
+    // All the information is provided by core so there is no input value.
+    // These are constant for the lifetime of a zome call.
+    fn zome_info (()) -> zt::info::ZomeInfo;
+
+}

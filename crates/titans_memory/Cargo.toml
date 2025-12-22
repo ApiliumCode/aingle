@@ -1,0 +1,49 @@
+[package]
+name = "titans_memory"
+version = "0.2.0"
+description = "Titans Memory: Neural-inspired memory system for AIngle AI agents"
+license = "Apache-2.0"
+repository = "https://github.com/ApiliumCode/aingle"
+homepage = "https://apilium.com"
+documentation = "https://docs.rs/titans_memory"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "ai", "memory", "neural", "agents"]
+categories = ["science", "data-structures"]
+edition = "2021"
+rust-version = "1.89"
+
+[features]
+default = ["std"]
+std = []
+# Persistence to disk
+persistent = []
+# WASM support for zomes
+wasm = []
+# Compression for memory entries
+compression = []
+
+[dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Crypto for hashing
+blake3 = { version = "1.5", default-features = false, features = ["std"] }
+
+# Time
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+# Logging
+log = "0.4"
+
+# Optional: SQLite for persistent LTM (matching workspace version)
+rusqlite = { version = "0.25", default-features = false, features = ["bundled"], optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "memory_bench"
+harness = false
+
+# Note: Profile settings are defined at workspace root Cargo.toml

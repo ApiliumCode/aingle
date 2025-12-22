@@ -1,0 +1,27 @@
+---
+manifest_version: "1"
+
+name: fixture-app
+description: it's an app
+
+slots:
+  - id: slot-1
+    provisioning:
+      strategy: create
+      deferred: false
+    saf:
+      bundled: safs/saf1/a saf.saf
+      uid: 0123456
+      properties: ~
+      clone_limit: 0
+  - id: slot-2
+    provisioning:
+      strategy: create
+      deferred: true
+    saf:
+      bundled: safs/saf2/another saf.saf
+      uid: ~
+      properties:
+        foo: 1111
+        bar: it could be anything
+      clone_limit: 10

@@ -1,0 +1,41 @@
+[package]
+name = "aingle_websocket"
+version = "0.0.1"
+description = "AIngle utilities for serving and connection with websockets"
+license = "Apache-2.0"
+homepage = "https://apilium.com"
+repository = "https://github.com/ApiliumCode/aingle"
+documentation = "https://docs.rs/aingle_websocket"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+edition = "2018"
+
+[dependencies]
+futures = "0.3"
+ghost_actor = "0.3.0-alpha.1"
+aingle_middleware_bytes = "=0.0.3"
+nanoid = "0.4"
+net2 = "0.2"
+parking_lot = "0.12"
+must_future = "0.1"
+serde = { version = "1", features = [ "derive" ] }
+serde_bytes = "0.11"
+stream-cancel = "0.8.0"
+thiserror = "2.0"
+tokio = { version = "1", features = [ "full" ] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tokio-tungstenite = { version = "0.21", features = [ "rustls-tls-webpki-roots" ] }
+tracing = "0.1"
+tracing-futures = "0.2"
+tungstenite = "0.21"
+url2 = "0.0.6"
+
+[dev-dependencies]
+aingle_types = { version = "=0.0.1", path = "../aingle_types" }
+linefeed = "0.6"
+unwrap_to = "0.1.0"
+observability = { version = "0.1", package = "aingle-observability" }
+criterion = "0.5"
+
+[[bench]]
+name = "bench"
+harness = false

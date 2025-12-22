@@ -1,0 +1,19 @@
+[package]
+name = "aingle_test_wasm_common"
+version = "0.0.1"
+description = "Common utilities for AIngle WASM testing"
+license = "Apache-2.0"
+repository = "https://github.com/ApiliumCode/aingle"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "wasm", "testing"]
+categories = ["development-tools::testing"]
+edition = "2021"
+
+[lib]
+name = "aingle_test_wasm_common"
+crate-type = [ "cdylib", "rlib" ]
+path = "src/lib.rs"
+
+[dependencies]
+adk = { path = "../../adk" }
+serde = "1.0"

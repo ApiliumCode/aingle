@@ -1,0 +1,71 @@
+# Build artifacts
+target/
+*.rs.bk
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Documentation (not needed in image)
+docs/
+*.md
+!README.md
+
+# Tests
+**/tests/
+**/benches/
+
+# CI/CD
+.github/
+.circleci/
+
+# Docker (avoid recursive copy)
+docker/
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Nix
+*.nix
+.nix-*
+result
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+*.local
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Coverage
+coverage/
+*.lcov
+lcov.info
+
+# Compiled files
+*.wasm
+*.so
+*.dylib
+*.dll
+
+# Package manager
+Cargo.lock
+!Cargo.lock

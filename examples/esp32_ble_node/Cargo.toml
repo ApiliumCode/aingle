@@ -1,0 +1,46 @@
+[package]
+name = "esp32-ble-node"
+version = "0.1.0"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+edition = "2021"
+license = "Apache-2.0"
+description = "AIngle BLE node for ESP32 devices"
+repository = "https://github.com/ApiliumCode/aingle"
+keywords = ["esp32", "ble", "iot", "aingle"]
+categories = ["embedded", "network-programming"]
+
+[dependencies]
+# AIngle Minimal with ESP32 BLE support
+aingle_minimal = { path = "../../crates/aingle_minimal", default-features = false, features = ["ble-esp32"] }
+
+# ESP-IDF HAL
+esp-idf-hal = "0.44"
+esp-idf-svc = { version = "0.49", features = ["binstart", "log"] }
+esp-idf-sys = { version = "0.35", features = ["binstart"] }
+
+# Async runtime for ESP32
+embassy-executor = { version = "0.6", features = ["arch-xtensa", "executor-thread"] }
+embassy-time = "0.3"
+
+# Logging
+log = "0.4"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+embuild = "0.32"
+
+[[bin]]
+name = "esp32-ble-node"
+path = "src/main.rs"
+harness = false
+
+[profile.release]
+opt-level = "s"
+lto = true
+
+[profile.dev]
+debug = true
+opt-level = "z"

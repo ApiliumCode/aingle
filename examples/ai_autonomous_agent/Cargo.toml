@@ -1,0 +1,18 @@
+[package]
+name = "ai_autonomous_agent"
+version = "0.1.0"
+edition = "2021"
+description = "Autonomous AI agent example using HOPE Agents"
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "ai-agent"
+path = "src/main.rs"
+
+[dependencies]
+hope_agents = { path = "../../crates/hope_agents" }
+titans_memory = { path = "../../crates/titans_memory" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = "0.8"

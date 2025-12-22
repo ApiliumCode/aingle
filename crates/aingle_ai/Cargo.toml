@@ -1,0 +1,72 @@
+[package]
+name = "aingle_ai"
+version = "0.1.0"
+description = "AI integration layer for AIngle - Titans Memory, Nested Learning, HOPE Agents"
+license = "Apache-2.0"
+repository = "https://github.com/ApiliumCode/aingle"
+homepage = "https://apilium.com"
+documentation = "https://docs.rs/aingle_ai"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "ai", "titans", "nested-learning", "memory"]
+categories = ["science", "algorithms"]
+edition = "2021"
+rust-version = "1.89"
+
+[dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["sync", "time"] }
+
+# Error handling
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+
+# Math and ML utilities
+ndarray = "0.17"
+rand = "0.8"
+
+# Collections
+parking_lot = "0.12"
+dashmap = "6.0"
+
+# Hashing
+blake2 = "0.10"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Configuration
+toml = "0.8"
+
+# Optional: Full ML capabilities (disabled by default for IoT)
+[dependencies.candle-core]
+version = "0.4"
+optional = true
+
+[dependencies.candle-nn]
+version = "0.4"
+optional = true
+
+[dev-dependencies]
+criterion = "0.5"
+tokio = { version = "1", features = ["full", "test-util"] }
+tempfile = "3"
+
+[features]
+default = []
+# Full ML capabilities (requires more resources)
+full-ml = ["candle-core", "candle-nn"]
+# IoT mode - minimal memory footprint
+iot = []
+# Test utilities
+test_utils = []
+
+# Benchmarks (to be added)
+# [[bench]]
+# name = "titans_bench"
+# harness = false

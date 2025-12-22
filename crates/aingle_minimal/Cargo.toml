@@ -1,0 +1,127 @@
+[package]
+name = "aingle_minimal"
+version = "0.2.0"
+description = "Ultra-light AIngle node for IoT devices (<1MB RAM)"
+license = "Apache-2.0"
+repository = "https://github.com/ApiliumCode/aingle"
+homepage = "https://apilium.com"
+documentation = "https://docs.rs/aingle_minimal"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "iot", "dag", "embedded"]
+categories = ["embedded", "network-programming"]
+edition = "2021"
+rust-version = "1.89"
+
+[features]
+default = ["std", "coap", "sqlite"]
+std = []
+# No-std support for embedded devices
+no_std = []
+# Enable CoAP transport (IoT-friendly UDP protocol)
+coap = ["dep:coap-lite"]
+# Enable mesh networking
+mesh = []
+# Enable Bluetooth LE transport (Desktop: btleplug)
+ble = ["dep:btleplug", "dep:uuid"]
+# Enable Bluetooth LE for ESP32 (embedded: esp32-nimble)
+ble-esp32 = ["dep:esp32-nimble"]
+# Enable LoRa transport
+lora = []
+# Enable hardware wallet support (Ledger)
+hw_wallet = ["dep:ledger-transport", "dep:ledger-transport-hid"]
+# Enable WiFi Direct
+wifi_direct = []
+# Enable WebRTC transport (for browser support)
+webrtc = ["dep:webrtc", "dep:bytes", "dep:async-tungstenite", "dep:futures-util"]
+# Minimal crypto (ed25519 only)
+minimal_crypto = []
+# Enable AI memory (Titans Memory)
+ai_memory = ["titans_memory"]
+# Enable smart agents (HOPE Agents)
+smart_agents = ["hope_agents"]
+
+# Storage backends
+sqlite = ["dep:rusqlite"]           # Default, lightweight, good for IoT
+rocksdb = ["dep:rocksdb"]           # High-performance, production-ready
+
+# Networking features
+mdns = ["dep:mdns-sd", "dep:if-addrs"]  # mDNS/DNS-SD for automatic peer discovery
+
+[dependencies]
+# Async runtime - using smol instead of tokio for smaller footprint
+smol = "2.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Crypto - minimal set
+blake3 = { version = "1.5", default-features = false, features = ["std"] }
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+
+# Networking - CoAP for IoT (lightweight UDP-based protocol)
+coap-lite = { version = "0.13", optional = true }
+
+# Async I/O for UDP sockets (used by smol)
+async-io = "2.3"
+
+# Database backends (choose via features)
+# SQLite - lightweight, good for IoT edge devices
+rusqlite = { version = "0.25", default-features = false, features = ["bundled"], optional = true }
+# RocksDB - high-performance LSM tree, production-ready
+rocksdb = { version = "0.22", optional = true }
+
+# mDNS/DNS-SD for peer discovery
+mdns-sd = { version = "0.11", optional = true }
+if-addrs = { version = "0.13", optional = true }
+
+# WebRTC for browser support
+webrtc = { version = "0.11", optional = true }
+bytes = { version = "1.0", optional = true }
+# WebSocket signaling server for WebRTC
+async-tungstenite = { version = "0.27", features = ["async-std-runtime"], optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["sink"], optional = true }
+
+# Bluetooth LE for IoT mesh
+btleplug = { version = "0.11", optional = true }
+uuid = { version = "1.0", optional = true }
+
+# ESP32 NimBLE for embedded BLE (requires ESP-IDF)
+esp32-nimble = { version = "0.8", optional = true }
+
+# Hardware wallet support (Ledger)
+ledger-transport = { version = "0.11", optional = true }
+ledger-transport-hid = { version = "0.11", optional = true }
+
+# Logging - lightweight
+log = "0.4"
+env_logger = "0.11"
+
+# Time
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+# AI Memory (Titans Memory)
+titans_memory = { version = "0.2", path = "../titans_memory", optional = true }
+
+# HOPE Agents (AI Agent Framework)
+hope_agents = { version = "0.2", path = "../hope_agents", optional = true }
+
+[dev-dependencies]
+# Testing
+criterion = "0.5"
+
+[[bin]]
+name = "aingle-minimal"
+path = "src/main.rs"
+
+[[bench]]
+name = "node_bench"
+harness = false
+
+# Note: Profile settings are defined at workspace root Cargo.toml
+# Recommended release profile for this crate:
+#   opt-level = "z"      # Optimize for size
+#   lto = true           # Link-time optimization
+#   codegen-units = 1    # Single codegen unit
+#   panic = "abort"      # Smaller binary
+#   strip = true         # Strip symbols

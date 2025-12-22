@@ -1,0 +1,41 @@
+[package]
+name = "aingle_cli_sandbox"
+version = "0.0.1"
+description = "Sandbox environment for AIngle development and testing"
+license = "Apache-2.0"
+homepage = "https://apilium.com"
+repository = "https://github.com/ApiliumCode/aingle"
+documentation = "https://docs.rs/aingle_cli_sandbox"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "ai", "sandbox", "testing"]
+categories = ["command-line-utilities", "development-tools::build-utils", "development-tools::testing"]
+edition = "2021"
+
+[[bin]]
+name = "ai-sandbox"
+path = "src/bin/ai-sandbox.rs"
+
+[dependencies]
+anyhow = "1.0"
+ansi_term = "0.12"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+futures = "0.3"
+lazy_static = "1.4.0"
+aingle_cli_bundle = { path = "../ai_bundle", version = "0.0.1" }
+aingle_conductor_api = { path = "../aingle_conductor_api", version = "0.0.1" }
+aingle_types = { path = "../aingle_types", version = "0.0.1" }
+aingle_websocket = { path = "../aingle_websocket", version = "0.0.1" }
+aingle_p2p = { path = "../aingle_p2p", version = "0.0.1" }
+nanoid = "0.4"
+observability = { version = "0.1", package = "aingle-observability" }
+serde_yaml = "0.8"
+tokio = { version = "1", features = [ "full" ] }
+structopt = "0.3"
+tracing = "0.1"
+url2 = "0.0.6"
+walkdir = "2"
+
+[dev-dependencies]
+assert_cmd = "1.0.1"
+matches = "0.1"
+portpicker = "0.1.0"

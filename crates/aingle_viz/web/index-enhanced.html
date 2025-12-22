@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="description" content="Real-time DAG Visualization for AIngle - Interactive distributed data structure explorer">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>AIngle DAG Visualization</title>
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/css/style.css">
+
+    <!-- D3.js -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <!-- Main App Container -->
+    <div id="app">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <h1>AIngle DAG Visualization</h1>
+                <div class="connection-status" id="connection-status">Connecting...</div>
+            </div>
+            <div class="stats">
+                <div class="stat">Nodes: <strong id="stat-nodes">0</strong></div>
+                <div class="stat">Edges: <strong id="stat-edges">0</strong></div>
+                <div class="stat">Agents: <strong id="stat-agents">0</strong></div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main">
+            <!-- Sidebar -->
+            <div class="sidebar" id="sidebar">
+                <!-- Controls -->
+                <div class="sidebar-section">
+                    <h3>Controls</h3>
+                    <div class="controls">
+                        <button class="btn" id="btn-reset">Reset View</button>
+                        <button class="btn" id="btn-pause">Pause</button>
+                        <button class="btn" id="btn-refresh">Refresh Data</button>
+                    </div>
+                </div>
+
+                <!-- Export -->
+                <div class="sidebar-section">
+                    <h3>Export</h3>
+                    <div class="controls">
+                        <button class="btn btn-sm" id="export-svg">Export SVG</button>
+                        <button class="btn btn-sm" id="export-png">Export PNG</button>
+                        <button class="btn btn-sm" id="export-json">Export JSON</button>
+                        <button class="btn btn-sm" id="export-csv">Export CSV</button>
+                    </div>
+                </div>
+
+                <!-- Filters - Type -->
+                <div class="sidebar-section">
+                    <h3>Filter by Type</h3>
+                    <div id="filter-types" class="filters"></div>
+                </div>
+
+                <!-- Filters - Agents -->
+                <div class="sidebar-section">
+                    <h3>Filter by Agent</h3>
+                    <div id="filter-agents" class="filters"></div>
+                </div>
+
+                <!-- Filters - Date Range -->
+                <div class="sidebar-section">
+                    <h3>Filter by Date</h3>
+                    <div class="filters">
+                        <input type="date" id="filter-date-start" placeholder="Start date">
+                        <input type="date" id="filter-date-end" placeholder="End date">
+                        <button class="btn btn-sm" id="filter-date-reset">Reset</button>
+                    </div>
+                </div>
+
+                <!-- Search -->
+                <div class="sidebar-section">
+                    <h3>Search</h3>
+                    <div class="filters">
+                        <input type="search" id="filter-search" placeholder="Search nodes...">
+                        <button class="btn btn-sm" id="filter-search-clear">Clear</button>
+                    </div>
+                </div>
+
+                <!-- Quick Filters -->
+                <div class="sidebar-section">
+                    <h3>Quick Filters</h3>
+                    <div id="quick-filters" class="controls"></div>
+                </div>
+
+                <!-- Timeline Controls -->
+                <div class="sidebar-section">
+                    <h3>Timeline View</h3>
+                    <div id="timeline-controls" class="controls"></div>
+                    <button class="btn" id="toggle-timeline">Show Timeline</button>
+                </div>
+
+                <!-- Node Details -->
+                <div class="sidebar-section">
+                    <h3>Selected Node</h3>
+                    <div class="node-details" id="node-details">
+                        <p class="placeholder">Click a node to view details</p>
+                    </div>
+                </div>
+
+                <!-- Notifications Settings -->
+                <div class="sidebar-section">
+                    <h3>Notifications</h3>
+                    <div class="filters">
+                        <label class="filter-checkbox">
+                            <input type="checkbox" id="notification-sound-toggle">
+                            <span class="filter-label">Enable sounds</span>
+                        </label>
+                        <button class="btn btn-sm" id="notification-clear-all">Clear All</button>
+                    </div>
+                </div>
+
+                <!-- Agent List -->
+                <div class="sidebar-section">
+                    <h3>Agents</h3>
+                    <div class="agent-list" id="agent-list"></div>
+                </div>
+            </div>
+
+            <!-- Graph Container -->
+            <div class="graph-container">
+                <!-- Toggle Sidebar Button (Mobile) -->
+                <button class="sidebar-toggle" id="sidebar-toggle" style="display: none;">
+                    ☰
+                </button>
+
+                <!-- DAG Graph -->
+                <svg id="dag-graph"></svg>
+
+                <!-- Timeline View (Hidden by default) -->
+                <svg id="timeline-graph" style="display: none;"></svg>
+
+                <!-- Tooltip -->
+                <div class="tooltip" id="tooltip"></div>
+
+                <!-- Timeline Tooltip -->
+                <div class="tooltip" id="timeline-tooltip"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/websocket.js"></script>
+    <script src="/js/dag-graph.js"></script>
+    <script src="/js/timeline.js"></script>
+    <script src="/js/filters.js"></script>
+    <script src="/js/export.js"></script>
+    <script src="/js/notifications.js"></script>
+    <script src="/js/performance.js"></script>
+    <script src="/js/app.js"></script>
+
+    <!-- Main Application -->
+    <script>
+        // Global instances
+        let graph = null;
+        let timeline = null;
+        let filterManager = null;
+        let exportManager = null;
+        let notificationManager = null;
+        let performanceOptimizer = null;
+        let ws = null;
+
+        // Initialize on DOM ready
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeApp();
+        });
+
+        function initializeApp() {
+            // Initialize notification manager first
+            notificationManager = new NotificationManager();
+            window.notificationManager = notificationManager;
+
+            // Initialize DAG graph
+            graph = new DagGraph('dag-graph');
+
+            // Initialize timeline (hidden by default)
+            timeline = new TimelineView('timeline-graph');
+
+            // Initialize filter manager
+            filterManager = new FilterManager();
+
+            // Initialize export manager
+            exportManager = new ExportManager();
+
+            // Initialize performance optimizer
+            performanceOptimizer = new PerformanceOptimizer(graph);
+
+            // Setup WebSocket connection
+            connectWebSocket();
+
+            // Load initial data
+            loadInitialData();
+
+            // Setup event handlers
+            setupEventHandlers();
+
+            // Setup mobile sidebar toggle
+            setupMobileToggle();
+
+            // Auto-optimize performance
+            performanceOptimizer.autoOptimize();
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/updates`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                document.getElementById('connection-status').textContent = 'Connected';
+                document.getElementById('connection-status').classList.add('connected');
+                notificationManager.connected();
+            };
+
+            ws.onclose = () => {
+                document.getElementById('connection-status').textContent = 'Disconnected';
+                document.getElementById('connection-status').classList.remove('connected');
+                notificationManager.disconnected();
+
+                // Reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleWebSocketEvent(data);
+            };
+        }
+
+        function handleWebSocketEvent(event) {
+            switch(event.type) {
+                case 'initial_state':
+                    if (event.data) {
+                        graph.setData(event.data);
+                        timeline.setData(event.data.nodes || []);
+                        updateStats(event.data);
+                        updateAgentList();
+                    }
+                    break;
+
+                case 'node_added':
+                    if (event.node) {
+                        graph.addNode(event.node, event.edges || []);
+                        notificationManager.nodeAdded(event.node);
+                        updateStats();
+                        updateAgentList();
+                    }
+                    break;
+
+                case 'edge_added':
+                    if (event.edge) {
+                        notificationManager.edgeAdded(event.edge);
+                    }
+                    break;
+
+                case 'refresh':
+                    loadInitialData();
+                    break;
+            }
+        }
+
+        async function loadInitialData() {
+            try {
+                const response = await fetch('/api/dag/d3');
+                const data = await response.json();
+
+                graph.setData(data);
+                timeline.setData(data.nodes || []);
+                updateStats(data);
+                updateAgentList();
+
+                // Optimize if needed
+                performanceOptimizer.optimize();
+            } catch (error) {
+                console.error('Failed to load data:', error);
+                notificationManager.error('Failed to load DAG data');
+            }
+        }
+
+        function updateStats(data = null) {
+            const nodes = data ? data.nodes : graph.nodes;
+            const edges = data ? data.edges : graph.edges;
+
+            document.getElementById('stat-nodes').textContent = nodes.length;
+            document.getElementById('stat-edges').textContent = edges.length;
+
+            const agents = new Set(nodes.map(n => n.agent_id || n.author));
+            document.getElementById('stat-agents').textContent = agents.size;
+        }
+
+        function updateAgentList() {
+            const agents = graph.getAgents();
+            filterManager.updateAgentFilters(agents);
+
+            const container = document.getElementById('agent-list');
+            container.innerHTML = agents.map(agent => `
+                <div class="agent-item" data-agent="${agent.id}">
+                    <span class="agent-color" style="background: ${agent.color}"></span>
+                    <span class="agent-name" title="${agent.id}">${truncateId(agent.id)}</span>
+                    <span class="agent-count">${agent.count}</span>
+                </div>
+            `).join('');
+
+            // Add click handlers
+            container.querySelectorAll('.agent-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const agentId = item.dataset.agent;
+                    const isSelected = item.classList.contains('selected');
+
+                    container.querySelectorAll('.agent-item').forEach(i => i.classList.remove('selected'));
+
+                    if (!isSelected) {
+                        item.classList.add('selected');
+                        graph.filterByAgent(agentId);
+                    } else {
+                        graph.filterByAgent(null);
+                    }
+                });
+            });
+        }
+
+        function setupEventHandlers() {
+            // Controls
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                graph.resetView();
+            });
+
+            document.getElementById('btn-pause').addEventListener('click', () => {
+                const isPaused = graph.togglePause();
+                document.getElementById('btn-pause').textContent = isPaused ? 'Resume' : 'Pause';
+            });
+
+            document.getElementById('btn-refresh').addEventListener('click', () => {
+                loadInitialData();
+                notificationManager.info('Data refreshed');
+            });
+
+            // Timeline toggle
+            let timelineVisible = false;
+            document.getElementById('toggle-timeline').addEventListener('click', () => {
+                timelineVisible = !timelineVisible;
+                document.getElementById('dag-graph').style.display = timelineVisible ? 'none' : 'block';
+                document.getElementById('timeline-graph').style.display = timelineVisible ? 'block' : 'none';
+                document.getElementById('toggle-timeline').textContent = timelineVisible ? 'Show DAG' : 'Show Timeline';
+            });
+
+            // Filter changes
+            filterManager.onChange((state, manager) => {
+                const filtered = manager.apply(graph.nodes);
+                // Update visualizations with filtered data
+                console.log(`Filters applied: ${filtered.length} nodes visible`);
+            });
+
+            // Node selection
+            window.addEventListener('nodeSelected', (event) => {
+                showNodeDetails(event.detail);
+            });
+        }
+
+        function setupMobileToggle() {
+            const toggle = document.getElementById('sidebar-toggle');
+            const sidebar = document.getElementById('sidebar');
+
+            // Show toggle on mobile
+            if (window.innerWidth <= 768) {
+                toggle.style.display = 'block';
+            }
+
+            toggle.addEventListener('click', () => {
+                sidebar.classList.toggle('open');
+            });
+
+            // Handle resize
+            window.addEventListener('resize', () => {
+                if (window.innerWidth <= 768) {
+                    toggle.style.display = 'block';
+                } else {
+                    toggle.style.display = 'none';
+                    sidebar.classList.remove('open');
+                }
+            });
+        }
+
+        function showNodeDetails(node) {
+            const container = document.getElementById('node-details');
+            container.innerHTML = `
+                <div class="detail-row">
+                    <span class="detail-label">ID</span>
+                    <span class="detail-value" title="${node.id}">${truncateId(node.id)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Type</span>
+                    <span class="detail-value">${node.node_type || node.group}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Agent</span>
+                    <span class="detail-value" title="${node.agent_id || node.author}">${truncateId(node.agent_id || node.author || 'N/A')}</span>
+                </div>
+                ${node.timestamp ? `
+                <div class="detail-row">
+                    <span class="detail-label">Time</span>
+                    <span class="detail-value">${new Date(node.timestamp * 1000).toLocaleString()}</span>
+                </div>
+                ` : ''}
+                ${node.content ? `
+                <div class="content-preview">${JSON.stringify(node.content, null, 2)}</div>
+                ` : ''}
+            `;
+        }
+
+        function truncateId(id, maxLength = 20) {
+            if (!id) return 'N/A';
+            if (id.length <= maxLength) return id;
+            return id.substring(0, maxLength - 3) + '...';
+        }
+
+        // Global functions for inline event handlers
+        window.app = {
+            graph,
+            timeline,
+            filterManager,
+            exportManager,
+            notificationManager,
+            performanceOptimizer
+        };
+    </script>
+</body>
+</html>
