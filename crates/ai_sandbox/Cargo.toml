@@ -28,7 +28,7 @@ aingle_websocket = { path = "../aingle_websocket", version = "0.0.1" }
 aingle_p2p = { path = "../aingle_p2p", version = "0.0.1" }
 nanoid = "0.4"
 observability = { version = "0.1", package = "aingle-observability" }
-serde_yaml = "0.8"
+serde_yaml = "0.9"
 tokio = { version = "1", features = [ "full" ] }
 structopt = "0.3"
 tracing = "0.1"
