@@ -32,4 +32,4 @@ structopt = "0.3.21"
 sodoken = "0.0.4"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.20", features = [ "rustls-tls-webpki-roots" ] }
-tungstenite = "0.20"
+tungstenite = "0.28"

@@ -872,7 +872,7 @@ dependencies = [
  "tokio-tungstenite 0.21.0",
  "tracing",
  "tracing-futures",
- "tungstenite 0.21.0",
+ "tungstenite 0.28.0",
  "unwrap_to",
  "url2",
 ]
@@ -5609,7 +5609,7 @@ dependencies = [
  "structopt",
  "tokio",
  "tokio-tungstenite 0.20.1",
- "tungstenite 0.20.1",
+ "tungstenite 0.28.0",
 ]
 
 [[package]]
@@ -10620,7 +10620,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if 0.1.10",
  "static_assertions",
 ]
 
