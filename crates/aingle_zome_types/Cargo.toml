@@ -26,7 +26,7 @@ tracing = "0.1"
 # fixturator dependencies
 fixt = { version = "^0.0.1", path = "../fixt", optional = true }
 strum = { version = "0.26", optional = true }
-rand = {version = "0.8", optional = true}
+rand = {version = "0.9", optional = true}
 
 # sqlite dependencies
 rusqlite = { version = "0.25", optional = true }
