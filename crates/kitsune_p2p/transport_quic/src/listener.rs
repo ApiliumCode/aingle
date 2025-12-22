@@ -402,8 +402,9 @@ mod danger {
             .with_single_cert(vec![cert.clone()], cert_priv.clone_key().into())
             .map_err(TransportError::other)?;
 
-        let server_quic_config = quinn::crypto::rustls::QuicServerConfig::try_from(Arc::new(server_crypto))
-            .map_err(TransportError::other)?;
+        let server_quic_config =
+            quinn::crypto::rustls::QuicServerConfig::try_from(Arc::new(server_crypto))
+                .map_err(TransportError::other)?;
         let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(server_quic_config));
 
         // Configure transport
@@ -421,8 +422,9 @@ mod danger {
             .with_client_auth_cert(vec![cert], cert_priv.into())
             .map_err(TransportError::other)?;
 
-        let client_quic_config = quinn::crypto::rustls::QuicClientConfig::try_from(Arc::new(client_crypto))
-            .map_err(TransportError::other)?;
+        let client_quic_config =
+            quinn::crypto::rustls::QuicClientConfig::try_from(Arc::new(client_crypto))
+                .map_err(TransportError::other)?;
         let mut client_config = quinn::ClientConfig::new(Arc::new(client_quic_config));
         client_config.transport_config(transport);
 

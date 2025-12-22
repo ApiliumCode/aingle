@@ -154,8 +154,14 @@ impl BloomFilter {
         // Fast hash combining using first 8 bytes as u64
         let base = if hash_bytes.len() >= 8 {
             u64::from_le_bytes([
-                hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
-                hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+                hash_bytes[0],
+                hash_bytes[1],
+                hash_bytes[2],
+                hash_bytes[3],
+                hash_bytes[4],
+                hash_bytes[5],
+                hash_bytes[6],
+                hash_bytes[7],
             ])
         } else {
             // Fallback for short hashes

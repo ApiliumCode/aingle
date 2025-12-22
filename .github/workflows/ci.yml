@@ -10,8 +10,6 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   MSRV: "1.83"
-  # Fix __rust_probestack undefined symbol with Wasmer 6.0 on Linux
-  RUSTFLAGS: "-C probe-stack=none"
 
 jobs:
   # MSRV (Minimum Supported Rust Version) check

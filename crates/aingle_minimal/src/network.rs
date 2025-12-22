@@ -512,7 +512,9 @@ mod tests {
 
     #[test]
     fn test_message_ping_serialize() {
-        let msg = Message::Ping { node_id: "node123".to_string() };
+        let msg = Message::Ping {
+            node_id: "node123".to_string(),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("Ping"));
         assert!(json.contains("node123"));
@@ -527,13 +529,20 @@ mod tests {
 
     #[test]
     fn test_message_pong_serialize() {
-        let msg = Message::Pong { node_id: "node456".to_string(), latest_seq: 42 };
+        let msg = Message::Pong {
+            node_id: "node456".to_string(),
+            latest_seq: 42,
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("Pong"));
         assert!(json.contains("42"));
 
         let parsed: Message = serde_json::from_str(&json).unwrap();
-        if let Message::Pong { node_id, latest_seq } = parsed {
+        if let Message::Pong {
+            node_id,
+            latest_seq,
+        } = parsed
+        {
             assert_eq!(node_id, "node456");
             assert_eq!(latest_seq, 42);
         } else {
@@ -543,7 +552,10 @@ mod tests {
 
     #[test]
     fn test_message_gossip_request_serialize() {
-        let msg = Message::GossipRequest { from_seq: 10, limit: 50 };
+        let msg = Message::GossipRequest {
+            from_seq: 10,
+            limit: 50,
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("GossipRequest"));
 
@@ -602,7 +614,9 @@ mod tests {
 
     #[test]
     fn test_message_clone() {
-        let msg1 = Message::Ping { node_id: "test".to_string() };
+        let msg1 = Message::Ping {
+            node_id: "test".to_string(),
+        };
         let msg2 = msg1.clone();
 
         if let (Message::Ping { node_id: n1 }, Message::Ping { node_id: n2 }) = (&msg1, &msg2) {
@@ -614,7 +628,9 @@ mod tests {
 
     #[test]
     fn test_message_debug() {
-        let msg = Message::Ping { node_id: "debug-test".to_string() };
+        let msg = Message::Ping {
+            node_id: "debug-test".to_string(),
+        };
         let debug_str = format!("{:?}", msg);
         assert!(debug_str.contains("Ping"));
         assert!(debug_str.contains("debug-test"));
@@ -865,7 +881,9 @@ mod tests {
 
     #[test]
     fn test_message_record_data_serialize() {
-        use crate::types::{Action, ActionType, Entry, EntryType, AgentPubKey, Signature, Timestamp};
+        use crate::types::{
+            Action, ActionType, AgentPubKey, Entry, EntryType, Signature, Timestamp,
+        };
 
         let record = Record {
             action: Action {
@@ -1007,7 +1025,9 @@ mod tests {
 
         smol::block_on(async {
             let addr: SocketAddr = "127.0.0.1:5683".parse().unwrap();
-            let msg = Message::Ping { node_id: "test".to_string() };
+            let msg = Message::Ping {
+                node_id: "test".to_string(),
+            };
             let result = network.send(&addr, &msg).await;
             assert!(result.is_ok());
         });
@@ -1021,7 +1041,9 @@ mod tests {
 
         smol::block_on(async {
             let addr: SocketAddr = "127.0.0.1:5683".parse().unwrap();
-            let msg = Message::Ping { node_id: "test".to_string() };
+            let msg = Message::Ping {
+                node_id: "test".to_string(),
+            };
             let result = network.send_confirmable(&addr, &msg).await;
             assert!(result.is_ok());
         });
@@ -1040,7 +1062,9 @@ mod tests {
         network.add_peer(addr2);
 
         smol::block_on(async {
-            let msg = Message::Ping { node_id: "broadcast".to_string() };
+            let msg = Message::Ping {
+                node_id: "broadcast".to_string(),
+            };
             let result = network.broadcast(&msg).await;
             assert!(result.is_ok());
         });

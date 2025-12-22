@@ -61,14 +61,32 @@ mod tests {
     #[test]
     fn test_error_display() {
         let errors = vec![
-            (Error::Config("invalid setting".into()), "Configuration error: invalid setting"),
+            (
+                Error::Config("invalid setting".into()),
+                "Configuration error: invalid setting",
+            ),
             (Error::Goal("unreachable".into()), "Goal error: unreachable"),
-            (Error::Policy("rule conflict".into()), "Policy error: rule conflict"),
-            (Error::Action("failed to execute".into()), "Action error: failed to execute"),
-            (Error::Observation("invalid sensor".into()), "Observation error: invalid sensor"),
-            (Error::Memory("capacity exceeded".into()), "Memory error: capacity exceeded"),
+            (
+                Error::Policy("rule conflict".into()),
+                "Policy error: rule conflict",
+            ),
+            (
+                Error::Action("failed to execute".into()),
+                "Action error: failed to execute",
+            ),
+            (
+                Error::Observation("invalid sensor".into()),
+                "Observation error: invalid sensor",
+            ),
+            (
+                Error::Memory("capacity exceeded".into()),
+                "Memory error: capacity exceeded",
+            ),
             (Error::Timeout("30s elapsed".into()), "Timeout: 30s elapsed"),
-            (Error::Internal("unexpected state".into()), "Internal error: unexpected state"),
+            (
+                Error::Internal("unexpected state".into()),
+                "Internal error: unexpected state",
+            ),
         ];
 
         for (error, expected) in errors {
@@ -86,7 +104,8 @@ mod tests {
 
     #[test]
     fn test_from_serde_json_error() {
-        let json_result: std::result::Result<serde_json::Value, _> = serde_json::from_str("{invalid}");
+        let json_result: std::result::Result<serde_json::Value, _> =
+            serde_json::from_str("{invalid}");
         let error: Error = json_result.unwrap_err().into();
         assert!(matches!(error, Error::Internal(_)));
     }

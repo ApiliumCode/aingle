@@ -813,12 +813,8 @@ mod tests {
 
     #[test]
     fn test_secure_coap_no_dtls() {
-        let server = SecureCoap::new(
-            "0.0.0.0".to_string(),
-            5684,
-            "node-123".to_string(),
-            None,
-        ).unwrap();
+        let server =
+            SecureCoap::new("0.0.0.0".to_string(), 5684, "node-123".to_string(), None).unwrap();
 
         assert!(!server.is_secure());
         assert_eq!(server.security_mode(), SecurityMode::NoSec);
@@ -827,12 +823,8 @@ mod tests {
 
     #[test]
     fn test_secure_coap_verify_session_no_dtls() {
-        let server = SecureCoap::new(
-            "0.0.0.0".to_string(),
-            5684,
-            "node-123".to_string(),
-            None,
-        ).unwrap();
+        let server =
+            SecureCoap::new("0.0.0.0".to_string(), 5684, "node-123".to_string(), None).unwrap();
 
         let addr: SocketAddr = "127.0.0.1:5683".parse().unwrap();
         // Without DTLS, should always return true
@@ -841,12 +833,8 @@ mod tests {
 
     #[test]
     fn test_secure_coap_get_or_create_session_no_dtls() {
-        let server = SecureCoap::new(
-            "0.0.0.0".to_string(),
-            5684,
-            "node-123".to_string(),
-            None,
-        ).unwrap();
+        let server =
+            SecureCoap::new("0.0.0.0".to_string(), 5684, "node-123".to_string(), None).unwrap();
 
         let addr: SocketAddr = "127.0.0.1:5683".parse().unwrap();
         let result = server.get_or_create_session(addr).unwrap();
@@ -861,7 +849,8 @@ mod tests {
             5684,
             "node-123".to_string(),
             Some(config),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(server.is_secure());
         assert_eq!(server.security_mode(), SecurityMode::PreSharedKey);
@@ -880,7 +869,8 @@ mod tests {
             5684,
             "node-123".to_string(),
             Some(config),
-        ).unwrap();
+        )
+        .unwrap();
 
         let addr: SocketAddr = "127.0.0.1:5683".parse().unwrap();
 
@@ -903,7 +893,8 @@ mod tests {
             5684,
             "node-123".to_string(),
             Some(config),
-        ).unwrap();
+        )
+        .unwrap();
 
         let addr: SocketAddr = "127.0.0.1:5683".parse().unwrap();
         let _ = server.get_or_create_session(addr).unwrap();
@@ -916,12 +907,8 @@ mod tests {
 
     #[test]
     fn test_secure_coap_coap_server() {
-        let server = SecureCoap::new(
-            "0.0.0.0".to_string(),
-            5684,
-            "node-123".to_string(),
-            None,
-        ).unwrap();
+        let server =
+            SecureCoap::new("0.0.0.0".to_string(), 5684, "node-123".to_string(), None).unwrap();
 
         let coap = server.coap_server();
         assert!(!coap.is_running());
@@ -929,12 +916,8 @@ mod tests {
 
     #[test]
     fn test_secure_coap_coap_server_mut() {
-        let mut server = SecureCoap::new(
-            "0.0.0.0".to_string(),
-            5684,
-            "node-123".to_string(),
-            None,
-        ).unwrap();
+        let mut server =
+            SecureCoap::new("0.0.0.0".to_string(), 5684, "node-123".to_string(), None).unwrap();
 
         let _coap_mut = server.coap_server_mut();
         // Just verify we can get mutable reference

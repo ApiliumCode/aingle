@@ -568,7 +568,8 @@ impl CoapServer {
         "</gossip>;rt=\"aingle.gossip\";ct=50,\
              </record>;rt=\"aingle.record\";ct=50,\
              </announce>;rt=\"aingle.announce\";ct=50,\
-             </ping>;rt=\"aingle.ping\"".to_string()
+             </ping>;rt=\"aingle.ping\""
+            .to_string()
     }
 }
 
@@ -707,9 +708,7 @@ mod tests {
 
         // GossipResponse
         assert_eq!(
-            CoapServer::message_to_path(&Message::GossipResponse {
-                records: vec![]
-            }),
+            CoapServer::message_to_path(&Message::GossipResponse { records: vec![] }),
             "/gossip"
         );
 
@@ -914,7 +913,10 @@ mod tests {
         let mut packet = Packet::new();
         packet.add_option(CoapOption::UriPath, b"gossip".to_vec());
 
-        let msg = Message::GossipRequest { from_seq: 0, limit: 10 };
+        let msg = Message::GossipRequest {
+            from_seq: 0,
+            limit: 10,
+        };
         packet.payload = serde_json::to_vec(&msg).unwrap();
 
         let addr: SocketAddr = "127.0.0.1:5683".parse().unwrap();
@@ -1073,8 +1075,8 @@ mod tests {
 
     #[test]
     fn test_message_to_path_record_data() {
-        use crate::types::{ActionType, AgentPubKey, EntryType, Record, Signature, Timestamp};
         use crate::types::{Action, Entry};
+        use crate::types::{ActionType, AgentPubKey, EntryType, Record, Signature, Timestamp};
 
         let action = Action {
             action_type: ActionType::Create,
@@ -1240,7 +1242,9 @@ mod tests {
         smol::block_on(async {
             let mut server = CoapServer::new("0.0.0.0".to_string(), 5683, "test".to_string());
             let addr: SocketAddr = "127.0.0.1:5684".parse().unwrap();
-            let msg = Message::Ping { node_id: "test".to_string() };
+            let msg = Message::Ping {
+                node_id: "test".to_string(),
+            };
 
             let result = server.send(&addr, &msg, false).await;
             assert!(result.is_err());
@@ -1254,7 +1258,9 @@ mod tests {
             let addr: SocketAddr = "127.0.0.1:5684".parse().unwrap();
             let request = Packet::new();
 
-            let result = server.send_response(&addr, &request, ResponseType::Content, None).await;
+            let result = server
+                .send_response(&addr, &request, ResponseType::Content, None)
+                .await;
             assert!(result.is_err());
         });
     }
@@ -1294,7 +1300,7 @@ mod tests {
                     packet,
                     addr,
                     sent_at: Instant::now() - Duration::from_secs(10), // Old
-                    retransmits: MAX_RETRANSMIT, // Max retries already
+                    retransmits: MAX_RETRANSMIT,                       // Max retries already
                 },
             );
 

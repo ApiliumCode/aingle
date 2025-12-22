@@ -16,8 +16,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Fix __rust_probestack undefined symbol with Wasmer 6.0 on Linux
-  RUSTFLAGS: "-C probe-stack=none"
 
 jobs:
   build-docs:

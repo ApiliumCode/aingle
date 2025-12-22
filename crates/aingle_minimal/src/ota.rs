@@ -738,7 +738,11 @@ mod tests {
 
     #[test]
     fn test_update_channel_all_variants() {
-        let channels = [UpdateChannel::Stable, UpdateChannel::Beta, UpdateChannel::Alpha];
+        let channels = [
+            UpdateChannel::Stable,
+            UpdateChannel::Beta,
+            UpdateChannel::Alpha,
+        ];
         for channel in channels {
             let cloned = channel;
             assert_eq!(channel, cloned);
@@ -749,7 +753,11 @@ mod tests {
 
     #[test]
     fn test_update_channel_serialize() {
-        for channel in [UpdateChannel::Stable, UpdateChannel::Beta, UpdateChannel::Alpha] {
+        for channel in [
+            UpdateChannel::Stable,
+            UpdateChannel::Beta,
+            UpdateChannel::Alpha,
+        ] {
             let json = serde_json::to_string(&channel).unwrap();
             let parsed: UpdateChannel = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed, channel);
@@ -778,7 +786,11 @@ mod tests {
 
     #[test]
     fn test_update_state_serialize() {
-        for state in [UpdateState::Idle, UpdateState::Downloading, UpdateState::Failed] {
+        for state in [
+            UpdateState::Idle,
+            UpdateState::Downloading,
+            UpdateState::Failed,
+        ] {
             let json = serde_json::to_string(&state).unwrap();
             let parsed: UpdateState = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed, state);

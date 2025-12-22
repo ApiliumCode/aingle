@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_memory_backend_basic_operations() {
-        use crate::{Triple, Value, NodeId, Predicate};
+        use crate::{NodeId, Predicate, Triple, Value};
 
         let backend = MemoryBackend::new();
 
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn test_memory_backend_iter_all() {
-        use crate::{Triple, Value, NodeId, Predicate};
+        use crate::{NodeId, Predicate, Triple, Value};
 
         let backend = MemoryBackend::new();
 

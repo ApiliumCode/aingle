@@ -390,7 +390,10 @@ impl WalletManager {
             self.last_connected = Some(Instant::now());
             self.stats.connections += 1;
 
-            log::info!("Connected to hardware wallet (simulated): {:?}", info.wallet_type);
+            log::info!(
+                "Connected to hardware wallet (simulated): {:?}",
+                info.wallet_type
+            );
             Ok(info)
         }
     }

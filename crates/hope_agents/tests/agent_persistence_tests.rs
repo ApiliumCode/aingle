@@ -3,10 +3,10 @@
 //! Tests agent state serialization, learning state persistence,
 //! goal manager persistence, and checkpoint management.
 
+use hope_agents::policy::Condition;
 use hope_agents::{
     Action, Agent, AgentConfig, Goal, GoalStatus, Observation, Policy, Rule, SimpleAgent,
 };
-use hope_agents::policy::Condition;
 
 // ============================================================================
 // Agent State Serialization Tests
@@ -222,8 +222,7 @@ fn test_complete_agent_state_persistence() {
     let stats_json = serde_json::to_string(stats).unwrap();
 
     // Verify we can restore stats
-    let restored_stats: hope_agents::agent::AgentStats =
-        serde_json::from_str(&stats_json).unwrap();
+    let restored_stats: hope_agents::agent::AgentStats = serde_json::from_str(&stats_json).unwrap();
 
     assert_eq!(restored_stats.observations_received, 10);
 }

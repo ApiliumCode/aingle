@@ -17,8 +17,11 @@ mod webrtc_tests {
 
     #[test]
     fn test_webrtc_config_builder() {
-        let config = WebRtcConfig::with_stun("stun:custom.stun.server:3478")
-            .with_turn("turn:relay.example.com:3478", "user", "password");
+        let config = WebRtcConfig::with_stun("stun:custom.stun.server:3478").with_turn(
+            "turn:relay.example.com:3478",
+            "user",
+            "password",
+        );
 
         assert_eq!(config.stun_server, "stun:custom.stun.server:3478");
         assert!(config.turn_server.is_some());

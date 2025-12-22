@@ -57,8 +57,8 @@ pub fn gen_tls_configs(
     tls_server_config.session_storage = rustls::server::ServerSessionMemoryCache::new(
         tuning_params.tls_in_mem_session_storage as usize,
     );
-    tls_server_config.ticketer = rustls::crypto::aws_lc_rs::Ticketer::new()
-        .map_err(KitsuneError::other)?;
+    tls_server_config.ticketer =
+        rustls::crypto::aws_lc_rs::Ticketer::new().map_err(KitsuneError::other)?;
     tls_server_config.alpn_protocols = vec![alpn.to_vec()];
     let tls_server_config = Arc::new(tls_server_config);
 

@@ -566,8 +566,8 @@ mod tests {
     // Rule tests
     #[test]
     fn test_rule_with_priority() {
-        let rule = Rule::new("test", Condition::Always, Action::noop())
-            .with_priority(Priority::High);
+        let rule =
+            Rule::new("test", Condition::Always, Action::noop()).with_priority(Priority::High);
         assert_eq!(rule.priority, Priority::High);
     }
 
@@ -702,8 +702,7 @@ mod tests {
     fn test_policy_decide_priority() {
         let mut policy = Policy::new("test");
         policy.add_rule(
-            Rule::new("low", Condition::Always, Action::alert("low"))
-                .with_priority(Priority::Low),
+            Rule::new("low", Condition::Always, Action::alert("low")).with_priority(Priority::Low),
         );
         policy.add_rule(
             Rule::new("high", Condition::Always, Action::alert("high"))

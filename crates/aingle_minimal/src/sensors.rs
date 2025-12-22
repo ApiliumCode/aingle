@@ -580,7 +580,10 @@ mod tests {
             .with_metadata("sensor_id".to_string(), "temp_001".to_string());
 
         assert_eq!(reading.metadata.len(), 2);
-        assert_eq!(reading.metadata.get("location"), Some(&"room_1".to_string()));
+        assert_eq!(
+            reading.metadata.get("location"),
+            Some(&"room_1".to_string())
+        );
         assert_eq!(
             reading.metadata.get("sensor_id"),
             Some(&"temp_001".to_string())

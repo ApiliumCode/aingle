@@ -399,7 +399,11 @@ impl WebRtcServer {
                 .await
                 .map_err(|e| Error::Network(format!("Failed to create data channel: {}", e)))?;
 
-            log::debug!("Created data channel '{}' for peer {}", self.config.channel_label, peer_id);
+            log::debug!(
+                "Created data channel '{}' for peer {}",
+                self.config.channel_label,
+                peer_id
+            );
 
             // Store the peer connection and data channel
             let pc = Arc::new(pc);
@@ -454,14 +458,11 @@ impl WebRtcServer {
             .ok_or_else(|| Error::Network(format!("Peer not found: {}", peer_id)))?;
 
         if peer.state != ConnectionState::Connected {
-            return Err(Error::Network(format!(
-                "Peer not connected: {}",
-                peer_id
-            )));
+            return Err(Error::Network(format!("Peer not connected: {}", peer_id)));
         }
 
-        let payload = serde_json::to_vec(message)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
+        let payload =
+            serde_json::to_vec(message).map_err(|e| Error::Serialization(e.to_string()))?;
 
         #[cfg(feature = "webrtc")]
         {
@@ -915,7 +916,11 @@ impl SignalingServer {
                     log::warn!("Failed to route message from {} to {}: {}", from, target, e);
                 }
             } else {
-                log::warn!("Target peer '{}' not found for message from '{}'", target, from);
+                log::warn!(
+                    "Target peer '{}' not found for message from '{}'",
+                    target,
+                    from
+                );
             }
         }
     }
@@ -1023,8 +1028,8 @@ impl SignalingClient {
         let join_msg = SignalingMessage::Join {
             peer_id: self.peer_id.clone(),
         };
-        let json = serde_json::to_string(&join_msg)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
+        let json =
+            serde_json::to_string(&join_msg).map_err(|e| Error::Serialization(e.to_string()))?;
         ws_sink
             .send(WsMessage::Text(json))
             .await
@@ -1134,8 +1139,7 @@ mod tests {
 
     #[test]
     fn test_webrtc_config_with_turn() {
-        let config = WebRtcConfig::default()
-            .with_turn("turn:relay.server:3478", "user", "pass");
+        let config = WebRtcConfig::default().with_turn("turn:relay.server:3478", "user", "pass");
         assert!(config.turn_server.is_some());
         assert_eq!(config.turn_username, Some("user".to_string()));
     }

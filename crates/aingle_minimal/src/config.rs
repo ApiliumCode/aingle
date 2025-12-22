@@ -999,11 +999,7 @@ mod tests {
 
     #[test]
     fn test_mesh_mode_variants() {
-        let modes = vec![
-            MeshMode::WiFiDirect,
-            MeshMode::BluetoothLE,
-            MeshMode::LoRa,
-        ];
+        let modes = vec![MeshMode::WiFiDirect, MeshMode::BluetoothLE, MeshMode::LoRa];
 
         for mode in modes {
             let debug_str = format!("{:?}", mode);

@@ -118,16 +118,43 @@ mod tests {
     fn test_error_display() {
         let errors = vec![
             (Error::Crypto("key error".into()), "Crypto error: key error"),
-            (Error::Network("connection failed".into()), "Network error: connection failed"),
-            (Error::Storage("disk full".into()), "Storage error: disk full"),
-            (Error::Serialization("invalid json".into()), "Serialization error: invalid json"),
+            (
+                Error::Network("connection failed".into()),
+                "Network error: connection failed",
+            ),
+            (
+                Error::Storage("disk full".into()),
+                "Storage error: disk full",
+            ),
+            (
+                Error::Serialization("invalid json".into()),
+                "Serialization error: invalid json",
+            ),
             (Error::NotInitialized, "Node not initialized"),
-            (Error::MemoryExceeded { used: 100, limit: 50 }, "Memory limit exceeded: 100 > 50"),
-            (Error::InvalidEntry("bad data".into()), "Invalid entry: bad data"),
-            (Error::EntryNotFound("hash123".into()), "Entry not found: hash123"),
-            (Error::ValidationFailed("signature".into()), "Validation failed: signature"),
+            (
+                Error::MemoryExceeded {
+                    used: 100,
+                    limit: 50,
+                },
+                "Memory limit exceeded: 100 > 50",
+            ),
+            (
+                Error::InvalidEntry("bad data".into()),
+                "Invalid entry: bad data",
+            ),
+            (
+                Error::EntryNotFound("hash123".into()),
+                "Entry not found: hash123",
+            ),
+            (
+                Error::ValidationFailed("signature".into()),
+                "Validation failed: signature",
+            ),
             (Error::Timeout("5s".into()), "Timeout: 5s"),
-            (Error::Internal("unexpected".into()), "Internal error: unexpected"),
+            (
+                Error::Internal("unexpected".into()),
+                "Internal error: unexpected",
+            ),
         ];
 
         for (error, expected) in errors {
@@ -144,7 +171,11 @@ mod tests {
         assert!(!Error::Crypto("key".into()).is_recoverable());
         assert!(!Error::Storage("disk".into()).is_recoverable());
         assert!(!Error::NotInitialized.is_recoverable());
-        assert!(!Error::MemoryExceeded { used: 100, limit: 50 }.is_recoverable());
+        assert!(!Error::MemoryExceeded {
+            used: 100,
+            limit: 50
+        }
+        .is_recoverable());
         assert!(!Error::InvalidEntry("bad".into()).is_recoverable());
         assert!(!Error::ValidationFailed("sig".into()).is_recoverable());
         assert!(!Error::Internal("bug".into()).is_recoverable());
@@ -153,7 +184,11 @@ mod tests {
     #[test]
     fn test_error_requires_restart() {
         assert!(Error::NotInitialized.requires_restart());
-        assert!(Error::MemoryExceeded { used: 100, limit: 50 }.requires_restart());
+        assert!(Error::MemoryExceeded {
+            used: 100,
+            limit: 50
+        }
+        .requires_restart());
 
         assert!(!Error::Crypto("key".into()).requires_restart());
         assert!(!Error::Network("conn".into()).requires_restart());
@@ -172,7 +207,8 @@ mod tests {
 
     #[test]
     fn test_from_serde_json_error() {
-        let json_result: std::result::Result<serde_json::Value, _> = serde_json::from_str("invalid");
+        let json_result: std::result::Result<serde_json::Value, _> =
+            serde_json::from_str("invalid");
         let error: Error = json_result.unwrap_err().into();
         assert!(matches!(error, Error::Serialization(_)));
     }

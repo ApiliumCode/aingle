@@ -189,6 +189,8 @@
 #[cfg(feature = "no_std")]
 extern crate alloc;
 
+#[cfg(feature = "ble")]
+pub mod bluetooth;
 #[cfg(feature = "coap")]
 pub mod coap;
 pub mod config;
@@ -210,12 +212,10 @@ pub mod sensors;
 pub mod smart;
 pub mod sync;
 pub mod types;
-#[cfg(feature = "webrtc")]
-pub mod webrtc;
-#[cfg(feature = "ble")]
-pub mod bluetooth;
 #[cfg(feature = "hw_wallet")]
 pub mod wallet;
+#[cfg(feature = "webrtc")]
+pub mod webrtc;
 
 // Storage - trait is always available
 pub mod storage_trait;
@@ -237,6 +237,8 @@ pub use storage_factory::DynamicStorage;
 pub use storage_trait::{StorageBackend, StorageStats};
 
 // Re-exports
+#[cfg(feature = "ble")]
+pub use bluetooth::{BleConfig, BleManager, BlePeer, BleState, BleStats};
 #[cfg(feature = "coap")]
 pub use coap::{CoapConfig, CoapServer};
 pub use config::Config;
@@ -257,19 +259,17 @@ pub use sensors::{CalibrationParams, Sensor, SensorManager, SensorReading, Senso
 #[cfg(feature = "smart_agents")]
 pub use smart::{IoTPolicyBuilder, SensorAdapter, SmartNode, SmartNodeConfig, SmartNodeStats};
 pub use sync::{PeerSyncState, SyncManager, SyncResult, SyncStats};
+pub use types::*;
+#[cfg(feature = "hw_wallet")]
+pub use wallet::{
+    ApduCommand, ApduResponse, DerivationPath, HwPublicKey, HwSignature, WalletConfig, WalletInfo,
+    WalletManager, WalletState, WalletStats, WalletType,
+};
 #[cfg(feature = "webrtc")]
 pub use webrtc::{
     ConnectionState, PeerConnection, SignalingClient, SignalingConfig, SignalingMessage,
     SignalingServer, WebRtcConfig, WebRtcServer, WebRtcStats,
 };
-#[cfg(feature = "ble")]
-pub use bluetooth::{BleConfig, BleManager, BlePeer, BleState, BleStats};
-#[cfg(feature = "hw_wallet")]
-pub use wallet::{
-    ApduCommand, ApduResponse, DerivationPath, HwPublicKey, HwSignature, WalletConfig,
-    WalletInfo, WalletManager, WalletState, WalletStats, WalletType,
-};
-pub use types::*;
 
 /// Version information for the crate.
 ///

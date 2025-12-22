@@ -9,7 +9,9 @@
 
 use aingle_minimal::*;
 use hope_agents::policy::Condition;
-use hope_agents::{Action, ActionType, AgentConfig, Goal, Observation, ObservationType, Policy, Rule};
+use hope_agents::{
+    Action, ActionType, AgentConfig, Goal, Observation, ObservationType, Policy, Rule,
+};
 
 /// Helper to create test configuration
 fn test_smart_config() -> SmartNodeConfig {
@@ -247,12 +249,14 @@ fn test_agent_with_multiple_rules() {
     ));
 
     // Test high temp
-    node.observe(Observation::sensor("temperature", 35.0)).unwrap();
+    node.observe(Observation::sensor("temperature", 35.0))
+        .unwrap();
     let result1 = node.step().unwrap();
     assert!(result1.is_some());
 
     // Test low temp
-    node.observe(Observation::sensor("temperature", 5.0)).unwrap();
+    node.observe(Observation::sensor("temperature", 5.0))
+        .unwrap();
     let result2 = node.step().unwrap();
     assert!(result2.is_some());
 }
@@ -430,7 +434,8 @@ fn test_add_policy_to_smart_node() {
     node.add_policy(policy);
 
     // Test the policy works
-    node.observe(Observation::sensor("temperature", 35.0)).unwrap();
+    node.observe(Observation::sensor("temperature", 35.0))
+        .unwrap();
     let result = node.step().unwrap();
     assert!(result.is_some());
 }
@@ -466,7 +471,8 @@ fn test_iot_policy_builder_range() {
     }
 
     // Test below minimum
-    node.observe(Observation::sensor("temperature", 15.0)).unwrap();
+    node.observe(Observation::sensor("temperature", 15.0))
+        .unwrap();
     let result = node.step().unwrap();
     assert!(result.is_some());
 }
@@ -503,7 +509,10 @@ fn test_smart_node_pause_resume() {
 
     assert!(node.is_running());
     // Agent starts in Idle state
-    assert!(matches!(node.agent_state(), AgentState::Idle | AgentState::Initializing));
+    assert!(matches!(
+        node.agent_state(),
+        AgentState::Idle | AgentState::Initializing
+    ));
 
     node.pause();
     // Paused is still considered "running" (not Stopped or Error)

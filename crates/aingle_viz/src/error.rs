@@ -54,12 +54,24 @@ mod tests {
     #[test]
     fn test_error_display() {
         let errors = vec![
-            (Error::Server("bind failed".into()), "Server error: bind failed"),
-            (Error::WebSocket("connection closed".into()), "WebSocket error: connection closed"),
-            (Error::Graph("invalid triple".into()), "Graph error: invalid triple"),
+            (
+                Error::Server("bind failed".into()),
+                "Server error: bind failed",
+            ),
+            (
+                Error::WebSocket("connection closed".into()),
+                "WebSocket error: connection closed",
+            ),
+            (
+                Error::Graph("invalid triple".into()),
+                "Graph error: invalid triple",
+            ),
             (Error::Node("not running".into()), "Node error: not running"),
             (Error::NotFound("resource".into()), "Not found: resource"),
-            (Error::Config("invalid port".into()), "Configuration error: invalid port"),
+            (
+                Error::Config("invalid port".into()),
+                "Configuration error: invalid port",
+            ),
         ];
 
         for (error, expected) in errors {
@@ -77,7 +89,8 @@ mod tests {
 
     #[test]
     fn test_from_serde_json_error() {
-        let json_result: std::result::Result<serde_json::Value, _> = serde_json::from_str("not json");
+        let json_result: std::result::Result<serde_json::Value, _> =
+            serde_json::from_str("not json");
         let error: Error = json_result.unwrap_err().into();
         assert!(matches!(error, Error::Serialization(_)));
     }

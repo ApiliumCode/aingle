@@ -663,11 +663,7 @@ mod tests {
         let action = test_action();
         graph.index_action(&action).unwrap();
 
-        let results = graph
-            .query()
-            .subject_of_type("Action")
-            .execute()
-            .unwrap();
+        let results = graph.query().subject_of_type("Action").execute().unwrap();
 
         assert!(!results.is_empty());
     }
@@ -937,11 +933,7 @@ mod tests {
         let stats = graph.stats().unwrap();
         assert_eq!(stats.triple_count, 50); // 5 triples per action * 10
 
-        let results = graph
-            .query()
-            .with_predicate("rdf:type")
-            .execute()
-            .unwrap();
+        let results = graph.query().with_predicate("rdf:type").execute().unwrap();
 
         assert_eq!(results.len(), 10);
     }

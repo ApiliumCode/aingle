@@ -391,11 +391,11 @@ impl QuicBackendAdapt {
         // Wrap rustls configs in quinn QUIC configs
         let tls_srv = Arc::new(
             quinn::crypto::rustls::QuicServerConfig::try_from(tls_srv)
-                .map_err(KitsuneError::other)?
+                .map_err(KitsuneError::other)?,
         );
         let tls_cli = Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(tls_cli)
-                .map_err(KitsuneError::other)?
+                .map_err(KitsuneError::other)?,
         );
 
         let mut transport = quinn::TransportConfig::default();

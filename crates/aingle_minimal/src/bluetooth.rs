@@ -607,9 +607,10 @@ impl BleManager {
 
             // Parse the address - ESP32 uses BLEAddress type
             // Note: address format is "XX:XX:XX:XX:XX:XX"
-            client.connect(address).await.map_err(|e| {
-                Error::Network(format!("ESP32 BLE connect failed: {:?}", e))
-            })?;
+            client
+                .connect(address)
+                .await
+                .map_err(|e| Error::Network(format!("ESP32 BLE connect failed: {:?}", e)))?;
 
             log::info!("ESP32 BLE connected to: {}", address);
 
@@ -626,12 +627,15 @@ impl BleManager {
 
                 // Subscribe to RX notifications
                 if let Some(rx_char) = service.get_characteristic(rx_uuid).await {
-                    rx_char.subscribe_notify(false, |_| {
-                        // Notification callback - message received
-                        log::debug!("ESP32 BLE notification received");
-                    }).await.map_err(|e| {
-                        Error::Network(format!("Failed to subscribe to RX: {:?}", e))
-                    })?;
+                    rx_char
+                        .subscribe_notify(false, |_| {
+                            // Notification callback - message received
+                            log::debug!("ESP32 BLE notification received");
+                        })
+                        .await
+                        .map_err(|e| {
+                            Error::Network(format!("Failed to subscribe to RX: {:?}", e))
+                        })?;
                 }
             }
 
@@ -667,9 +671,10 @@ impl BleManager {
         {
             // Disconnect the btleplug peripheral
             if let Some(peripheral) = self.peripherals.remove(address) {
-                peripheral.disconnect().await.map_err(|e| {
-                    Error::Network(format!("Failed to disconnect: {}", e))
-                })?;
+                peripheral
+                    .disconnect()
+                    .await
+                    .map_err(|e| Error::Network(format!("Failed to disconnect: {}", e)))?;
             }
 
             // Clean up cached characteristics
@@ -681,9 +686,9 @@ impl BleManager {
         {
             // Disconnect and remove the ESP32 BLE client
             if let Some(client) = self.esp_clients.remove(address) {
-                client.disconnect().map_err(|e| {
-                    Error::Network(format!("ESP32 BLE disconnect failed: {:?}", e))
-                })?;
+                client
+                    .disconnect()
+                    .map_err(|e| Error::Network(format!("ESP32 BLE disconnect failed: {:?}", e)))?;
             }
         }
 
@@ -719,10 +724,9 @@ impl BleManager {
                 .get(address)
                 .ok_or_else(|| Error::Network(format!("Peripheral not found: {}", address)))?;
 
-            let tx_char = self
-                .tx_chars
-                .get(address)
-                .ok_or_else(|| Error::Network(format!("TX characteristic not found: {}", address)))?;
+            let tx_char = self.tx_chars.get(address).ok_or_else(|| {
+                Error::Network(format!("TX characteristic not found: {}", address))
+            })?;
 
             // Write to TX characteristic (without response for speed)
             peripheral
@@ -745,9 +749,10 @@ impl BleManager {
 
             if let Some(service) = client.get_service(service_uuid).await {
                 if let Some(tx_char) = service.get_characteristic(tx_uuid).await {
-                    tx_char.write_value(&payload, false).await.map_err(|e| {
-                        Error::Network(format!("ESP32 BLE write failed: {:?}", e))
-                    })?;
+                    tx_char
+                        .write_value(&payload, false)
+                        .await
+                        .map_err(|e| Error::Network(format!("ESP32 BLE write failed: {:?}", e)))?;
                 } else {
                     return Err(Error::Network("TX characteristic not found".to_string()));
                 }
@@ -759,11 +764,7 @@ impl BleManager {
         self.stats.messages_sent += 1;
         self.stats.bytes_sent += payload.len() as u64;
 
-        log::debug!(
-            "Sent BLE message to {} ({} bytes)",
-            address,
-            payload.len()
-        );
+        log::debug!("Sent BLE message to {} ({} bytes)", address, payload.len());
         Ok(())
     }
 
