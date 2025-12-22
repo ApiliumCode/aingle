@@ -23,7 +23,7 @@ stream-cancel = "0.8.0"
 thiserror = "2.0"
 tokio = { version = "1", features = [ "full" ] }
 tokio-stream = { version = "0.1", features = ["net"] }
-tokio-tungstenite = { version = "0.21", features = [ "rustls-tls-webpki-roots" ] }
+tokio-tungstenite = { version = "0.28", features = [ "rustls-tls-webpki-roots" ] }
 tracing = "0.1"
 tracing-futures = "0.2"
 tungstenite = "0.21"
