@@ -30,7 +30,7 @@ aingle_keystore = { version = "0.0.1", path = "../aingle_keystore" }
 aingle_middleware_bytes = "=0.0.3"
 aingle_sqlite = { path = "../aingle_sqlite", version = "0.0.1" }
 aingle_zome_types = { path = "../aingle_zome_types", version = "0.0.1" }
-itertools = { version = "0.10" }
+itertools = { version = "0.14" }
 lazy_static = "1.4.0"
 mockall = "0.11"
 mr_bundle = { path = "../mr_bundle", features = ["packing"], version = "0.0.1" }
