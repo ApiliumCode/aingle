@@ -88,7 +88,7 @@ sd-notify = "0.3.0"
 
 [dev-dependencies]
 anyhow = "1.0"
-assert_cmd = "1.0.1"
+assert_cmd = "2.1.1"
 criterion = "0.5"
 maplit = "1"
 pretty_assertions = "0.7.2"
