@@ -79,7 +79,7 @@ regex = "1.10"
 dashmap = "6.0"
 
 # IP address handling
-axum-client-ip = "0.7"
+axum-client-ip = "1.1"
 
 [dev-dependencies]
 tempfile = "3.10"
