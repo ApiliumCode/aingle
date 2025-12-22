@@ -70,7 +70,7 @@ blake3 = "1.5"
 tokio-stream = { version = "0.1", features = ["sync"] }
 
 # Validation
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 
 # Regular expressions (for SPARQL FILTER)
 regex = "1.10"
