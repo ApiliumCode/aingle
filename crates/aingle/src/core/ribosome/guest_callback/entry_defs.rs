@@ -141,8 +141,8 @@ mod test {
         // some err
         let mut results = vec![];
 
-        let number_of_fails = rng.gen_range(1..3);
-        let number_of_defs = rng.gen_range(0..3);
+        let number_of_fails = rng.random_range(1..3);
+        let number_of_defs = rng.random_range(0..3);
 
         for _ in 0..number_of_fails {
             results.push((

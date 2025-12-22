@@ -491,21 +491,21 @@ mod tests {
     fn random_hash() -> Hash {
         use rand::Rng;
         let mut bytes = [0u8; 32];
-        rand::thread_rng().fill(&mut bytes);
+        rand::rng().fill(&mut bytes);
         Hash(bytes)
     }
 
     fn random_agent() -> AgentPubKey {
         use rand::Rng;
         let mut bytes = [0u8; 32];
-        rand::thread_rng().fill(&mut bytes);
+        rand::rng().fill(&mut bytes);
         AgentPubKey(bytes)
     }
 
     fn random_signature() -> Signature {
         use rand::Rng;
         let mut bytes = [0u8; 64];
-        rand::thread_rng().fill(&mut bytes);
+        rand::rng().fill(&mut bytes);
         Signature(bytes)
     }
 

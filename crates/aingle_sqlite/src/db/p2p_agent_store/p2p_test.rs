@@ -6,7 +6,7 @@ use rand::Rng;
 use std::sync::Arc;
 
 fn rand_space() -> Arc<KitsuneSpace> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let mut data = vec![0_u8; 36];
     rng.fill(&mut data[..]);
@@ -14,7 +14,7 @@ fn rand_space() -> Arc<KitsuneSpace> {
 }
 
 fn rand_agent() -> Arc<KitsuneAgent> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let mut data = vec![0_u8; 36];
     rng.fill(&mut data[..]);
@@ -22,26 +22,26 @@ fn rand_agent() -> Arc<KitsuneAgent> {
 }
 
 fn rand_signed_at_ms() -> u64 {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
 
-    now - rng.gen_range(1000..2000)
+    now - rng.random_range(1000..2000)
 }
 
 async fn rand_insert(db: &DbWrite, space: &Arc<KitsuneSpace>, agent: &Arc<KitsuneAgent>) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let signed_at_ms = rand_signed_at_ms();
-    let expires_at_ms = signed_at_ms + rng.gen_range(100..200);
+    let expires_at_ms = signed_at_ms + rng.random_range(100..200);
 
-    let half_len = match rng.gen_range(0_u8..5_u8) {
+    let half_len = match rng.random_range(0_u8..5_u8) {
         0 => 0,
         1 => u32::MAX,
-        _ => rng.gen_range(0..u32::MAX / 2),
+        _ => rng.random_range(0..u32::MAX / 2),
     };
 
     let signed = AgentInfoSigned::sign(

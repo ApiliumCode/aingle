@@ -63,7 +63,7 @@ pub enum UnpackingError {
     IoError(#[from] IoError),
 
     #[error(transparent)]
-    YamlError(#[from] serde_yaml::Error),
+    YamlError(#[from] serde_yml::Error),
 
     #[error("The supplied path '{0}' has no parent directory.")]
     ParentlessPath(std::path::PathBuf),

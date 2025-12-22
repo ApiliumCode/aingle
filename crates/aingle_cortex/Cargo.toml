@@ -61,7 +61,7 @@ thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 log = "0.4"
-rand = "0.8"
+rand = "0.9"
 
 # Hashing
 blake3 = "1.5"
@@ -70,7 +70,7 @@ blake3 = "1.5"
 tokio-stream = { version = "0.1", features = ["sync"] }
 
 # Validation
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 
 # Regular expressions (for SPARQL FILTER)
 regex = "1.10"

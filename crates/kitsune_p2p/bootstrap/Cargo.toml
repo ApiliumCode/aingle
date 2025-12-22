@@ -18,7 +18,7 @@ tokio = { version = "1", features = ["full"] }
 warp = "0.3"
 rmp-serde = "0.15"
 parking_lot = "0.12"
-rand = "0.8"
+rand = "0.9"
 serde = { version = "1", features = [ "derive", "rc" ] }
 serde_bytes = "0.11"
 serde_json = { version = "1", features = [ "preserve_order" ] }
@@ -29,7 +29,7 @@ kitsune_p2p_types = { version = "0.0.1", path = "../types" }
 kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p" }
 fixt = { path = "../../fixt" }
 criterion = "0.5"
-reqwest = "0.11.2"
+reqwest = "0.12"
 
 [[bench]]
 name = "bench"

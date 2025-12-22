@@ -89,8 +89,8 @@ impl SimulatedSensor {
     }
 
     fn read(&self) -> SensorReading {
-        let mut rng = rand::thread_rng();
-        let value = rng.gen_range(self.min_value..self.max_value);
+        let mut rng = rand::rng();
+        let value = rng.random_range(self.min_value..self.max_value);
 
         SensorReading {
             sensor_id: self.id.clone(),

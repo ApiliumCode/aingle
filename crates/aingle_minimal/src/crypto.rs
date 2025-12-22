@@ -20,7 +20,7 @@ pub struct Keypair {
 impl Keypair {
     /// Generate new random keypair
     pub fn generate() -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
 
@@ -88,7 +88,7 @@ pub fn hash(data: &[u8]) -> Hash {
 
 /// Generate random bytes
 pub fn random_bytes<const N: usize>() -> [u8; N] {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut bytes = [0u8; N];
     rng.fill_bytes(&mut bytes);
     bytes

@@ -88,7 +88,7 @@ fn create_config(port: u16, environment_path: PathBuf) -> ConductorConfig {
 
 pub fn write_config(mut path: PathBuf, config: &ConductorConfig) -> PathBuf {
     path.push("conductor_config.yml");
-    std::fs::write(path.clone(), serde_yaml::to_string(&config).unwrap()).unwrap();
+    std::fs::write(path.clone(), serde_yml::to_string(&config).unwrap()).unwrap();
     path
 }
 
@@ -149,7 +149,7 @@ async fn call_admin() {
 
     // Make properties
     let properties = aingle_types::properties::YamlProperties::new(
-        serde_yaml::from_str(
+        serde_yml::from_str(
             r#"
 test: "example"
 how_many: 42

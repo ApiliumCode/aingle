@@ -89,7 +89,7 @@ fixturator!(
     SafWasm;
     // note that an empty wasm will not compile
     curve Empty SafWasm { code: Default::default() };
-    curve Unpredictable TestWasm::iter().choose(&mut thread_rng()).unwrap().into();
+    curve Unpredictable TestWasm::iter().choose(&mut rand::rng()).unwrap().into();
     curve Predictable TestWasm::iter().cycle().nth(get_fixt_index!()).unwrap().into();
 );
 
@@ -97,8 +97,8 @@ fixturator!(
     WasmMap;
     curve Empty BTreeMap::new().into();
     curve Unpredictable {
-        let mut rng = rand::thread_rng();
-        let number_of_wasms = rng.gen_range(0..5);
+        let mut rng = rand::rng();
+        let number_of_wasms = rng.random_range(0..5);
 
         let mut wasms = BTreeMap::new();
         let mut saf_wasm_fixturator = SafWasmFixturator::new(Unpredictable);
@@ -208,8 +208,8 @@ fixturator!(
     HeaderHashes,
     vec![].into(),
     {
-        let mut rng = rand::thread_rng();
-        let number_of_hashes = rng.gen_range(0..5);
+        let mut rng = rand::rng();
+        let number_of_hashes = rng.random_range(0..5);
 
         let mut hashes: Vec<HeaderHash> = vec![];
         let mut header_hash_fixturator = HeaderHashFixturator::new(Unpredictable);

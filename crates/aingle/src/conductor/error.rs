@@ -43,7 +43,7 @@ pub enum ConductorError {
     ConfigError(String),
 
     #[error("Config deserialization error: {0}")]
-    SerializationError(#[from] serde_yaml::Error),
+    SerializationError(#[from] serde_yml::Error),
 
     #[error("Attempted to call into the conductor while it is shutting down")]
     ShuttingDown,

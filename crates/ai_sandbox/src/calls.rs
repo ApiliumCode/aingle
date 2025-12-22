@@ -404,7 +404,7 @@ pub async fn register_saf(cmd: &mut CmdRunner, args: RegisterSaf) -> anyhow::Res
         hash,
     } = args;
     let properties = match properties {
-        Some(path) => Some(YamlProperties::new(serde_yaml::from_str(
+        Some(path) => Some(YamlProperties::new(serde_yml::from_str(
             &std::fs::read_to_string(path)?,
         )?)),
         None => None,

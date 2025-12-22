@@ -88,7 +88,7 @@ fn save_default_config_yaml(path: &Path) -> ConductorResult<ConductorConfig> {
     })?;
     std::fs::create_dir_all(dir)?;
     let default = ConductorConfig::default();
-    let content_yaml = serde_yaml::to_string(&default)?;
+    let content_yaml = serde_yml::to_string(&default)?;
     std::fs::write(path, content_yaml)?;
     Ok(default)
 }

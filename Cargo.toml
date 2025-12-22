@@ -101,6 +101,10 @@ broken_intra_doc_links = "allow"
 invalid_rust_codeblocks = "allow"
 redundant_explicit_links = "allow"
 
+# Workspace dependencies - ensure rustls uses ring crypto provider
+[workspace.dependencies]
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
 [patch.crates-io]
 # Using Git refs until new versions are published with flexible serde version
 # Published v0.0.1 has serde = "=1.0.123" which conflicts with other deps

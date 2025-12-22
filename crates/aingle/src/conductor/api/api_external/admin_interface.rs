@@ -414,7 +414,7 @@ mod test {
         );
 
         // with a property should install and produce a different hash
-        let json: serde_yaml::Value = serde_yaml::from_str("some prop: \"foo\"").unwrap();
+        let json: serde_yml::Value = serde_yml::from_str("some prop: \"foo\"").unwrap();
         let hash_payload = RegisterSafPayload {
             uid: None,
             properties: Some(YamlProperties::new(json.clone())),

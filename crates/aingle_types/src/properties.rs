@@ -14,17 +14,17 @@ use aingle_middleware_bytes::prelude::*;
     serde::Deserialize,
     SerializedBytes,
 )]
-pub struct YamlProperties(serde_yaml::Value);
+pub struct YamlProperties(serde_yml::Value);
 
 impl YamlProperties {
     /// Create new properties from json value
-    pub fn new(properties: serde_yaml::Value) -> Self {
+    pub fn new(properties: serde_yml::Value) -> Self {
         Self(properties)
     }
 
     /// Create a null set of properties
     pub fn empty() -> Self {
-        Self(serde_yaml::Value::Null)
+        Self(serde_yml::Value::Null)
     }
 }
 
@@ -44,6 +44,6 @@ impl Default for YamlProperties {
 #[cfg(feature = "arbitrary")]
 impl<'a> arbitrary::Arbitrary<'a> for YamlProperties {
     fn arbitrary(_: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(serde_yaml::Value::Null.into())
+        Ok(serde_yml::Value::Null.into())
     }
 }

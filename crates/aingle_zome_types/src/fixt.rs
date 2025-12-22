@@ -160,8 +160,8 @@ fixturator!(
     curve Empty [0; CAP_SECRET_BYTES].into();
     curve Unpredictable {
         let mut rng = rng();
-        let upper = rng.gen::<[u8; CAP_SECRET_BYTES / 2]>();
-        let lower = rng.gen::<[u8; CAP_SECRET_BYTES / 2]>();
+        let upper = rng.random::<[u8; CAP_SECRET_BYTES / 2]>();
+        let lower = rng.random::<[u8; CAP_SECRET_BYTES / 2]>();
         let mut inner = [0; CAP_SECRET_BYTES];
         inner[..CAP_SECRET_BYTES / 2].copy_from_slice(&lower);
         inner[CAP_SECRET_BYTES / 2..].copy_from_slice(&upper);
@@ -200,7 +200,7 @@ fixturator!(
         let min_len = 0;
         let max_len = 5;
         let mut rng = rng();
-        let len = rng.gen_range(min_len..max_len);
+        let len = rng.random_range(min_len..max_len);
         let mut signature_fixturator = SignatureFixturator::new(Unpredictable);
         let mut signatures = vec![];
         for _ in 0..len {
@@ -247,7 +247,7 @@ fixturator!(
     curve Empty CurryPayloads(BTreeMap::new());
     curve Unpredictable {
         let mut rng = rng();
-        let number_of_payloads = rng.gen_range(0..5);
+        let number_of_payloads = rng.random_range(0..5);
 
         let mut payloads: BTreeMap<GrantedFunction, SerializedBytes> = BTreeMap::new();
         let mut granted_function_fixturator = GrantedFunctionFixturator::new_indexed(Unpredictable, get_fixt_index!());
@@ -258,8 +258,8 @@ fixturator!(
         CurryPayloads(payloads)
     };
     curve Predictable {
-        let mut rng = rand::thread_rng();
-        let number_of_payloads = rng.gen_range(0..5);
+        let mut rng = rand::rng();
+        let number_of_payloads = rng.random_range(0..5);
 
         let mut payloads: BTreeMap<GrantedFunction, SerializedBytes> = BTreeMap::new();
         let mut granted_function_fixturator = GrantedFunctionFixturator::new_indexed(Predictable, get_fixt_index!());
@@ -279,7 +279,7 @@ fixturator!(
             CapAccessFixturator::new(Empty).next().unwrap(),
             {
                 let mut rng = rng();
-                let number_of_zomes = rng.gen_range(0..5);
+                let number_of_zomes = rng.random_range(0..5);
 
                 let mut granted_functions: GrantedFunctions = BTreeSet::new();
                 for _ in 0..number_of_zomes {
@@ -294,8 +294,8 @@ fixturator!(
             StringFixturator::new(Unpredictable).next().unwrap(),
             CapAccessFixturator::new(Unpredictable).next().unwrap(),
             {
-                let mut rng = rand::thread_rng();
-                let number_of_zomes = rng.gen_range(0..5);
+                let mut rng = rand::rng();
+                let number_of_zomes = rng.random_range(0..5);
 
                 let mut granted_functions: GrantedFunctions = BTreeSet::new();
                 for _ in 0..number_of_zomes {
@@ -354,8 +354,8 @@ fixturator!(
                 CapAccess::from(CapSecretFixturator::new_indexed(Unpredictable, get_fixt_index!()).next().unwrap())
             },
             CapAccessVariant::Assigned => {
-                let mut rng = rand::thread_rng();
-                let number_of_assigned = rng.gen_range(0..5);
+                let mut rng = rand::rng();
+                let number_of_assigned = rng.random_range(0..5);
 
                 CapAccess::from((
                     CapSecretFixturator::new_indexed(Unpredictable, get_fixt_index!()).next().unwrap(),
@@ -463,8 +463,8 @@ fixturator!(
     EntryDefs;
     curve Empty Vec::new().into();
     curve Unpredictable {
-        let mut rng = rand::thread_rng();
-        let number_of_defs = rng.gen_range(0..5);
+        let mut rng = rand::rng();
+        let number_of_defs = rng.random_range(0..5);
 
         let mut defs = vec![];
         let mut entry_def_fixturator = EntryDefFixturator::new(Unpredictable);

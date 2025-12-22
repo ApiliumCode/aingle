@@ -25,11 +25,12 @@ kitsune_p2p_types = { version = "0.0.1", path = "../types" }
 kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p" }
 kitsune_p2p_transport_quic = { version = "0.0.1", path = "../transport_quic" }
 kitsune_p2p_proxy = { version = "0.0.1", path = "../proxy" }
-rand = "0.8.3"
+rand = "0.9"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 structopt = "0.3.21"
 sodoken = "0.0.4"
 tokio = { version = "1", features = ["full"] }
+# Note: Keep at 0.20 to match hyper 0.14's http 0.2.x dependency
 tokio-tungstenite = { version = "0.20", features = [ "rustls-tls-webpki-roots" ] }
 tungstenite = "0.20"

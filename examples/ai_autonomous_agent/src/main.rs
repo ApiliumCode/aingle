@@ -129,17 +129,17 @@ fn iot_monitoring_agent_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("IoT Agent '{}' configured", agent.name());
 
     // Simulate IoT sensor data
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for cycle in 1..=5 {
         println!("\n  Cycle {}:", cycle);
 
         // Simulate multiple sensors
         let observations = vec![
-            Observation::sensor("temperature", rng.gen_range(18.0..35.0)),
-            Observation::sensor("humidity", rng.gen_range(40.0..90.0)),
-            Observation::sensor("motion", rng.gen_range(0.0..1.0)),
-            Observation::sensor("light", rng.gen_range(50.0..500.0)),
+            Observation::sensor("temperature", rng.random_range(18.0..35.0)),
+            Observation::sensor("humidity", rng.random_range(40.0..90.0)),
+            Observation::sensor("motion", rng.random_range(0.0..1.0)),
+            Observation::sensor("light", rng.random_range(50.0..500.0)),
         ];
 
         for obs in observations {
@@ -211,12 +211,12 @@ fn goal_oriented_agent_demo() -> Result<(), Box<dyn std::error::Error>> {
 
     // Simulate temperature fluctuations
     let mut current_temp: f64 = 18.0;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     println!("\nSimulating climate control:");
     for hour in 1..=8 {
         // Temperature changes based on time of day
-        current_temp += rng.gen_range(-2.0..3.0);
+        current_temp += rng.random_range(-2.0..3.0);
         current_temp = current_temp.clamp(15.0, 35.0);
 
         let obs = Observation::sensor("temperature", current_temp);

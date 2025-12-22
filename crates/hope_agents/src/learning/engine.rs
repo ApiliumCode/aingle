@@ -449,12 +449,12 @@ impl LearningEngine {
             return None;
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Exploration vs exploitation
-        if rng.gen::<f64>() < self.config.epsilon {
+        if rng.random::<f64>() < self.config.epsilon {
             // Explore: choose a random action
-            let idx = rng.gen_range(0..available_actions.len());
+            let idx = rng.random_range(0..available_actions.len());
             Some(available_actions[idx].clone())
         } else {
             // Exploit: choose the best known action
@@ -478,13 +478,13 @@ impl LearningEngine {
 
     /// Performs experience replay by sampling a batch from the buffer and re-learning from it.
     pub fn replay_batch(&mut self, batch_size: usize, available_actions: &[ActionId]) {
-        use rand::seq::SliceRandom;
+        use rand::seq::IndexedRandom;
 
         if self.replay_buffer.len() < self.config.min_replay_size {
             return;
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Clone experiences to avoid borrowing issues
         let experiences: Vec<Experience> = self.replay_buffer.iter().cloned().collect();

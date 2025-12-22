@@ -57,7 +57,7 @@ serde_json = "1.0"
 
 # Crypto - minimal set
 blake3 = { version = "1.5", default-features = false, features = ["std"] }
-rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
 
 # Networking - CoAP for IoT (lightweight UDP-based protocol)
 coap-lite = { version = "0.13", optional = true }
@@ -76,7 +76,7 @@ mdns-sd = { version = "0.11", optional = true }
 if-addrs = { version = "0.13", optional = true }
 
 # WebRTC for browser support
-webrtc = { version = "0.11", optional = true }
+webrtc = { version = "0.14", optional = true }
 bytes = { version = "1.0", optional = true }
 # WebSocket signaling server for WebRTC
 async-tungstenite = { version = "0.27", features = ["async-std-runtime"], optional = true }

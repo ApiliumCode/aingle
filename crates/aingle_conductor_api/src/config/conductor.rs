@@ -69,7 +69,7 @@ fn config_from_yaml<T>(yaml: &str) -> ConductorConfigResult<T>
 where
     T: DeserializeOwned,
 {
-    serde_yaml::from_str(yaml).map_err(ConductorConfigError::SerializationError)
+    serde_yml::from_str(yaml).map_err(ConductorConfigError::SerializationError)
 }
 
 impl ConductorConfig {

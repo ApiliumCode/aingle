@@ -218,7 +218,7 @@ mod tests {
         let mut manifest = SafManifestCurrent {
             name: "name".into(),
             uid: Some("original uid".to_string()),
-            properties: Some(serde_yaml::Value::Null.into()),
+            properties: Some(serde_yml::Value::Null.into()),
             zomes: vec![
                 ZomeManifest {
                     name: "zome1".into(),
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(saf_file.code().len(), 2);
 
         // - Check that properties and UUID can be overridden
-        let properties: YamlProperties = serde_yaml::Value::from(42).into();
+        let properties: YamlProperties = serde_yml::Value::from(42).into();
         let bundle: SafBundle = mr_bundle::Bundle::new_unchecked(manifest.into(), resources)
             .unwrap()
             .into();

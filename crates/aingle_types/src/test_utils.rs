@@ -23,7 +23,7 @@ pub fn fake_saf_file(uid: &str) -> SafFile {
 pub fn fake_saf_zomes(uid: &str, zomes: Vec<(ZomeName, SafWasm)>) -> SafFile {
     let mut saf = SafDef {
         name: "test".to_string(),
-        properties: YamlProperties::new(serde_yaml::from_str("p: hi").unwrap())
+        properties: YamlProperties::new(serde_yml::from_str("p: hi").unwrap())
             .try_into()
             .unwrap(),
         uid: uid.to_string(),

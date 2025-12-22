@@ -193,7 +193,7 @@ async fn get_saf_name(manifest_path: &Path) -> AinBundleResult<String> {
     let manifest_path = manifest_path.to_path_buf();
     let manifest_path = manifest_path.join(SafManifest::path());
     let manifest_yaml = ffs::read_to_string(&manifest_path).await?;
-    let manifest: SafManifest = serde_yaml::from_str(&manifest_yaml)?;
+    let manifest: SafManifest = serde_yml::from_str(&manifest_yaml)?;
     Ok(manifest.name())
 }
 
@@ -201,6 +201,6 @@ async fn get_app_name(manifest_path: &Path) -> AinBundleResult<String> {
     let manifest_path = manifest_path.to_path_buf();
     let manifest_path = manifest_path.join(AppManifest::path());
     let manifest_yaml = ffs::read_to_string(&manifest_path).await?;
-    let manifest: AppManifest = serde_yaml::from_str(&manifest_yaml)?;
+    let manifest: AppManifest = serde_yml::from_str(&manifest_yaml)?;
     Ok(manifest.app_name().to_string())
 }

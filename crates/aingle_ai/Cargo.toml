@@ -28,7 +28,7 @@ tracing = "0.1"
 
 # Math and ML utilities
 ndarray = "0.17"
-rand = "0.8"
+rand = "0.9"
 
 # Collections
 parking_lot = "0.12"

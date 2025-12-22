@@ -1,7 +1,7 @@
 //! @todo move all this out to the serialized bytes crate
 use crate::prelude::*;
 use aingle_middleware_bytes::prelude::*;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 
 #[derive(Clone, Copy)]
 /// there are many different types of things that we could reasonably serialize in our examples

@@ -297,7 +297,7 @@ pub mod tests {
 
     pub fn app_manifest_properties_fixture() -> YamlProperties {
         YamlProperties::new(
-            serde_yaml::to_value(Props {
+            serde_yml::to_value(Props {
                 salad: "bar".to_string(),
             })
             .unwrap(),
@@ -340,8 +340,8 @@ pub mod tests {
         let location = Some(mr_bundle::Location::Path(PathBuf::from("/tmp/test.saf")));
         let (manifest, saf_hashes) =
             app_manifest_fixture(location, vec![fixt!(SafDef), fixt!(SafDef)]).await;
-        let manifest_yaml = serde_yaml::to_string(&manifest).unwrap();
-        let manifest_roundtrip = serde_yaml::from_str(&manifest_yaml).unwrap();
+        let manifest_yaml = serde_yml::to_string(&manifest).unwrap();
+        let manifest_roundtrip = serde_yml::from_str(&manifest_yaml).unwrap();
 
         assert_eq!(manifest, manifest_roundtrip);
 
@@ -369,8 +369,8 @@ slots:
         "#,
             saf_hashes[0], saf_hashes[1]
         );
-        let actual = serde_yaml::to_value(&manifest).unwrap();
-        let expected: serde_yaml::Value = serde_yaml::from_str(&expected_yaml).unwrap();
+        let actual = serde_yml::to_value(&manifest).unwrap();
+        let expected: serde_yml::Value = serde_yml::from_str(&expected_yaml).unwrap();
 
         // Check a handful of fields. Order matters in YAML, so to check the
         // entire structure would be too fragile for testing.

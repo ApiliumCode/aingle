@@ -40,14 +40,14 @@ impl SimpleBloomMod {
 
         let last_touch_fudge_ms: u32 = {
             use rand::prelude::*;
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             // randomize the keys
             endpoints.shuffle(&mut rng);
             // last_touch fudge
             // we don't really want two nodes to both decide to initiate gossip
             // at the same time... so let's randomize our talk window by a
             // couple seconds
-            rng.gen_range(0..5000)
+            rng.random_range(0..5000)
         };
 
         // pick the first one that matches our criteria

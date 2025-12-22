@@ -182,7 +182,7 @@ mod test {
     use aingle_zome_types::validate_link::ValidateCreateLinkData;
     use aingle_zome_types::validate_link::ValidateLinkCallbackResult;
     use aingle_zome_types::ExternIO;
-    use rand::seq::SliceRandom;
+    use rand::seq::IndexedRandom;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_link_add_callback_result_fold() {
@@ -204,7 +204,7 @@ mod test {
             results.shuffle(&mut rng);
 
             // number of times a callback result appears should not change the final result
-            let number_of_extras = rng.gen_range(0..5);
+            let number_of_extras = rng.random_range(0..5);
             for _ in 0..number_of_extras {
                 let maybe_extra = results.choose(&mut rng).cloned();
                 match maybe_extra {

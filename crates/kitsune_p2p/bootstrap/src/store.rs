@@ -26,7 +26,7 @@ impl Store {
     pub fn random(&self, query: RandomQuery) -> Vec<Vec<u8>> {
         // TODO: Max this limit
         let limit = query.limit.0 as usize;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let now = std::time::UNIX_EPOCH
             .elapsed()
             .expect("Bootstrap server time set before epoch")

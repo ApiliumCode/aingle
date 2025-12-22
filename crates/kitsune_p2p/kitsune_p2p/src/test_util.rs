@@ -27,7 +27,7 @@ macro_rules! test_val  {
 fn rand36<F: KitsuneBinType>() -> Arc<F> {
     use rand::Rng;
     let mut out = vec![0; 36];
-    rand::thread_rng().fill(&mut out[..]);
+    rand::rng().fill(&mut out[..]);
     Arc::new(F::new(out))
 }
 

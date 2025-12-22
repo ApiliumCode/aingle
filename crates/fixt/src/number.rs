@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 
 macro_rules! fixturator_unsigned {
     ( $t:ident ) => {
@@ -8,8 +8,8 @@ macro_rules! fixturator_unsigned {
             0,
             {
                 let mut rng = crate::rng();
-                if rng.gen() {
-                    rng.gen()
+                if rand::random::<bool>() {
+                    rng.random_range(0..<$t>::MAX)
                 } else {
                     vec![<$t>::MAX, <$t>::MIN, 1]
                         .choose(&mut rng)
@@ -31,7 +31,29 @@ fixturator_unsigned!(u16);
 fixturator_unsigned!(u32);
 fixturator_unsigned!(u64);
 fixturator_unsigned!(u128);
-fixturator_unsigned!(usize);
+
+// usize needs special handling since SampleUniform is not implemented for it
+fixturator!(
+    usize,
+    0,
+    {
+        let mut rng = crate::rng();
+        if rand::random::<bool>() {
+            // Generate via u64 and truncate to usize
+            rng.random_range(0_u64..u64::MAX) as usize
+        } else {
+            vec![usize::MAX, usize::MIN, 1]
+                .choose(&mut rng)
+                .unwrap()
+                .to_owned()
+        }
+    },
+    {
+        let ret = get_fixt_index!();
+        set_fixt_index!(ret.wrapping_add(1));
+        ret
+    }
+);
 
 // we can exhaustively enumerate u8 wrapping, which should give us confidence in the u16 behaviour
 // given that it uses the same macro
@@ -77,8 +99,8 @@ macro_rules! fixturator_signed {
             0,
             {
                 let mut rng = crate::rng();
-                if rng.gen() {
-                    rng.gen()
+                if rand::random::<bool>() {
+                    rng.random_range(<$t>::MIN..<$t>::MAX)
                 } else {
                     vec![<$t>::MAX, <$t>::MIN, 1]
                         .choose(&mut rng)
@@ -102,7 +124,31 @@ fixturator_signed!(i16);
 fixturator_signed!(i32);
 fixturator_signed!(i64);
 fixturator_signed!(i128);
-fixturator_signed!(isize);
+
+// isize needs special handling since SampleUniform is not implemented for it
+fixturator!(
+    isize,
+    0,
+    {
+        let mut rng = crate::rng();
+        if rand::random::<bool>() {
+            // Generate via i64 and truncate to isize
+            rng.random_range(i64::MIN..i64::MAX) as isize
+        } else {
+            vec![isize::MAX, isize::MIN, 1]
+                .choose(&mut rng)
+                .unwrap()
+                .to_owned()
+        }
+    },
+    {
+        let ret = get_fixt_index!() as isize;
+        set_fixt_index!(ret.wrapping_add(1) as usize);
+        // negate odds
+        let ret = if ret % 2 == 0 { ret } else { -ret };
+        ret
+    }
+);
 
 basic_test!(
     i8,
@@ -166,8 +212,8 @@ macro_rules! fixturator_float {
             0.0,
             {
                 let mut rng = crate::rng();
-                if rng.gen() {
-                    rng.gen()
+                if rand::random::<bool>() {
+                    rng.random::<$t>()
                 } else {
                     vec![
                         <$t>::NEG_INFINITY,

@@ -262,8 +262,8 @@ impl WebRtcServer {
     /// Generate a unique peer ID
     fn generate_peer_id() -> String {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let bytes: [u8; 16] = rng.gen();
+        let mut rng = rand::rng();
+        let bytes: [u8; 16] = rng.random();
         bytes.iter().map(|b| format!("{:02x}", b)).collect()
     }
 

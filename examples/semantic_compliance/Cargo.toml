@@ -2,7 +2,7 @@
 name = "semantic_compliance"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.83"
 authors = ["AIngle Contributors"]
 description = "Real-time AML/KYC compliance system using semantic matching and graph analysis"
 license = "Apache-2.0"
@@ -36,7 +36,7 @@ tokio-stream = "0.1"
 futures = "0.3"
 
 # HTTP client for fetching sanctions lists
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 # CLI framework
 clap = { version = "4.4", features = ["derive", "cargo"] }

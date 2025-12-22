@@ -69,7 +69,7 @@ pub async fn new_handle_ws(
 static MSG_ID: AtomicU64 = AtomicU64::new(1);
 fn new_msg_id() -> String {
     use rand::Rng;
-    let rx: u64 = rand::thread_rng().gen();
+    let rx: u64 = rand::rng().random();
     let nx = MSG_ID.fetch_add(1, Ordering::Relaxed);
     format!("{}{}", rx, nx)
 }

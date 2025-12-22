@@ -22,7 +22,7 @@ pub fn create_config(environment_path: PathBuf) -> ConductorConfig {
 /// Write [`ConductorConfig`] to [`CONDUCTOR_CONFIG`]
 pub fn write_config(mut path: PathBuf, config: &ConductorConfig) -> PathBuf {
     path.push(CONDUCTOR_CONFIG);
-    std::fs::write(path.clone(), serde_yaml::to_string(&config).unwrap()).unwrap();
+    std::fs::write(path.clone(), serde_yml::to_string(&config).unwrap()).unwrap();
     path
 }
 
@@ -31,7 +31,7 @@ pub fn read_config(mut path: PathBuf) -> anyhow::Result<Option<ConductorConfig>>
     path.push(CONDUCTOR_CONFIG);
 
     match std::fs::read_to_string(path) {
-        Ok(yaml) => Ok(Some(serde_yaml::from_str(&yaml)?)),
+        Ok(yaml) => Ok(Some(serde_yml::from_str(&yaml)?)),
         Err(_) => Ok(None),
     }
 }

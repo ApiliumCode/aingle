@@ -34,7 +34,7 @@ log = "0.4"
 titans_memory = { version = "0.2", path = "../titans_memory", optional = true }
 
 # Random for exploration (updated from 0.7)
-rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
 
 # Time
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

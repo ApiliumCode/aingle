@@ -191,7 +191,7 @@ automatically create a default config file.
 
 fn display_friendly_malformed_config_message(
     config_path: &ConfigFilePath,
-    error: serde_yaml::Error,
+    error: serde_yml::Error,
 ) {
     println!(
         "

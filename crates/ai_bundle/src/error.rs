@@ -25,9 +25,9 @@ pub enum AinBundleError {
     #[error("Internal serialization error: {0}")]
     SerializedBytesError(#[from] SerializedBytesError),
 
-    /// serde_yaml::Error
+    /// serde_yml::Error
     #[error("YAML serialization error: {0}")]
-    SerdeYamlError(#[from] serde_yaml::Error),
+    SerdeYamlError(#[from] serde_yml::Error),
 
     /// anything else
     #[error("Unknown error: {0}")]

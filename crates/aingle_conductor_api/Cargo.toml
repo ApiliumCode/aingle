@@ -21,7 +21,7 @@ aingle_types = { version = "0.0.1", path = "../aingle_types" }
 aingle_zome_types = { version = "^0.0.1", path = "../aingle_zome_types" }
 serde = { version = "1.0", features = [ "derive" ] }
 serde_derive = "1.0"
-serde_yaml = "0.8"
+serde_yml = "0.0.12"
 structopt = "0.3"
 tracing = "0.1"
 thiserror = "2.0"
