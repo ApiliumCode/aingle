@@ -231,7 +231,7 @@ dependencies = [
  "sd-notify",
  "serde",
  "serde_json",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "serial_test",
  "shrinkwraprs",
  "structopt",
@@ -353,7 +353,7 @@ dependencies = [
  "predicates 1.0.8",
  "serde",
  "serde_bytes",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "structopt",
  "tempdir",
  "thiserror 2.0.17",
@@ -379,7 +379,7 @@ dependencies = [
  "matches",
  "nanoid 0.4.0",
  "portpicker",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "structopt",
  "tokio",
  "tracing",
@@ -404,7 +404,7 @@ dependencies = [
  "matches",
  "serde",
  "serde_derive",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "structopt",
  "thiserror 2.0.17",
  "tracing",
@@ -495,11 +495,11 @@ dependencies = [
  "aingle_middleware_bytes",
  "aingle_zome_types",
  "ghost_actor",
- "lair_keystore_api",
+ "lair_keystore_api 0.6.3",
  "lair_keystore_client",
  "serde",
  "serde_bytes",
- "sodoken",
+ "sodoken 0.0.4",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -734,7 +734,7 @@ dependencies = [
  "serde_bytes",
  "serde_derive",
  "serde_json",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "shrinkwraprs",
  "strum 0.26.3",
  "strum_macros 0.26.4",
@@ -4692,6 +4692,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "hc_seed_bundle"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c7fc57959f7161c8cab812df90dc06f2b9762871295bf38b9c41f9958c47d0e"
+dependencies = [
+ "futures",
+ "one_err 0.0.8",
+ "rmp-serde 1.3.0",
+ "rmpv",
+ "serde",
+ "serde_bytes",
+ "sodoken 0.1.0",
+ "tokio",
+]
+
+[[package]]
 name = "headers"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5572,7 +5588,7 @@ dependencies = [
  "kitsune_p2p_proxy",
  "kitsune_p2p_transport_quic",
  "kitsune_p2p_types",
- "lair_keystore_api",
+ "lair_keystore_api 0.6.3",
  "matches",
  "once_cell",
  "rand 0.8.5",
@@ -5605,7 +5621,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sodoken",
+ "sodoken 0.0.4",
  "structopt",
  "tokio",
  "tokio-tungstenite 0.20.1",
@@ -5660,7 +5676,7 @@ dependencies = [
  "futures",
  "kitsune_p2p_transport_quic",
  "kitsune_p2p_types",
- "lair_keystore_api",
+ "lair_keystore_api 0.6.3",
  "nanoid 0.4.0",
  "parking_lot 0.12.5",
  "rmp-serde 0.15.5",
@@ -5682,7 +5698,7 @@ dependencies = [
  "futures",
  "if-addrs 0.6.7",
  "kitsune_p2p_types",
- "lair_keystore_api",
+ "lair_keystore_api 0.6.3",
  "nanoid 0.4.0",
  "once_cell",
  "quinn",
@@ -5704,8 +5720,8 @@ dependencies = [
  "derive_more 0.99.20",
  "futures",
  "ghost_actor",
- "lair_keystore_api",
- "lru",
+ "lair_keystore_api 0.6.3",
+ "lru 0.6.6",
  "mockall",
  "nanoid 0.4.0",
  "once_cell",
@@ -5753,18 +5769,43 @@ dependencies = [
  "nanoid 0.3.0",
  "num_cpus",
  "once_cell",
- "one_err",
+ "one_err 0.0.5",
  "parking_lot 0.11.2",
  "rand 0.7.3",
  "rayon",
  "rcgen 0.8.13",
  "ring 0.16.20",
- "sodoken",
+ "sodoken 0.0.4",
  "subtle",
  "thiserror 1.0.69",
  "tokio",
  "toml 0.5.11",
  "winapi",
+]
+
+[[package]]
+name = "lair_keystore_api"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b120af98d680f80d913b60b9324210be51c1f58748be92d53f32521f3b27e4b1"
+dependencies = [
+ "base64 0.22.1",
+ "dunce",
+ "hc_seed_bundle",
+ "lru 0.16.2",
+ "nanoid 0.4.0",
+ "once_cell",
+ "one_err 0.0.8",
+ "rcgen 0.13.2",
+ "serde",
+ "serde_json",
+ "serde_yaml 0.9.34+deprecated",
+ "tokio",
+ "toml 0.9.10+spec-1.1.0",
+ "tracing",
+ "url 2.5.7",
+ "winapi",
+ "zeroize",
 ]
 
 [[package]]
@@ -5775,8 +5816,8 @@ checksum = "06b1591a47f5db62e30b11a5b83fd9d8194a6c3ef3ab6a160d9333092319b2a2"
 dependencies = [
  "futures",
  "ghost_actor",
- "lair_keystore_api",
- "sodoken",
+ "lair_keystore_api 0.0.11",
+ "sodoken 0.0.4",
  "tempfile",
  "tokio",
  "tracing",
@@ -6057,6 +6098,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ea2d928b485416e8908cff2d97d621db22b27f7b3b6729e438bcf42c671ba91"
 dependencies = [
  "hashbrown 0.11.2",
+]
+
+[[package]]
+name = "lru"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96051b46fc183dc9cd4a223960ef37b9af631b55191852a8274bfef064cda20f"
+dependencies = [
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -6389,7 +6439,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_derive",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "tempdir",
  "thiserror 2.0.17",
  "tokio",
@@ -6990,6 +7040,18 @@ name = "one_err"
 version = "0.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42901c1956c1ef1de5bce4428695aa03505a8e27bd2262173395c804834f44ec"
+dependencies = [
+ "indexmap 1.9.3",
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "one_err"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e81851974d8bb6cc9a643cca68afdce7f0a3b80e08a4620388836bb99a680554"
 dependencies = [
  "indexmap 1.9.3",
  "libc",
@@ -8194,6 +8256,7 @@ dependencies = [
  "time",
  "x509-parser",
  "yasna 0.5.2",
+ "zeroize",
 ]
 
 [[package]]
@@ -8581,6 +8644,18 @@ dependencies = [
  "byteorder",
  "rmp",
  "serde",
+]
+
+[[package]]
+name = "rmpv"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58450723cd9ee93273ce44a20b6ec4efe17f8ed2e3631474387bfdecf18bb2a9"
+dependencies = [
+ "num-traits",
+ "rmp",
+ "serde",
+ "serde_bytes",
 ]
 
 [[package]]
@@ -9195,6 +9270,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.12.1",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "serial_test"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9494,9 +9582,20 @@ dependencies = [
  "libsodium-sys-stable",
  "num_cpus",
  "once_cell",
- "one_err",
+ "one_err 0.0.5",
  "parking_lot 0.11.2",
  "tokio",
+]
+
+[[package]]
+name = "sodoken"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95ab775722cb2ca6da016b4d0c0efac36f9aa59e53a2dd4cdeae7a0776f1c1d3"
+dependencies = [
+ "libc",
+ "libsodium-sys-stable",
+ "zeroize",
 ]
 
 [[package]]
@@ -10270,10 +10369,13 @@ version = "0.9.10+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0825052159284a1a8b4d6c0c86cbc801f2da5afd2b225fa548c72f2e74002f48"
 dependencies = [
+ "indexmap 2.12.1",
  "serde_core",
  "serde_spanned 1.0.4",
  "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_parser",
  "toml_writer",
+ "winnow",
 ]
 
 [[package]]
@@ -10715,6 +10817,12 @@ dependencies = [
  "crypto-common",
  "subtle",
 ]
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"
