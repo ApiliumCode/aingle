@@ -33,7 +33,7 @@ rusqlite = { version = "0.25", optional = true }
 num_enum = { version = "0.7", optional = true }
 
 # full-saf-def dependencies
-derive_builder = { version = "0.9", optional = true }
+derive_builder = { version = "0.20", optional = true }
 nanoid = { version = "0.4", optional = true }
 shrinkwraprs = { version = "0.3", optional = true }
 
