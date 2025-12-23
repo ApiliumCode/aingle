@@ -21,7 +21,7 @@ futures = "0.3"
 ghost_actor = { version = "0.3.0-alpha.1", features = ["test_utils"] }
 lair_keystore_api = "0.0.11"
 mockall = "0.11"
-lru = "0.6.5"
+lru = "0.16.2"
 nanoid = "0.4"
 observability = { version = "0.1", package = "aingle-observability" }
 once_cell = "1.4"
