@@ -1,6 +1,6 @@
 [package]
 name = "aingle_minimal"
-version = "0.2.1"
+version = "0.3.0"
 description = "Ultra-light AIngle node for IoT devices (<1MB RAM)"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -43,6 +43,8 @@ embedded = ["dep:embedded-hal", "dep:embedded-hal-async"]
 ai_memory = ["titans_memory"]
 # Enable smart agents (HOPE Agents)
 smart_agents = ["hope_agents"]
+# Enable REST API server for SDK integration
+rest = ["dep:tiny_http"]
 
 # Storage backends
 sqlite = ["dep:rusqlite"]           # Default, lightweight, good for IoT
@@ -124,6 +126,9 @@ titans_memory = { version = "0.1", optional = true }
 
 # HOPE Agents (AI Agent Framework)
 hope_agents = { version = "0.1", optional = true }
+
+# REST API server (lightweight HTTP)
+tiny_http = { version = "0.12", optional = true }
 
 [dev-dependencies]
 # Testing

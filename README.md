@@ -274,6 +274,43 @@ cargo doc --workspace --no-deps --open
 
 ---
 
+## SDKs
+
+Official SDKs for integrating AIngle into your applications:
+
+| Language | Package | Repository |
+|----------|---------|------------|
+| **JavaScript/TypeScript** | `@apilium/aingle-sdk` | [aingle-sdk-js](https://github.com/ApiliumCode/aingle-sdk-js) |
+| **Python** | `aingle-sdk` | [aingle-sdk-python](https://github.com/ApiliumCode/aingle-sdk-python) |
+| **Go** | `github.com/ApiliumCode/aingle-sdk-go` | [aingle-sdk-go](https://github.com/ApiliumCode/aingle-sdk-go) |
+| **Swift** | `AIngleSDK` | [aingle-sdk-swift](https://github.com/ApiliumCode/aingle-sdk-swift) |
+| **Kotlin** | `com.apilium:aingle-sdk` | [aingle-sdk-kotlin](https://github.com/ApiliumCode/aingle-sdk-kotlin) |
+
+### Quick Example (JavaScript)
+
+```javascript
+import { AIngleClient } from '@apilium/aingle-sdk';
+
+const client = new AIngleClient('http://localhost:8080');
+
+// Create an entry
+const hash = await client.createEntry({ sensor: 'temp', value: 23.5 });
+
+// Subscribe to real-time updates
+client.subscribe((entry) => {
+  console.log('New entry:', entry.hash);
+});
+```
+
+### Running with SDK Support
+
+```bash
+# Start node with REST API enabled
+aingle-minimal run --rest-port 8080
+```
+
+---
+
 ## Contributing
 
 We welcome contributions from the community.

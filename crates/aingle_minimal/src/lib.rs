@@ -219,6 +219,10 @@ pub mod wallet;
 #[cfg(feature = "webrtc")]
 pub mod webrtc;
 
+// REST API server for SDK integration
+#[cfg(feature = "rest")]
+pub mod rest;
+
 // Storage - trait is always available
 pub mod storage_trait;
 
@@ -274,6 +278,8 @@ pub use webrtc::{
     ConnectionState, PeerConnection, SignalingClient, SignalingConfig, SignalingMessage,
     SignalingServer, WebRtcConfig, WebRtcServer, WebRtcStats,
 };
+#[cfg(feature = "rest")]
+pub use rest::{RestConfig, RestServer};
 
 /// Version information for the crate.
 ///

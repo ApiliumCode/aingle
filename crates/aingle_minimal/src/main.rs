@@ -81,6 +81,10 @@ enum Commands {
         /// Database path for persistent storage
         #[arg(short, long)]
         db_path: Option<PathBuf>,
+
+        /// Enable REST API server on specified port (for SDK integration)
+        #[arg(long)]
+        rest_port: Option<u16>,
     },
 
     /// Generate a new keypair
@@ -152,6 +156,7 @@ fn main() -> Result<()> {
             peer,
             mdns,
             db_path,
+            rest_port,
         }) => run_node(
             iot,
             low_power,
@@ -162,6 +167,7 @@ fn main() -> Result<()> {
             peer,
             mdns,
             db_path,
+            rest_port,
         ),
         Some(Commands::Keygen { output, format }) => keygen(output, format),
         Some(Commands::Info) => show_info(),
@@ -211,6 +217,7 @@ fn run_node(
     peers: Vec<String>,
     mdns: bool,
     db_path: Option<PathBuf>,
+    rest_port: Option<u16>,
 ) -> Result<()> {
     print_banner();
 
@@ -276,8 +283,49 @@ fn run_node(
     // Setup Ctrl+C handler
     setup_ctrlc_handler();
 
-    // Run the node
-    smol::block_on(node.run())?;
+    // Start REST server if port specified and run node
+    #[cfg(feature = "rest")]
+    {
+        if let Some(rest_port) = rest_port {
+            use aingle_minimal::rest::{RestConfig, RestServer};
+            use std::sync::{Arc, Mutex};
+
+            let rest_config = RestConfig::with_port(rest_port);
+            println!("REST API server: http://0.0.0.0:{}", rest_port);
+            println!("  GET  /api/v1/info     - Node information");
+            println!("  POST /api/v1/entries  - Create entry");
+            println!("  GET  /api/v1/entries/:hash - Get entry");
+            println!("  GET  /api/v1/peers    - List peers");
+            println!("  GET  /api/v1/stats    - Statistics");
+            println!();
+
+            // Wrap node in Arc<Mutex> for REST server access
+            let node_arc = Arc::new(Mutex::new(node));
+            let _server = RestServer::start_with_node(rest_config, Arc::clone(&node_arc))?;
+
+            // Run node in main loop with periodic checks
+            loop {
+                {
+                    let node_guard = node_arc.lock().unwrap();
+                    if !node_guard.is_running() {
+                        break;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        } else {
+            smol::block_on(node.run())?;
+        }
+    }
+
+    #[cfg(not(feature = "rest"))]
+    {
+        if rest_port.is_some() {
+            eprintln!("Warning: REST API requested but 'rest' feature not enabled");
+            eprintln!("Rebuild with: cargo build --features rest");
+        }
+        smol::block_on(node.run())?;
+    }
 
     Ok(())
 }
