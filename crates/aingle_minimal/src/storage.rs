@@ -6,7 +6,7 @@
 use crate::config::StorageConfig;
 use crate::error::Result;
 use crate::storage_trait::{StorageBackend, StorageStats};
-use crate::types::{Action, Entry, Hash, Link, Record, Timestamp};
+use crate::types::{Action, ActionType, AgentPubKey, Entry, Hash, Link, Record, Signature, Timestamp};
 use rusqlite::{params, Connection};
 
 // ============================================================================
@@ -299,6 +299,115 @@ impl Storage {
         Ok(seq.unwrap_or(0))
     }
 
+    /// Get records by sequence range
+    ///
+    /// Fetches actions with sequence numbers >= from_seq and < to_seq,
+    /// limited by the given limit. Returns full Record structs with
+    /// associated entries if they exist.
+    pub fn get_records_by_seq_range(
+        &self,
+        from_seq: u32,
+        to_seq: u32,
+        limit: u32,
+    ) -> Result<Vec<Record>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT hash, seq, timestamp, action_type, author, prev_action, entry_hash, data
+             FROM actions
+             WHERE seq >= ? AND seq < ?
+             ORDER BY seq ASC
+             LIMIT ?"
+        )?;
+
+        let rows = stmt.query_map(params![from_seq, to_seq, limit], |row| {
+            let hash_bytes: Vec<u8> = row.get(0)?;
+            let seq: u32 = row.get(1)?;
+            let timestamp_ms: i64 = row.get(2)?;
+            let action_type_str: String = row.get(3)?;
+            let author_bytes: Vec<u8> = row.get(4)?;
+            let prev_action_bytes: Option<Vec<u8>> = row.get(5)?;
+            let entry_hash_bytes: Option<Vec<u8>> = row.get(6)?;
+            let _data: Vec<u8> = row.get(7)?;
+
+            Ok((
+                hash_bytes,
+                seq,
+                timestamp_ms,
+                action_type_str,
+                author_bytes,
+                prev_action_bytes,
+                entry_hash_bytes,
+            ))
+        })?;
+
+        let mut records = Vec::new();
+
+        for row_result in rows {
+            let (
+                _hash_bytes,
+                seq,
+                timestamp_ms,
+                action_type_str,
+                author_bytes,
+                prev_action_bytes,
+                entry_hash_bytes,
+            ) = row_result?;
+
+            // Parse action type
+            let action_type = match action_type_str.as_str() {
+                "Create" => ActionType::Create,
+                "Update" => ActionType::Update,
+                "Delete" => ActionType::Delete,
+                _ => ActionType::Create,
+            };
+
+            // Convert bytes to fixed arrays
+            let mut author = [0u8; 32];
+            if author_bytes.len() >= 32 {
+                author.copy_from_slice(&author_bytes[..32]);
+            }
+
+            let prev_action = prev_action_bytes.map(|bytes| {
+                let mut arr = [0u8; 32];
+                if bytes.len() >= 32 {
+                    arr.copy_from_slice(&bytes[..32]);
+                }
+                Hash(arr)
+            });
+
+            let entry_hash = entry_hash_bytes.as_ref().map(|bytes| {
+                let mut arr = [0u8; 32];
+                if bytes.len() >= 32 {
+                    arr.copy_from_slice(&bytes[..32]);
+                }
+                Hash(arr)
+            });
+
+            let action = Action {
+                action_type,
+                author: AgentPubKey(author),
+                timestamp: Timestamp::from_millis(timestamp_ms as u64),
+                seq,
+                prev_action,
+                entry_hash: entry_hash.clone(),
+                signature: Signature([0u8; 64]), // Signature not stored separately
+            };
+
+            // Fetch associated entry if exists
+            let entry = if let Some(ref eh) = entry_hash {
+                self.get_entry(eh)?
+            } else {
+                None
+            };
+
+            records.push(Record {
+                action,
+                entry,
+            });
+        }
+
+        Ok(records)
+    }
+
     /// Get storage statistics
     pub fn stats(&self) -> Result<StorageStats> {
         let action_count: u64 = self
@@ -522,6 +631,15 @@ impl StorageBackend for Storage {
 
     fn get_latest_seq(&self) -> Result<u32> {
         Storage::get_latest_seq(self)
+    }
+
+    fn get_records_by_seq_range(
+        &self,
+        from_seq: u32,
+        to_seq: u32,
+        limit: u32,
+    ) -> Result<Vec<Record>> {
+        Storage::get_records_by_seq_range(self, from_seq, to_seq, limit)
     }
 
     fn stats(&self) -> Result<StorageStats> {
@@ -809,5 +927,32 @@ mod tests {
         let storage = Storage::memory().unwrap();
         let stats = use_backend(&storage).unwrap();
         assert_eq!(stats.action_count, 0);
+    }
+
+    #[test]
+    fn test_get_records_by_seq_range() {
+        let storage = Storage::memory().unwrap();
+
+        // Insert 10 actions with sequence 1-10
+        for seq in 1..=10 {
+            let action = create_test_action(seq);
+            storage.put_action(&action).unwrap();
+        }
+
+        // Test fetching range [3, 8) with limit 10
+        let records = storage.get_records_by_seq_range(3, 8, 10).unwrap();
+        assert_eq!(records.len(), 5); // seq 3, 4, 5, 6, 7
+        assert_eq!(records[0].action.seq, 3);
+        assert_eq!(records[4].action.seq, 7);
+
+        // Test with limit smaller than range
+        let records = storage.get_records_by_seq_range(1, 10, 3).unwrap();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].action.seq, 1);
+        assert_eq!(records[2].action.seq, 3);
+
+        // Test empty range
+        let records = storage.get_records_by_seq_range(100, 200, 10).unwrap();
+        assert!(records.is_empty());
     }
 }

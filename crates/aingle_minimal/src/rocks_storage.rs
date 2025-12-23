@@ -61,7 +61,7 @@ impl RocksStorage {
 
         // Open database with column families
         let db = DB::open_cf_descriptors(&opts, path, cf_descriptors)
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::storage(e.to_string()))?;
 
         Ok(Self {
             db: Arc::new(db),
@@ -124,7 +124,7 @@ impl RocksStorage {
         let current = self
             .db
             .get_cf(cf, key)
-            .map_err(|e| Error::Storage(e.to_string()))?
+            .map_err(|e| Error::storage(e.to_string()))?
             .map(|v| {
                 let mut arr = [0u8; 8];
                 arr.copy_from_slice(&v[..8]);
@@ -135,7 +135,7 @@ impl RocksStorage {
         let next = current + 1;
         self.db
             .put_cf(cf, key, &next.to_be_bytes())
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::storage(e.to_string()))?;
 
         Ok(next)
     }
@@ -160,13 +160,13 @@ impl StorageBackend for RocksStorage {
 
         self.db
             .put_cf(self.cf(CF_ACTIONS), &key, &value)
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::storage(e.to_string()))?;
 
         // Update sequence counter
         let seq_key = b"latest_seq";
         self.db
             .put_cf(self.cf(CF_SEQUENCES), seq_key, &action.seq.to_be_bytes())
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::storage(e.to_string()))?;
 
         self.maybe_prune()?;
         Ok(hash)
@@ -179,7 +179,7 @@ impl StorageBackend for RocksStorage {
 
         self.db
             .put_cf(self.cf(CF_ENTRIES), &key, &value)
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::storage(e.to_string()))?;
 
         self.maybe_prune()?;
         Ok(hash)
@@ -198,7 +198,7 @@ impl StorageBackend for RocksStorage {
         match self
             .db
             .get_cf(self.cf(CF_ACTIONS), &key)
-            .map_err(|e| Error::Storage(e.to_string()))?
+            .map_err(|e| Error::storage(e.to_string()))?
         {
             Some(value) => Ok(Some(serde_json::from_slice(&value)?)),
             None => Ok(None),
@@ -211,7 +211,7 @@ impl StorageBackend for RocksStorage {
         match self
             .db
             .get_cf(self.cf(CF_ENTRIES), &key)
-            .map_err(|e| Error::Storage(e.to_string()))?
+            .map_err(|e| Error::storage(e.to_string()))?
         {
             Some(value) => Ok(Some(serde_json::from_slice(&value)?)),
             None => Ok(None),
@@ -224,7 +224,7 @@ impl StorageBackend for RocksStorage {
         match self
             .db
             .get_cf(self.cf(CF_SEQUENCES), seq_key)
-            .map_err(|e| Error::Storage(e.to_string()))?
+            .map_err(|e| Error::storage(e.to_string()))?
         {
             Some(value) => {
                 let mut arr = [0u8; 4];
@@ -233,6 +233,51 @@ impl StorageBackend for RocksStorage {
             }
             None => Ok(0),
         }
+    }
+
+    fn get_records_by_seq_range(
+        &self,
+        from_seq: u32,
+        to_seq: u32,
+        limit: u32,
+    ) -> Result<Vec<Record>> {
+        let mut records = Vec::new();
+        let limit = limit as usize;
+
+        // Iterate over all actions and filter by sequence
+        // Note: In production, would want a secondary index for efficiency
+        let iter = self
+            .db
+            .iterator_cf(self.cf(CF_ACTIONS), rocksdb::IteratorMode::Start);
+
+        let mut collected: Vec<Action> = Vec::new();
+
+        for item in iter {
+            if let Ok((_, value)) = item {
+                if let Ok(action) = serde_json::from_slice::<Action>(&value) {
+                    if action.seq >= from_seq && action.seq < to_seq {
+                        collected.push(action);
+                    }
+                }
+            }
+        }
+
+        // Sort by sequence and limit
+        collected.sort_by_key(|a| a.seq);
+        collected.truncate(limit);
+
+        // Build records with entries
+        for action in collected {
+            let entry = if let Some(ref eh) = action.entry_hash {
+                self.get_entry(eh)?
+            } else {
+                None
+            };
+
+            records.push(Record { action, entry });
+        }
+
+        Ok(records)
     }
 
     fn stats(&self) -> Result<StorageStats> {
@@ -302,7 +347,7 @@ impl StorageBackend for RocksStorage {
         let value = serde_json::to_vec(&link_data)?;
         self.db
             .put_cf(self.cf(CF_LINKS), &key, &value)
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::storage(e.to_string()))?;
 
         Ok(link_id)
     }
@@ -321,7 +366,7 @@ impl StorageBackend for RocksStorage {
                         let new_value = serde_json::to_vec(&link_data)?;
                         self.db
                             .put_cf(self.cf(CF_LINKS), &key, &new_value)
-                            .map_err(|e| Error::Storage(e.to_string()))?;
+                            .map_err(|e| Error::storage(e.to_string()))?;
                         break;
                     }
                 }
@@ -372,7 +417,7 @@ impl StorageBackend for RocksStorage {
     fn set_metadata(&self, key: &str, value: &str) -> Result<()> {
         self.db
             .put_cf(self.cf(CF_METADATA), key.as_bytes(), value.as_bytes())
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::storage(e.to_string()))?;
         Ok(())
     }
 
@@ -380,7 +425,7 @@ impl StorageBackend for RocksStorage {
         match self
             .db
             .get_cf(self.cf(CF_METADATA), key.as_bytes())
-            .map_err(|e| Error::Storage(e.to_string()))?
+            .map_err(|e| Error::storage(e.to_string()))?
         {
             Some(value) => Ok(Some(String::from_utf8_lossy(&value).to_string())),
             None => Ok(None),

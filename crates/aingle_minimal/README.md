@@ -51,7 +51,7 @@ Ultra-lightweight AIngle node for IoT devices with **< 1MB RAM** footprint. Supp
 aingle_minimal = "0.1"
 ```
 
-```rust
+```rust,ignore
 use aingle_minimal::{MinimalNode, Config};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

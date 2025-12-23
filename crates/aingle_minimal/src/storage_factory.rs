@@ -28,8 +28,8 @@ impl DynamicStorage {
             }
             #[cfg(not(feature = "sqlite"))]
             StorageBackendType::Sqlite => {
-                Err(Error::Storage(
-                    "SQLite backend not available. Compile with --features sqlite".to_string(),
+                Err(Error::storage(
+                    "SQLite backend not available. Compile with --features sqlite",
                 ))
             }
 
@@ -40,8 +40,8 @@ impl DynamicStorage {
             }
             #[cfg(not(feature = "rocksdb"))]
             StorageBackendType::Rocksdb => {
-                Err(Error::Storage(
-                    "RocksDB backend not available. Compile with --features rocksdb".to_string(),
+                Err(Error::storage(
+                    "RocksDB backend not available. Compile with --features rocksdb",
                 ))
             }
 
@@ -59,8 +59,8 @@ impl DynamicStorage {
             }
             #[cfg(all(not(feature = "sqlite"), not(feature = "rocksdb")))]
             StorageBackendType::Memory => {
-                Err(Error::Storage(
-                    "No storage backend available. Compile with --features sqlite or --features rocksdb".to_string(),
+                Err(Error::storage(
+                    "No storage backend available. Compile with --features sqlite or --features rocksdb",
                 ))
             }
         }
@@ -139,6 +139,20 @@ impl StorageBackend for DynamicStorage {
             DynamicStorage::Sqlite(s) => s.get_latest_seq(),
             #[cfg(feature = "rocksdb")]
             DynamicStorage::Rocksdb(s) => s.get_latest_seq(),
+        }
+    }
+
+    fn get_records_by_seq_range(
+        &self,
+        from_seq: u32,
+        to_seq: u32,
+        limit: u32,
+    ) -> Result<Vec<Record>> {
+        match self {
+            #[cfg(feature = "sqlite")]
+            DynamicStorage::Sqlite(s) => s.get_records_by_seq_range(from_seq, to_seq, limit),
+            #[cfg(feature = "rocksdb")]
+            DynamicStorage::Rocksdb(s) => s.get_records_by_seq_range(from_seq, to_seq, limit),
         }
     }
 

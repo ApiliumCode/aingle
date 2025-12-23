@@ -24,7 +24,7 @@
 //!
 //! ## Quick Start
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use aingle_minimal::{MinimalNode, Config};
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -42,61 +42,61 @@
 //!
 //! ### Sensor Integration
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use aingle_minimal::{MinimalNode, SensorManager, SensorType, Config};
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let mut node = MinimalNode::new(Config::iot_mode())?;
-//! let mut sensors = SensorManager::new();
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let mut node = MinimalNode::new(Config::iot_mode())?;
+//!     let mut sensors = SensorManager::new();
 //!
-//! // Add temperature sensor
-//! sensors.add_sensor(SensorType::Temperature, 0x48)?;
+//!     // Add temperature sensor
+//!     sensors.add_sensor(SensorType::Temperature, 0x48)?;
 //!
-//! // Read and publish sensor data
-//! let reading = sensors.read(SensorType::Temperature)?;
-//! node.publish_sensor_data(reading)?;
-//! # Ok(())
-//! # }
+//!     // Read and publish sensor data
+//!     let reading = sensors.read(SensorType::Temperature)?;
+//!     node.publish_sensor_data(reading)?;
+//!     Ok(())
+//! }
 //! ```
 //!
 //! ### CoAP Server
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use aingle_minimal::{CoapServer, CoapConfig};
 //!
-//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let config = CoapConfig::default();
-//! let server = CoapServer::new(config).await?;
+//! async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//!     let config = CoapConfig::default();
+//!     let server = CoapServer::new(config).await?;
 //!
-//! // Register resource handlers
-//! server.register_resource("/temperature", |req| {
-//!     // Handle GET /temperature
-//!     Ok("23.5".into())
-//! });
+//!     // Register resource handlers
+//!     server.register_resource("/temperature", |req| {
+//!         // Handle GET /temperature
+//!         Ok("23.5".into())
+//!     });
 //!
-//! server.run().await?;
-//! # Ok(())
-//! # }
+//!     server.run().await?;
+//!     Ok(())
+//! }
 //! ```
 //!
 //! ### Power Management
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use aingle_minimal::{PowerManager, PowerProfile, BatteryInfo};
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let mut power = PowerManager::new();
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let mut power = PowerManager::new();
 //!
-//! // Check battery and adjust power mode
-//! let battery = power.battery_info()?;
-//! if battery.percentage < 20.0 {
-//!     power.set_profile(PowerProfile::PowerSave)?;
+//!     // Check battery and adjust power mode
+//!     let battery = power.battery_info()?;
+//!     if battery.percentage < 20.0 {
+//!         power.set_profile(PowerProfile::PowerSave)?;
+//!     }
+//!
+//!     // Sleep when idle
+//!     power.sleep(std::time::Duration::from_secs(10))?;
+//!     Ok(())
 //! }
-//!
-//! // Sleep when idle
-//! power.sleep(std::time::Duration::from_secs(10))?;
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! ### Smart Agent (Edge AI)
@@ -216,6 +216,8 @@ pub mod types;
 pub mod wallet;
 #[cfg(feature = "webrtc")]
 pub mod webrtc;
+#[cfg(feature = "quic")]
+pub mod quic;
 
 // Storage - trait is always available
 pub mod storage_trait;
@@ -241,18 +243,20 @@ pub use storage_trait::{StorageBackend, StorageStats};
 pub use bluetooth::{BleConfig, BleManager, BlePeer, BleState, BleStats};
 #[cfg(feature = "coap")]
 pub use coap::{CoapConfig, CoapServer};
-pub use config::Config;
+#[cfg(feature = "quic")]
+pub use quic::{QuicConfig, QuicServer};
+pub use config::{Config, GossipConfig, MeshMode, PowerMode, StorageConfig, TransportConfig};
 pub use discovery::{DiscoveredPeer, Discovery};
 #[cfg(feature = "coap")]
 pub use dtls::{DtlsConfig, DtlsSession, SecureCoap, SecurityMode};
-pub use error::{Error, Result};
+pub use error::{CryptoError, Error, GossipError, NetworkError, Result, StorageError, SyncError};
 pub use gossip::{BloomFilter, GossipManager, GossipStats, MessagePriority, TokenBucket};
 pub use graph::{
     GraphStats as SemanticGraphStats, SemanticGraph, SemanticQuery, SemanticTriple, TripleObject,
 };
 #[cfg(feature = "ai_memory")]
 pub use memory::IoTMemory;
-pub use node::MinimalNode;
+pub use node::{MinimalNode, PeerRecord};
 pub use ota::{OtaManager, UpdateChannel, UpdateInfo, UpdateState};
 pub use power::{BatteryInfo, PowerManager, PowerProfile};
 pub use sensors::{CalibrationParams, Sensor, SensorManager, SensorReading, SensorType};

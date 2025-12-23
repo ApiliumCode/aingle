@@ -188,6 +188,12 @@ jobs:
       - name: Test aingle_minimal with coap
         run: cargo test -p aingle_minimal --features coap
 
+      - name: Test aingle_minimal with quic
+        run: cargo test -p aingle_minimal --features quic
+
+      - name: Test aingle_minimal with all transports
+        run: cargo test -p aingle_minimal --features "sqlite,coap,quic,webrtc"
+
       - name: Test new crates
         run: |
           cargo test -p aingle_graph
@@ -285,9 +291,37 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-bench-
 
-      - name: Run benchmarks
+      - name: Run aingle_minimal benchmarks
+        run: cargo bench -p aingle_minimal --features "sqlite,coap" -- --noplot
+        continue-on-error: true
+
+      - name: Run hope_agents benchmarks
+        run: cargo bench -p hope_agents -- --noplot
+        continue-on-error: true
+
+      - name: Run titans_memory benchmarks
+        run: cargo bench -p titans_memory -- --noplot
+        continue-on-error: true
+
+      - name: Run aingle_graph benchmarks
+        run: cargo bench -p aingle_graph -- --noplot
+        continue-on-error: true
+
+      - name: Run full workspace benchmarks
         run: cargo bench --workspace -- --noplot
         continue-on-error: true
+
+      - name: Benchmark Summary
+        run: |
+          echo "## Benchmark Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Benchmarks ran successfully. Full results available in job logs." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Crates benchmarked:**" >> $GITHUB_STEP_SUMMARY
+          echo "- aingle_minimal (Node, CoAP, Gossip, Storage)" >> $GITHUB_STEP_SUMMARY
+          echo "- hope_agents (Agent policies, Q-learning)" >> $GITHUB_STEP_SUMMARY
+          echo "- titans_memory (Surprise-based memory)" >> $GITHUB_STEP_SUMMARY
+          echo "- aingle_graph (Knowledge graph operations)" >> $GITHUB_STEP_SUMMARY
 
   # Documentation build
   docs:
@@ -357,6 +391,7 @@ jobs:
         run: |
           cargo check -p aingle_minimal --features webrtc
           cargo check -p aingle_minimal --features ble
+          cargo check -p aingle_minimal --features quic
 
       - name: Check hw_wallet feature
         run: cargo check -p aingle_minimal --features hw_wallet

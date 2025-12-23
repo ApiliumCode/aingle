@@ -42,9 +42,33 @@ use crate::storage_factory::DynamicStorage;
 use crate::storage_trait::StorageBackend;
 use crate::sync::SyncManager;
 use crate::types::*;
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Key used to store known peers in metadata
+const PEERS_METADATA_KEY: &str = "known_peers";
+
+/// Interval for auto-saving peers (in seconds)
+const PEER_SAVE_INTERVAL_SECS: u64 = 300; // 5 minutes
+
+/// A serializable record of a known peer for persistence.
+///
+/// This struct captures essential information about a peer that can be
+/// saved to storage and restored when the node restarts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerRecord {
+    /// The peer's network address (IP:port).
+    pub addr: String,
+    /// The last known sequence number from this peer.
+    pub latest_seq: u32,
+    /// Quality score from 0-100 (higher is better).
+    pub quality: u8,
+    /// Unix timestamp (seconds) of when this peer was last seen.
+    pub last_seen_secs: u64,
+}
 
 /// A minimal, lightweight AIngle node designed for IoT and resource-constrained devices.
 ///
@@ -107,6 +131,8 @@ pub struct MinimalNode {
     sync: SyncManager,
     running: Arc<AtomicBool>,
     start_time: Instant,
+    /// Timestamp of the last peer save operation
+    last_peer_save: Instant,
 }
 
 impl MinimalNode {
@@ -163,7 +189,7 @@ impl MinimalNode {
         // Initialize sync manager with gossip loop delay as sync interval
         let sync = SyncManager::new(config.gossip.loop_delay * 2);
 
-        Ok(Self {
+        let mut node = Self {
             config,
             keypair,
             storage,
@@ -172,7 +198,15 @@ impl MinimalNode {
             sync,
             running: Arc::new(AtomicBool::new(false)),
             start_time: Instant::now(),
-        })
+            last_peer_save: Instant::now(),
+        };
+
+        // Load persisted peers from storage
+        if let Err(e) = node.load_peers() {
+            log::warn!("Failed to load persisted peers: {}", e);
+        }
+
+        Ok(node)
     }
 
     /// Returns the node's public key, which serves as its permanent identity on the network.
@@ -334,7 +368,7 @@ impl MinimalNode {
 
     /// Creates multiple entries in a single optimized batch operation.
     ///
-    /// This is significantly faster than calling [`create_entry`] multiple times
+    /// This is significantly faster than calling [`Self::create_entry`] multiple times
     /// because it:
     /// - Gets the latest sequence number once
     /// - Uses a single database transaction
@@ -546,11 +580,22 @@ impl MinimalNode {
                 self.publish_pending()?;
             }
 
+            // Periodically save peers to storage
+            if self.last_peer_save.elapsed().as_secs() >= PEER_SAVE_INTERVAL_SECS {
+                if let Err(e) = self.save_peers() {
+                    log::warn!("Failed to save peers: {}", e);
+                }
+            }
+
             // Sleep to avoid busy loop
             smol::Timer::after(Duration::from_millis(10)).await;
         }
 
-        // Cleanup
+        // Cleanup: Save peers before stopping
+        if let Err(e) = self.save_peers() {
+            log::warn!("Failed to save peers on shutdown: {}", e);
+        }
+
         self.network.stop().await?;
         log::info!("Node stopped");
 
@@ -665,6 +710,181 @@ impl MinimalNode {
         self.network.add_peer(addr);
     }
 
+    /// Saves the current list of known peers to persistent storage.
+    ///
+    /// This method serializes all active peers to JSON and stores them in the
+    /// database's metadata table. Peers are automatically saved periodically
+    /// during the main loop, but this method can be called manually for
+    /// immediate persistence.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or storage operations fail.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use aingle_minimal::{MinimalNode, Config};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut node = MinimalNode::new(Config::test_mode())?;
+    ///
+    /// // Add some peers
+    /// node.add_peer("192.168.1.100:5683".parse()?);
+    /// node.add_peer("192.168.1.101:5683".parse()?);
+    ///
+    /// // Save peers to storage
+    /// node.save_peers()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn save_peers(&mut self) -> Result<()> {
+        let peers = self.network.active_peers();
+        if peers.is_empty() {
+            log::debug!("No active peers to save");
+            return Ok(());
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let peer_records: Vec<PeerRecord> = peers
+            .iter()
+            .map(|p| {
+                // Estimate last_seen as now minus elapsed time
+                let elapsed_secs = p.last_seen.elapsed().as_secs();
+                PeerRecord {
+                    addr: p.addr.to_string(),
+                    latest_seq: p.latest_seq,
+                    quality: p.quality,
+                    last_seen_secs: now.saturating_sub(elapsed_secs),
+                }
+            })
+            .collect();
+
+        let json = serde_json::to_string(&peer_records)
+            .map_err(|e| crate::error::Error::Serialization(e.to_string()))?;
+
+        self.storage.set_metadata(PEERS_METADATA_KEY, &json)?;
+        self.last_peer_save = Instant::now();
+
+        log::info!("Saved {} peers to storage", peer_records.len());
+        Ok(())
+    }
+
+    /// Loads previously saved peers from persistent storage.
+    ///
+    /// This method is automatically called during node initialization to restore
+    /// known peers from the previous session. Peers with a quality score above
+    /// a threshold are re-added to the network.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if storage read or deserialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use aingle_minimal::{MinimalNode, Config};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut node = MinimalNode::new(Config::test_mode())?;
+    ///
+    /// // Peers are automatically loaded during new()
+    /// // But can also be called manually:
+    /// node.load_peers()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn load_peers(&mut self) -> Result<()> {
+        let json = match self.storage.get_metadata(PEERS_METADATA_KEY)? {
+            Some(data) => data,
+            None => {
+                log::debug!("No persisted peers found");
+                return Ok(());
+            }
+        };
+
+        let peer_records: Vec<PeerRecord> = serde_json::from_str(&json)
+            .map_err(|e| crate::error::Error::Serialization(e.to_string()))?;
+
+        let mut loaded_count = 0;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        for record in peer_records {
+            // Skip peers with very low quality or that haven't been seen in > 24 hours
+            if record.quality < 10 {
+                log::debug!("Skipping low-quality peer: {} (quality={})", record.addr, record.quality);
+                continue;
+            }
+
+            let age_secs = now.saturating_sub(record.last_seen_secs);
+            if age_secs > 24 * 60 * 60 {
+                log::debug!("Skipping stale peer: {} (last seen {} hours ago)",
+                    record.addr, age_secs / 3600);
+                continue;
+            }
+
+            if let Ok(addr) = record.addr.parse::<SocketAddr>() {
+                self.network.add_peer(addr);
+                // Restore quality by simulating successful interactions
+                let quality_boosts = record.quality.saturating_sub(50) / 5;
+                for _ in 0..quality_boosts {
+                    self.network.update_peer(addr, record.latest_seq);
+                }
+                loaded_count += 1;
+            } else {
+                log::warn!("Invalid peer address in storage: {}", record.addr);
+            }
+        }
+
+        log::info!("Loaded {} peers from storage", loaded_count);
+        Ok(())
+    }
+
+    /// Returns the list of known peers as serializable records.
+    ///
+    /// This is useful for exporting peer information or debugging.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use aingle_minimal::{MinimalNode, Config};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut node = MinimalNode::new(Config::test_mode())?;
+    /// node.add_peer("192.168.1.100:5683".parse()?);
+    ///
+    /// let peers = node.get_known_peers();
+    /// for peer in peers {
+    ///     println!("Peer: {} (quality: {})", peer.addr, peer.quality);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_known_peers(&self) -> Vec<PeerRecord> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        self.network
+            .active_peers()
+            .iter()
+            .map(|p| {
+                let elapsed_secs = p.last_seen.elapsed().as_secs();
+                PeerRecord {
+                    addr: p.addr.to_string(),
+                    latest_seq: p.latest_seq,
+                    quality: p.quality,
+                    last_seen_secs: now.saturating_sub(elapsed_secs),
+                }
+            })
+            .collect()
+    }
+
     /// Returns statistics from the sync manager.
     ///
     /// These statistics provide insights into data synchronization performance,
@@ -678,8 +898,8 @@ impl MinimalNode {
     /// let node = MinimalNode::new(Config::test_mode())?;
     ///
     /// let stats = node.sync_stats();
-    /// println!("Sync attempts: {}", stats.sync_attempts);
-    /// println!("Successful syncs: {}", stats.successful_syncs);
+    /// println!("Successful syncs: {}", stats.total_successful_syncs);
+    /// println!("Failed syncs: {}", stats.total_failed_syncs);
     /// # Ok(())
     /// # }
     /// ```
@@ -700,8 +920,8 @@ impl MinimalNode {
     /// let node = MinimalNode::new(Config::test_mode())?;
     ///
     /// let stats = node.gossip_stats();
-    /// println!("Gossip rounds: {}", stats.gossip_rounds);
-    /// println!("Messages sent: {}", stats.messages_sent);
+    /// println!("Gossip round: {}", stats.round);
+    /// println!("Queue length: {}", stats.queue_length);
     /// # Ok(())
     /// # }
     /// ```
@@ -966,5 +1186,287 @@ mod tests {
 
         let hash = node.create_entry(data);
         assert!(hash.is_ok());
+    }
+
+    // ==================== Peer Persistence Tests ====================
+
+    #[test]
+    fn test_peer_record_serialization() {
+        let record = PeerRecord {
+            addr: "192.168.1.100:5683".to_string(),
+            latest_seq: 42,
+            quality: 75,
+            last_seen_secs: 1234567890,
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("192.168.1.100:5683"));
+        assert!(json.contains("42"));
+        assert!(json.contains("75"));
+
+        let parsed: PeerRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.addr, record.addr);
+        assert_eq!(parsed.latest_seq, record.latest_seq);
+        assert_eq!(parsed.quality, record.quality);
+        assert_eq!(parsed.last_seen_secs, record.last_seen_secs);
+    }
+
+    #[test]
+    fn test_peer_record_vec_serialization() {
+        let records = vec![
+            PeerRecord {
+                addr: "192.168.1.100:5683".to_string(),
+                latest_seq: 10,
+                quality: 80,
+                last_seen_secs: 1000,
+            },
+            PeerRecord {
+                addr: "10.0.0.50:5683".to_string(),
+                latest_seq: 20,
+                quality: 60,
+                last_seen_secs: 2000,
+            },
+        ];
+
+        let json = serde_json::to_string(&records).unwrap();
+        let parsed: Vec<PeerRecord> = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].addr, "192.168.1.100:5683");
+        assert_eq!(parsed[1].addr, "10.0.0.50:5683");
+    }
+
+    #[test]
+    fn test_save_peers_empty() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // No peers to save - should succeed silently
+        let result = node.save_peers();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_save_peers_with_peers() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // Add some peers
+        node.add_peer("192.168.1.100:5683".parse().unwrap());
+        node.add_peer("192.168.1.101:5683".parse().unwrap());
+
+        // Save should succeed
+        let result = node.save_peers();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_load_peers_empty_storage() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // Load when nothing is stored - should succeed
+        let result = node.load_peers();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_save_and_load_peers_roundtrip() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // Add peers
+        node.add_peer("192.168.1.100:5683".parse().unwrap());
+        node.add_peer("10.0.0.50:5683".parse().unwrap());
+
+        // Save peers
+        node.save_peers().unwrap();
+
+        // Create a new node with the same storage
+        // (In test_mode, storage is in-memory, so we need to load in same instance)
+        let peer_count_before = node.stats().unwrap().peer_count;
+
+        // Load should work (peers already in network, so no change expected)
+        node.load_peers().unwrap();
+
+        let peer_count_after = node.stats().unwrap().peer_count;
+        assert!(peer_count_after >= peer_count_before);
+    }
+
+    #[test]
+    fn test_get_known_peers_empty() {
+        let config = Config::test_mode();
+        let node = MinimalNode::new(config).unwrap();
+
+        let peers = node.get_known_peers();
+        assert!(peers.is_empty());
+    }
+
+    #[test]
+    fn test_get_known_peers_with_peers() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // Add peers
+        node.add_peer("192.168.1.100:5683".parse().unwrap());
+        node.add_peer("192.168.1.101:5683".parse().unwrap());
+
+        let peers = node.get_known_peers();
+        assert_eq!(peers.len(), 2);
+
+        // Check addresses are correct
+        let addrs: Vec<&str> = peers.iter().map(|p| p.addr.as_str()).collect();
+        assert!(addrs.contains(&"192.168.1.100:5683"));
+        assert!(addrs.contains(&"192.168.1.101:5683"));
+
+        // Check quality is initialized
+        for peer in &peers {
+            assert!(peer.quality > 0);
+        }
+    }
+
+    #[test]
+    fn test_peer_record_debug() {
+        let record = PeerRecord {
+            addr: "127.0.0.1:5683".to_string(),
+            latest_seq: 0,
+            quality: 50,
+            last_seen_secs: 0,
+        };
+
+        let debug_str = format!("{:?}", record);
+        assert!(debug_str.contains("PeerRecord"));
+        assert!(debug_str.contains("127.0.0.1:5683"));
+    }
+
+    #[test]
+    fn test_peer_record_clone() {
+        let record1 = PeerRecord {
+            addr: "192.168.1.1:5683".to_string(),
+            latest_seq: 100,
+            quality: 90,
+            last_seen_secs: 999999,
+        };
+
+        let record2 = record1.clone();
+        assert_eq!(record1.addr, record2.addr);
+        assert_eq!(record1.latest_seq, record2.latest_seq);
+        assert_eq!(record1.quality, record2.quality);
+        assert_eq!(record1.last_seen_secs, record2.last_seen_secs);
+    }
+
+    #[test]
+    fn test_peer_persistence_skips_low_quality() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // Manually set metadata with a low-quality peer
+        let records = vec![PeerRecord {
+            addr: "192.168.1.100:5683".to_string(),
+            latest_seq: 0,
+            quality: 5, // Very low quality
+            last_seen_secs: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }];
+
+        let json = serde_json::to_string(&records).unwrap();
+        node.storage.set_metadata(PEERS_METADATA_KEY, &json).unwrap();
+
+        // Load peers - should skip the low-quality peer
+        node.load_peers().unwrap();
+
+        let peers = node.get_known_peers();
+        // The low-quality peer should be skipped
+        assert!(peers.is_empty());
+    }
+
+    #[test]
+    fn test_peer_persistence_skips_stale() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // Manually set metadata with a stale peer (>24 hours old)
+        let old_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .saturating_sub(25 * 60 * 60); // 25 hours ago
+
+        let records = vec![PeerRecord {
+            addr: "192.168.1.100:5683".to_string(),
+            latest_seq: 100,
+            quality: 80, // Good quality but stale
+            last_seen_secs: old_time,
+        }];
+
+        let json = serde_json::to_string(&records).unwrap();
+        node.storage.set_metadata(PEERS_METADATA_KEY, &json).unwrap();
+
+        // Load peers - should skip the stale peer
+        node.load_peers().unwrap();
+
+        let peers = node.get_known_peers();
+        // The stale peer should be skipped
+        assert!(peers.is_empty());
+    }
+
+    #[test]
+    fn test_peer_persistence_accepts_recent_quality_peer() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // Manually set metadata with a good, recent peer
+        let recent_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let records = vec![PeerRecord {
+            addr: "192.168.1.100:5683".to_string(),
+            latest_seq: 50,
+            quality: 60, // Good quality
+            last_seen_secs: recent_time,
+        }];
+
+        let json = serde_json::to_string(&records).unwrap();
+        node.storage.set_metadata(PEERS_METADATA_KEY, &json).unwrap();
+
+        // Load peers - should accept the good peer
+        node.load_peers().unwrap();
+
+        let peers = node.get_known_peers();
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].addr, "192.168.1.100:5683");
+    }
+
+    #[test]
+    fn test_peer_persistence_invalid_address() {
+        let config = Config::test_mode();
+        let mut node = MinimalNode::new(config).unwrap();
+
+        // Manually set metadata with an invalid address
+        let recent_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let records = vec![PeerRecord {
+            addr: "not-a-valid-address".to_string(), // Invalid
+            latest_seq: 50,
+            quality: 80,
+            last_seen_secs: recent_time,
+        }];
+
+        let json = serde_json::to_string(&records).unwrap();
+        node.storage.set_metadata(PEERS_METADATA_KEY, &json).unwrap();
+
+        // Load peers - should succeed but skip invalid address
+        let result = node.load_peers();
+        assert!(result.is_ok());
+
+        let peers = node.get_known_peers();
+        assert!(peers.is_empty());
     }
 }

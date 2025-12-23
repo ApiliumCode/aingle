@@ -33,8 +33,12 @@ hw_wallet = ["dep:ledger-transport", "dep:ledger-transport-hid"]
 wifi_direct = []
 # Enable WebRTC transport (for browser support)
 webrtc = ["dep:webrtc", "dep:bytes", "dep:async-tungstenite", "dep:futures-util"]
+# Enable QUIC transport (reliable, encrypted UDP)
+quic = ["dep:quinn", "dep:rustls", "dep:rcgen"]
 # Minimal crypto (ed25519 only)
 minimal_crypto = []
+# Embedded HAL support for real hardware sensors
+embedded = ["dep:embedded-hal", "dep:embedded-hal-async"]
 # Enable AI memory (Titans Memory)
 ai_memory = ["titans_memory"]
 # Enable smart agents (HOPE Agents)
@@ -82,6 +86,11 @@ bytes = { version = "1.0", optional = true }
 async-tungstenite = { version = "0.27", features = ["async-std-runtime"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink"], optional = true }
 
+# QUIC transport (reliable encrypted UDP)
+quinn = { version = "0.11", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+rcgen = { version = "0.13", optional = true }
+
 # Bluetooth LE for IoT mesh
 btleplug = { version = "0.11", optional = true }
 uuid = { version = "1.0", optional = true }
@@ -93,12 +102,22 @@ esp32-nimble = { version = "0.8", optional = true }
 ledger-transport = { version = "0.11", optional = true }
 ledger-transport-hid = { version = "0.11", optional = true }
 
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive"] }
+
 # Logging - lightweight
 log = "0.4"
 env_logger = "0.11"
 
 # Time
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+# Semantic versioning for OTA
+semver = "1.0"
+
+# Embedded HAL for hardware abstraction (sensors)
+embedded-hal = { version = "1.0", optional = true }
+embedded-hal-async = { version = "1.0", optional = true }
 
 # AI Memory (Titans Memory)
 titans_memory = { version = "0.2", path = "../titans_memory", optional = true }

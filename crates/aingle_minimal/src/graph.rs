@@ -156,7 +156,7 @@ impl SemanticGraph {
         let mut index = self
             .index
             .write()
-            .map_err(|_| Error::Storage("lock poisoned".into()))?;
+            .map_err(|_| Error::storage("lock poisoned"))?;
 
         let action_hash = action.hash();
         let subject = format!("action:{}", action_hash.to_hex());
@@ -221,7 +221,7 @@ impl SemanticGraph {
         let mut index = self
             .index
             .write()
-            .map_err(|_| Error::Storage("lock poisoned".into()))?;
+            .map_err(|_| Error::storage("lock poisoned"))?;
 
         let entry_hash = entry.hash();
         let subject = format!("entry:{}", entry_hash.to_hex());
@@ -250,7 +250,7 @@ impl SemanticGraph {
         let mut index = self
             .index
             .write()
-            .map_err(|_| Error::Storage("lock poisoned".into()))?;
+            .map_err(|_| Error::storage("lock poisoned"))?;
 
         let base_subject = format!("entry:{}", link.base.to_hex());
         let target = format!("entry:{}", link.target.to_hex());
@@ -286,7 +286,7 @@ impl SemanticGraph {
         let index = self
             .index
             .read()
-            .map_err(|_| Error::Storage("lock poisoned".into()))?;
+            .map_err(|_| Error::storage("lock poisoned"))?;
         Ok(index
             .find_by_subject(subject)
             .into_iter()
@@ -299,7 +299,7 @@ impl SemanticGraph {
         let index = self
             .index
             .read()
-            .map_err(|_| Error::Storage("lock poisoned".into()))?;
+            .map_err(|_| Error::storage("lock poisoned"))?;
         Ok(index
             .find_by_predicate(predicate)
             .into_iter()
@@ -317,7 +317,7 @@ impl SemanticGraph {
         let index = self
             .index
             .read()
-            .map_err(|_| Error::Storage("lock poisoned".into()))?;
+            .map_err(|_| Error::storage("lock poisoned"))?;
 
         let mut visited = std::collections::HashSet::new();
         let mut result = Vec::new();
@@ -357,7 +357,7 @@ impl SemanticGraph {
         let index = self
             .index
             .read()
-            .map_err(|_| Error::Storage("lock poisoned".into()))?;
+            .map_err(|_| Error::storage("lock poisoned"))?;
 
         Ok(GraphStats {
             triple_count: index.triples.len(),
@@ -434,7 +434,7 @@ impl<'a> SemanticQuery<'a> {
             .graph
             .index
             .read()
-            .map_err(|_| Error::Storage("lock poisoned".into()))?;
+            .map_err(|_| Error::storage("lock poisoned"))?;
 
         let mut results: Vec<_> = index
             .triples

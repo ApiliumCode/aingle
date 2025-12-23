@@ -38,7 +38,7 @@ use std::time::Duration;
 ///
 /// ```
 /// # use aingle_minimal::{Config, PowerMode};
-/// let mut config = Config::default();
+/// let mut config = Config::test_mode();
 /// config.power_mode = PowerMode::Low;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -576,40 +576,6 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Returns a configuration optimized for testing, using in-memory storage.
-    ///
-    /// This configuration uses the Memory transport and in-memory storage backend,
-    /// making it suitable for unit tests that don't require actual network or disk I/O.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use aingle_minimal::{Config, MinimalNode};
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = Config::test_mode();
-    /// let mut node = MinimalNode::new(config)?;
-    ///
-    /// // Create test data
-    /// let hash = node.create_entry("test data")?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[cfg(test)]
-    pub fn test_mode() -> Self {
-        Self {
-            node_id: None,
-            publish_interval: Duration::ZERO,
-            power_mode: PowerMode::Full,
-            transport: TransportConfig::Memory,
-            gossip: GossipConfig::iot_mode(),
-            storage: StorageConfig::memory(),
-            memory_limit: 256 * 1024,
-            enable_metrics: false,
-            enable_mdns: false, // Disabled in tests
-            log_level: "debug".to_string(),
-        }
-    }
-
     /// Returns a configuration optimized for IoT devices.
     ///
     /// This configuration features:
@@ -718,14 +684,15 @@ impl Config {
     ///
     /// # Examples
     ///
-    /// ```
-    /// # use aingle_minimal::{Config, MinimalNode};
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// // Create a production server node
-    /// let config = Config::production("./production_data");
-    /// let mut node = MinimalNode::new(config)?;
-    /// # Ok(())
-    /// # }
+    /// ```rust,no_run
+    /// use aingle_minimal::{Config, MinimalNode};
+    ///
+    /// fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     // Create a production server node
+    ///     let config = Config::production("./production_data");
+    ///     let mut node = MinimalNode::new(config)?;
+    ///     Ok(())
+    /// }
     /// ```
     pub fn production(db_path: &str) -> Self {
         Self {
@@ -795,6 +762,48 @@ impl Config {
         }
 
         config
+    }
+
+    /// Returns a configuration optimized for testing.
+    ///
+    /// This configuration features:
+    /// - In-memory storage (no disk I/O)
+    /// - Memory transport (no network)
+    /// - Fast publish interval (10ms)
+    /// - Small memory footprint (64KB)
+    /// - mDNS disabled
+    /// - Metrics disabled
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use aingle_minimal::{Config, MinimalNode};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = Config::test_mode();
+    /// let mut node = MinimalNode::new(config)?;
+    /// // Node uses in-memory storage, perfect for tests
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn test_mode() -> Self {
+        Self {
+            node_id: None,
+            publish_interval: Duration::from_millis(10),
+            power_mode: PowerMode::Full,
+            transport: TransportConfig::Memory,
+            gossip: GossipConfig {
+                loop_delay: Duration::from_millis(10),
+                success_delay: Duration::from_millis(50),
+                error_delay: Duration::from_millis(100),
+                output_target_mbps: 10.0,
+                max_peers: 5,
+            },
+            storage: StorageConfig::memory(),
+            memory_limit: 64 * 1024, // 64KB
+            enable_metrics: false,
+            enable_mdns: false,
+            log_level: "debug".to_string(),
+        }
     }
 
     /// Validates the configuration to ensure settings are reasonable.

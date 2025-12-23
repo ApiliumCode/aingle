@@ -310,24 +310,24 @@ impl BleManager {
             // Initialize btleplug manager
             let manager = Manager::new()
                 .await
-                .map_err(|e| Error::Network(format!("Failed to initialize BLE manager: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to initialize BLE manager: {}", e)))?;
 
             // Get the first available adapter
             let adapters = manager
                 .adapters()
                 .await
-                .map_err(|e| Error::Network(format!("Failed to get BLE adapters: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to get BLE adapters: {}", e)))?;
 
             let adapter = adapters
                 .into_iter()
                 .next()
-                .ok_or_else(|| Error::Network("No BLE adapter found".to_string()))?;
+                .ok_or_else(|| Error::network("No BLE adapter found".to_string()))?;
 
             // Get adapter info for local address
             let info = adapter
                 .adapter_info()
                 .await
-                .map_err(|e| Error::Network(format!("Failed to get adapter info: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to get adapter info: {}", e)))?;
             self.local_address = Some(info.to_string());
 
             log::info!("BLE adapter initialized: {}", info);
@@ -419,7 +419,7 @@ impl BleManager {
         {
             let device = self
                 .ble_device
-                .ok_or_else(|| Error::Network("ESP32 BLE device not initialized".to_string()))?;
+                .ok_or_else(|| Error::network("ESP32 BLE device not initialized".to_string()))?;
 
             // Get advertising instance
             let advertising = device.get_advertising();
@@ -433,7 +433,7 @@ impl BleManager {
 
             // Start advertising
             advertising.lock().start().map_err(|e| {
-                Error::Network(format!("Failed to start ESP32 advertising: {:?}", e))
+                Error::network(format!("Failed to start ESP32 advertising: {:?}", e))
             })?;
 
             log::info!("ESP32 BLE advertising started: {}", self.config.device_name);
@@ -458,11 +458,11 @@ impl BleManager {
             let adapter = self
                 .adapter
                 .as_ref()
-                .ok_or_else(|| Error::Network("BLE adapter not initialized".to_string()))?;
+                .ok_or_else(|| Error::network("BLE adapter not initialized".to_string()))?;
 
             // Create scan filter for AIngle service
             let service_uuid = Uuid::parse_str(AINGLE_SERVICE_UUID)
-                .map_err(|e| Error::Network(format!("Invalid service UUID: {}", e)))?;
+                .map_err(|e| Error::network(format!("Invalid service UUID: {}", e)))?;
 
             let filter = ScanFilter {
                 services: vec![service_uuid],
@@ -471,7 +471,7 @@ impl BleManager {
             adapter
                 .start_scan(filter)
                 .await
-                .map_err(|e| Error::Network(format!("Failed to start BLE scan: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to start BLE scan: {}", e)))?;
 
             log::info!("BLE scan started with AIngle service filter");
 
@@ -483,7 +483,7 @@ impl BleManager {
         {
             let device = self
                 .ble_device
-                .ok_or_else(|| Error::Network("ESP32 BLE device not initialized".to_string()))?;
+                .ok_or_else(|| Error::network("ESP32 BLE device not initialized".to_string()))?;
 
             // Get scan instance
             let scan = device.get_scan();
@@ -527,7 +527,7 @@ impl BleManager {
         let peer = self
             .peers
             .get_mut(address)
-            .ok_or_else(|| Error::Network(format!("Unknown peer: {}", address)))?;
+            .ok_or_else(|| Error::network(format!("Unknown peer: {}", address)))?;
 
         if peer.connected {
             return Ok(());
@@ -541,13 +541,13 @@ impl BleManager {
             let adapter = self
                 .adapter
                 .as_ref()
-                .ok_or_else(|| Error::Network("BLE adapter not initialized".to_string()))?;
+                .ok_or_else(|| Error::network("BLE adapter not initialized".to_string()))?;
 
             // Find the peripheral by address
             let peripherals = adapter
                 .peripherals()
                 .await
-                .map_err(|e| Error::Network(format!("Failed to get peripherals: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to get peripherals: {}", e)))?;
 
             let peripheral = peripherals
                 .into_iter()
@@ -558,25 +558,25 @@ impl BleManager {
                         false
                     }
                 })
-                .ok_or_else(|| Error::Network(format!("Peripheral not found: {}", address)))?;
+                .ok_or_else(|| Error::network(format!("Peripheral not found: {}", address)))?;
 
             // Connect to the peripheral
             peripheral
                 .connect()
                 .await
-                .map_err(|e| Error::Network(format!("Failed to connect: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to connect: {}", e)))?;
 
             // Discover services
             peripheral
                 .discover_services()
                 .await
-                .map_err(|e| Error::Network(format!("Failed to discover services: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to discover services: {}", e)))?;
 
             // Parse UUIDs for characteristics
             let tx_uuid = Uuid::parse_str(TX_CHAR_UUID)
-                .map_err(|e| Error::Network(format!("Invalid TX UUID: {}", e)))?;
+                .map_err(|e| Error::network(format!("Invalid TX UUID: {}", e)))?;
             let rx_uuid = Uuid::parse_str(RX_CHAR_UUID)
-                .map_err(|e| Error::Network(format!("Invalid RX UUID: {}", e)))?;
+                .map_err(|e| Error::network(format!("Invalid RX UUID: {}", e)))?;
 
             // Find TX and RX characteristics
             for service in peripheral.services() {
@@ -588,7 +588,7 @@ impl BleManager {
                     if char.uuid == rx_uuid {
                         // Subscribe to RX notifications
                         peripheral.subscribe(&char).await.map_err(|e| {
-                            Error::Network(format!("Failed to subscribe to RX: {}", e))
+                            Error::network(format!("Failed to subscribe to RX: {}", e))
                         })?;
                         log::debug!("Subscribed to RX characteristic for {}", address);
                     }
@@ -610,7 +610,7 @@ impl BleManager {
             client
                 .connect(address)
                 .await
-                .map_err(|e| Error::Network(format!("ESP32 BLE connect failed: {:?}", e)))?;
+                .map_err(|e| Error::network(format!("ESP32 BLE connect failed: {:?}", e)))?;
 
             log::info!("ESP32 BLE connected to: {}", address);
 
@@ -634,7 +634,7 @@ impl BleManager {
                         })
                         .await
                         .map_err(|e| {
-                            Error::Network(format!("Failed to subscribe to RX: {:?}", e))
+                            Error::network(format!("Failed to subscribe to RX: {:?}", e))
                         })?;
                 }
             }
@@ -658,7 +658,7 @@ impl BleManager {
         let peer = self
             .peers
             .get_mut(address)
-            .ok_or_else(|| Error::Network(format!("Unknown peer: {}", address)))?;
+            .ok_or_else(|| Error::network(format!("Unknown peer: {}", address)))?;
 
         if !peer.connected {
             return Ok(());
@@ -674,7 +674,7 @@ impl BleManager {
                 peripheral
                     .disconnect()
                     .await
-                    .map_err(|e| Error::Network(format!("Failed to disconnect: {}", e)))?;
+                    .map_err(|e| Error::network(format!("Failed to disconnect: {}", e)))?;
             }
 
             // Clean up cached characteristics
@@ -688,7 +688,7 @@ impl BleManager {
             if let Some(client) = self.esp_clients.remove(address) {
                 client
                     .disconnect()
-                    .map_err(|e| Error::Network(format!("ESP32 BLE disconnect failed: {:?}", e)))?;
+                    .map_err(|e| Error::network(format!("ESP32 BLE disconnect failed: {:?}", e)))?;
             }
         }
 
@@ -707,10 +707,10 @@ impl BleManager {
         let peer = self
             .peers
             .get(address)
-            .ok_or_else(|| Error::Network(format!("Unknown peer: {}", address)))?;
+            .ok_or_else(|| Error::network(format!("Unknown peer: {}", address)))?;
 
         if !peer.connected {
-            return Err(Error::Network(format!("Peer not connected: {}", address)));
+            return Err(Error::network(format!("Peer not connected: {}", address)));
         }
 
         let payload =
@@ -722,17 +722,17 @@ impl BleManager {
             let peripheral = self
                 .peripherals
                 .get(address)
-                .ok_or_else(|| Error::Network(format!("Peripheral not found: {}", address)))?;
+                .ok_or_else(|| Error::network(format!("Peripheral not found: {}", address)))?;
 
             let tx_char = self.tx_chars.get(address).ok_or_else(|| {
-                Error::Network(format!("TX characteristic not found: {}", address))
+                Error::network(format!("TX characteristic not found: {}", address))
             })?;
 
             // Write to TX characteristic (without response for speed)
             peripheral
                 .write(tx_char, &payload, WriteType::WithoutResponse)
                 .await
-                .map_err(|e| Error::Network(format!("Failed to send: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to send: {}", e)))?;
         }
 
         // ========== ESP32 (esp32-nimble) ==========
@@ -741,7 +741,7 @@ impl BleManager {
             let client = self
                 .esp_clients
                 .get(address)
-                .ok_or_else(|| Error::Network(format!("ESP32 client not found: {}", address)))?;
+                .ok_or_else(|| Error::network(format!("ESP32 client not found: {}", address)))?;
 
             // Get TX characteristic and write
             let service_uuid = uuid128!("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
@@ -752,12 +752,12 @@ impl BleManager {
                     tx_char
                         .write_value(&payload, false)
                         .await
-                        .map_err(|e| Error::Network(format!("ESP32 BLE write failed: {:?}", e)))?;
+                        .map_err(|e| Error::network(format!("ESP32 BLE write failed: {:?}", e)))?;
                 } else {
-                    return Err(Error::Network("TX characteristic not found".to_string()));
+                    return Err(Error::network("TX characteristic not found".to_string()));
                 }
             } else {
-                return Err(Error::Network("AIngle service not found".to_string()));
+                return Err(Error::network("AIngle service not found".to_string()));
             }
         }
 
@@ -770,9 +770,6 @@ impl BleManager {
 
     /// Broadcast message to all connected peers (mesh)
     pub async fn broadcast(&mut self, message: &Message) -> Result<usize> {
-        let payload =
-            serde_json::to_vec(message).map_err(|e| Error::Serialization(e.to_string()))?;
-
         let connected_peers: Vec<String> = self
             .peers
             .iter()
@@ -780,17 +777,21 @@ impl BleManager {
             .map(|(addr, _)| addr.clone())
             .collect();
 
-        let count = connected_peers.len();
+        let mut sent_count = 0;
 
         for address in connected_peers {
-            // TODO: Send to each peer
-            log::debug!("Broadcast to {}", address);
+            match self.send(&address, message).await {
+                Ok(()) => {
+                    log::debug!("Broadcast to {}", address);
+                    sent_count += 1;
+                }
+                Err(e) => {
+                    log::warn!("Failed to broadcast to {}: {}", address, e);
+                }
+            }
         }
 
-        self.stats.messages_sent += count as u64;
-        self.stats.bytes_sent += (payload.len() * count) as u64;
-
-        Ok(count)
+        Ok(sent_count)
     }
 
     /// Receive message from any peer
@@ -820,7 +821,7 @@ impl BleManager {
                         return Ok(None);
                     }
                     Err(smol::channel::TryRecvError::Closed) => {
-                        return Err(Error::Network("Notification channel closed".to_string()));
+                        return Err(Error::network("Notification channel closed".to_string()));
                     }
                 }
             }
@@ -830,7 +831,7 @@ impl BleManager {
     }
 
     /// Relay message through mesh (if enabled)
-    pub async fn relay(&mut self, source: &str, _message: &Message) -> Result<usize> {
+    pub async fn relay(&mut self, source: &str, message: &Message) -> Result<usize> {
         if !self.config.mesh_relay {
             return Ok(0);
         }
@@ -842,16 +843,23 @@ impl BleManager {
             .map(|(addr, _)| addr.clone())
             .collect();
 
-        let count = connected_peers.len();
+        let mut relayed_count = 0;
 
         for address in connected_peers {
-            // TODO: Forward message to peer
-            log::debug!("Relay to {}", address);
+            match self.send(&address, message).await {
+                Ok(()) => {
+                    log::debug!("Relayed from {} to {}", source, address);
+                    relayed_count += 1;
+                }
+                Err(e) => {
+                    log::warn!("Failed to relay to {}: {}", address, e);
+                }
+            }
         }
 
-        self.stats.messages_relayed += count as u64;
+        self.stats.messages_relayed += relayed_count as u64;
 
-        Ok(count)
+        Ok(relayed_count)
     }
 
     /// Get current state

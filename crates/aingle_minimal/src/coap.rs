@@ -116,15 +116,15 @@ impl CoapServer {
     pub async fn start(&mut self) -> Result<()> {
         let addr = format!("{}:{}", self.bind_addr, self.port);
         let socket = UdpSocket::bind(&addr)
-            .map_err(|e| Error::Network(format!("Failed to bind CoAP socket: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to bind CoAP socket: {}", e)))?;
 
         // Set non-blocking for async
         socket
             .set_nonblocking(true)
-            .map_err(|e| Error::Network(format!("Failed to set non-blocking: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to set non-blocking: {}", e)))?;
 
         let async_socket = Async::new(socket)
-            .map_err(|e| Error::Network(format!("Failed to create async socket: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to create async socket: {}", e)))?;
 
         self.socket = Some(async_socket);
         self.running = true;
@@ -151,14 +151,14 @@ impl CoapServer {
         let socket = self
             .socket
             .as_ref()
-            .ok_or_else(|| Error::Network("Socket not initialized".to_string()))?;
+            .ok_or_else(|| Error::network("Socket not initialized".to_string()))?;
 
         let mut buf = [0u8; 2048];
 
         match socket.recv_from(&mut buf).await {
             Ok((len, addr)) => {
                 let packet = Packet::from_bytes(&buf[..len])
-                    .map_err(|e| Error::Network(format!("Failed to parse CoAP packet: {:?}", e)))?;
+                    .map_err(|e| Error::network(format!("Failed to parse CoAP packet: {:?}", e)))?;
 
                 // Process the packet and convert to Message
                 if let Some(msg) = self.process_packet(&packet, &addr)? {
@@ -167,7 +167,7 @@ impl CoapServer {
                 Ok(None)
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
-            Err(e) => Err(Error::Network(format!("Receive error: {}", e))),
+            Err(e) => Err(Error::network(format!("Receive error: {}", e))),
         }
     }
 
@@ -228,6 +228,16 @@ impl CoapServer {
                     Ok(None)
                 }
             }
+            // RPC endpoint: /rpc/{method}
+            p if p.starts_with("/rpc/") => {
+                if !packet.payload.is_empty() {
+                    let msg: Message = serde_json::from_slice(&packet.payload)
+                        .map_err(|e| Error::Serialization(e.to_string()))?;
+                    Ok(Some(msg))
+                } else {
+                    Ok(None)
+                }
+            }
             _ => {
                 log::warn!("Unknown CoAP path: {}", path);
                 Ok(None)
@@ -276,17 +286,17 @@ impl CoapServer {
         let packet = self.create_request_packet(&path, &payload, confirmable);
         let bytes = packet
             .to_bytes()
-            .map_err(|e| Error::Network(format!("Failed to serialize packet: {:?}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to serialize packet: {:?}", e)))?;
 
         {
             let socket = self
                 .socket
                 .as_ref()
-                .ok_or_else(|| Error::Network("Socket not initialized".to_string()))?;
+                .ok_or_else(|| Error::network("Socket not initialized".to_string()))?;
             socket
                 .send_to(&bytes, *addr)
                 .await
-                .map_err(|e| Error::Network(format!("Send error: {}", e)))?;
+                .map_err(|e| Error::network(format!("Send error: {}", e)))?;
         }
 
         if confirmable {
@@ -338,17 +348,17 @@ impl CoapServer {
 
             let bytes = packet
                 .to_bytes()
-                .map_err(|e| Error::Network(format!("Failed to serialize block: {:?}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to serialize block: {:?}", e)))?;
 
             {
                 let socket = self
                     .socket
                     .as_ref()
-                    .ok_or_else(|| Error::Network("Socket not initialized".to_string()))?;
+                    .ok_or_else(|| Error::network("Socket not initialized".to_string()))?;
                 socket
                     .send_to(&bytes, *addr)
                     .await
-                    .map_err(|e| Error::Network(format!("Send block error: {}", e)))?;
+                    .map_err(|e| Error::network(format!("Send block error: {}", e)))?;
             }
 
             log::trace!("Sent block {}/{} to {}", block_num + 1, total_blocks, addr);
@@ -397,7 +407,7 @@ impl CoapServer {
         let socket = self
             .socket
             .as_ref()
-            .ok_or_else(|| Error::Network("Socket not initialized".to_string()))?;
+            .ok_or_else(|| Error::network("Socket not initialized".to_string()))?;
 
         let mut response = Packet::new();
         response.header.set_version(1);
@@ -413,12 +423,12 @@ impl CoapServer {
 
         let bytes = response
             .to_bytes()
-            .map_err(|e| Error::Network(format!("Failed to serialize response: {:?}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to serialize response: {:?}", e)))?;
 
         socket
             .send_to(&bytes, *addr)
             .await
-            .map_err(|e| Error::Network(format!("Send response error: {}", e)))?;
+            .map_err(|e| Error::network(format!("Send response error: {}", e)))?;
 
         Ok(())
     }
@@ -433,6 +443,9 @@ impl CoapServer {
             Message::NewRecord { .. } => "/announce".to_string(),
             Message::GetRecord { .. } => "/record".to_string(),
             Message::RecordData { .. } => "/record".to_string(),
+            Message::RemoteCall { method, .. } => format!("/rpc/{}", method),
+            Message::RemoteCallResponse { .. } => "/rpc/response".to_string(),
+            Message::MeshRelay { .. } => "/mesh".to_string(),
         }
     }
 
@@ -481,12 +494,12 @@ impl CoapServer {
                 let bytes = pending
                     .packet
                     .to_bytes()
-                    .map_err(|e| Error::Network(format!("Failed to serialize packet: {:?}", e)))?;
+                    .map_err(|e| Error::network(format!("Failed to serialize packet: {:?}", e)))?;
 
                 let socket = self
                     .socket
                     .as_ref()
-                    .ok_or_else(|| Error::Network("Socket not initialized".to_string()))?;
+                    .ok_or_else(|| Error::network("Socket not initialized".to_string()))?;
 
                 if let Err(e) = socket.send_to(&bytes, pending.addr).await {
                     log::warn!("Retransmit failed: {}", e);
@@ -520,11 +533,11 @@ impl CoapServer {
 
             let multicast_addr: std::net::Ipv4Addr = COAP_MULTICAST_IPV4
                 .parse()
-                .map_err(|e| Error::Network(format!("Invalid multicast address: {}", e)))?;
+                .map_err(|e| Error::network(format!("Invalid multicast address: {}", e)))?;
 
             socket_ref
                 .join_multicast_v4(&multicast_addr, &std::net::Ipv4Addr::UNSPECIFIED)
-                .map_err(|e| Error::Network(format!("Failed to join multicast: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to join multicast: {}", e)))?;
 
             log::info!("Joined CoAP multicast group {}", COAP_MULTICAST_IPV4);
         }
@@ -536,7 +549,7 @@ impl CoapServer {
     pub async fn send_discovery(&mut self) -> Result<()> {
         let multicast_addr: SocketAddr = format!("{}:{}", COAP_MULTICAST_IPV4, COAP_DEFAULT_PORT)
             .parse()
-            .map_err(|e| Error::Network(format!("Invalid address: {}", e)))?;
+            .map_err(|e| Error::network(format!("Invalid address: {}", e)))?;
 
         let mut packet = Packet::new();
         packet.header.set_version(1);
@@ -550,12 +563,12 @@ impl CoapServer {
         if let Some(socket) = &self.socket {
             let bytes = packet
                 .to_bytes()
-                .map_err(|e| Error::Network(format!("Failed to serialize discovery: {:?}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to serialize discovery: {:?}", e)))?;
 
             socket
                 .send_to(&bytes, multicast_addr)
                 .await
-                .map_err(|e| Error::Network(format!("Discovery send error: {}", e)))?;
+                .map_err(|e| Error::network(format!("Discovery send error: {}", e)))?;
 
             log::debug!("Sent CoAP discovery to {}", multicast_addr);
         }

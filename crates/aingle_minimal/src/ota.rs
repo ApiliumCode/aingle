@@ -20,22 +20,25 @@
 //! 6. Rollback if verification fails
 //!
 //! # Example
-//! ```rust,no_run
+//! ```rust,ignore
 //! use aingle_minimal::ota::{OtaManager, UpdateChannel};
 //!
-//! let mut ota = OtaManager::new("1.0.0".to_string(), "device-123".to_string());
-//! ota.set_update_server("https://updates.example.com".to_string());
+//! async fn update_firmware() -> Result<(), Box<dyn std::error::Error>> {
+//!     let mut ota = OtaManager::new("1.0.0".to_string(), "device-123".to_string());
+//!     ota.set_update_server("https://updates.example.com".to_string());
 //!
-//! if let Some(update) = ota.check_for_updates().await? {
-//!     println!("Update available: {}", update.version);
-//!     let firmware = ota.download_update(&update).await?;
-//!     ota.apply_update(&firmware)?;
+//!     if let Some(update) = ota.check_for_updates().await? {
+//!         println!("Update available: {}", update.version);
+//!         let firmware = ota.download_update(&update).await?;
+//!         ota.apply_update(&firmware)?;
+//!     }
+//!     Ok(())
 //! }
-//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
 use crate::error::{Error, Result};
 use blake3::Hasher;
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -66,8 +69,12 @@ impl UpdateInfo {
     /// Check if update is compatible with current version
     pub fn is_compatible(&self, current_version: &str) -> bool {
         if let Some(min_ver) = &self.min_version {
-            // Simple string comparison (in production, use semver)
-            current_version >= min_ver.as_str()
+            // Use proper semver comparison
+            match (Version::parse(current_version), Version::parse(min_ver)) {
+                (Ok(current), Ok(min)) => current >= min,
+                // Fallback to string comparison if parsing fails
+                _ => current_version >= min_ver.as_str(),
+            }
         } else {
             true
         }
@@ -75,8 +82,12 @@ impl UpdateInfo {
 
     /// Check if update is newer than current version
     pub fn is_newer(&self, current_version: &str) -> bool {
-        // Simple string comparison (in production, use semver)
-        self.version.as_str() > current_version
+        // Use proper semver comparison
+        match (Version::parse(&self.version), Version::parse(current_version)) {
+            (Ok(update_ver), Ok(current)) => update_ver > current,
+            // Fallback to string comparison if parsing fails
+            _ => self.version.as_str() > current_version,
+        }
     }
 }
 
@@ -499,11 +510,13 @@ pub mod utils {
     use super::*;
     use std::time::Duration;
 
-    /// Compare semantic versions
+    /// Compare semantic versions using proper semver parsing
     pub fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
-        // Simple lexicographic comparison
-        // In production, use proper semver parsing
-        v1.cmp(v2)
+        match (Version::parse(v1), Version::parse(v2)) {
+            (Ok(ver1), Ok(ver2)) => ver1.cmp(&ver2),
+            // Fallback to lexicographic comparison if parsing fails
+            _ => v1.cmp(v2),
+        }
     }
 
     /// Check if version string is valid

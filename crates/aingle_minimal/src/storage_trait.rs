@@ -41,6 +41,17 @@ pub trait StorageBackend: Send {
     /// Get latest action sequence number
     fn get_latest_seq(&self) -> Result<u32>;
 
+    /// Get records by sequence range (for sync)
+    ///
+    /// Returns records with sequence numbers in [from_seq, to_seq), limited by `limit`.
+    /// Used for incremental synchronization between peers.
+    fn get_records_by_seq_range(
+        &self,
+        from_seq: u32,
+        to_seq: u32,
+        limit: u32,
+    ) -> Result<Vec<Record>>;
+
     /// Get storage statistics
     fn stats(&self) -> Result<StorageStats>;
 

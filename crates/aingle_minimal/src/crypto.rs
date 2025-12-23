@@ -73,7 +73,7 @@ pub fn verify(public_key: &AgentPubKey, _data: &[u8], signature: &Signature) -> 
 
     // Check public key matches
     if sig_public != public_key.as_bytes() {
-        return Err(Error::Crypto("Public key mismatch".to_string()));
+        return Err(Error::crypto("Public key mismatch".to_string()));
     }
 
     // Note: In production, this would verify the actual Ed25519 signature

@@ -125,23 +125,23 @@ impl DtlsConfig {
             SecurityMode::NoSec => Ok(()),
             SecurityMode::PreSharedKey => {
                 if self.psk.is_empty() {
-                    return Err(Error::Crypto("PSK cannot be empty".to_string()));
+                    return Err(Error::crypto("PSK cannot be empty"));
                 }
                 if self.psk_identity.is_empty() {
-                    return Err(Error::Crypto("PSK identity cannot be empty".to_string()));
+                    return Err(Error::crypto("PSK identity cannot be empty"));
                 }
                 Ok(())
             }
             SecurityMode::Certificate => {
                 if self.certificate.is_empty() {
-                    return Err(Error::Crypto("Certificate cannot be empty".to_string()));
+                    return Err(Error::crypto("Certificate cannot be empty"));
                 }
                 if self.private_key.is_empty() {
-                    return Err(Error::Crypto("Private key cannot be empty".to_string()));
+                    return Err(Error::crypto("Private key cannot be empty"));
                 }
                 if self.verify_peer && self.ca_certs.is_empty() {
-                    return Err(Error::Crypto(
-                        "CA certificates required for peer verification".to_string(),
+                    return Err(Error::crypto(
+                        "CA certificates required for peer verification",
                     ));
                 }
                 Ok(())

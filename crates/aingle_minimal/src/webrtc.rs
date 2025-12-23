@@ -348,7 +348,7 @@ impl WebRtcServer {
     /// Connect to a peer
     pub async fn connect(&mut self, peer_id: &str) -> Result<()> {
         if self.peers.contains_key(peer_id) {
-            return Err(Error::Network(format!(
+            return Err(Error::network(format!(
                 "Already connected to peer: {}",
                 peer_id
             )));
@@ -364,7 +364,7 @@ impl WebRtcServer {
             let api = self
                 .api
                 .as_ref()
-                .ok_or_else(|| Error::Network("WebRTC API not initialized".to_string()))?;
+                .ok_or_else(|| Error::network("WebRTC API not initialized".to_string()))?;
 
             // Configure ICE servers
             let mut ice_servers = vec![RTCIceServer {
@@ -391,13 +391,13 @@ impl WebRtcServer {
             let pc = api
                 .new_peer_connection(rtc_config)
                 .await
-                .map_err(|e| Error::Network(format!("Failed to create peer connection: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to create peer connection: {}", e)))?;
 
             // Create data channel
             let dc = pc
                 .create_data_channel(&self.config.channel_label, None)
                 .await
-                .map_err(|e| Error::Network(format!("Failed to create data channel: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to create data channel: {}", e)))?;
 
             log::debug!(
                 "Created data channel '{}' for peer {}",
@@ -446,7 +446,7 @@ impl WebRtcServer {
             log::info!("Disconnected from peer: {}", peer_id);
             Ok(())
         } else {
-            Err(Error::Network(format!("Peer not found: {}", peer_id)))
+            Err(Error::network(format!("Peer not found: {}", peer_id)))
         }
     }
 
@@ -455,10 +455,10 @@ impl WebRtcServer {
         let peer = self
             .peers
             .get_mut(peer_id)
-            .ok_or_else(|| Error::Network(format!("Peer not found: {}", peer_id)))?;
+            .ok_or_else(|| Error::network(format!("Peer not found: {}", peer_id)))?;
 
         if peer.state != ConnectionState::Connected {
-            return Err(Error::Network(format!("Peer not connected: {}", peer_id)));
+            return Err(Error::network(format!("Peer not connected: {}", peer_id)));
         }
 
         let payload =
@@ -469,12 +469,12 @@ impl WebRtcServer {
             let dc = self
                 .data_channels
                 .get(peer_id)
-                .ok_or_else(|| Error::Network(format!("Data channel not found: {}", peer_id)))?;
+                .ok_or_else(|| Error::network(format!("Data channel not found: {}", peer_id)))?;
 
             // Send via data channel
             dc.send(&bytes::Bytes::from(payload.clone()))
                 .await
-                .map_err(|e| Error::Network(format!("Failed to send: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to send: {}", e)))?;
         }
 
         peer.stats.messages_sent += 1;
@@ -513,7 +513,7 @@ impl WebRtcServer {
                         return Ok(None);
                     }
                     Err(smol::channel::TryRecvError::Closed) => {
-                        return Err(Error::Network("Message channel closed".to_string()));
+                        return Err(Error::network("Message channel closed".to_string()));
                     }
                 }
             }
@@ -714,7 +714,7 @@ impl SignalingServer {
 
         let listener = smol::net::TcpListener::bind(addr)
             .await
-            .map_err(|e| Error::Network(format!("Failed to bind signaling server: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to bind signaling server: {}", e)))?;
 
         self.running
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -774,7 +774,7 @@ impl SignalingServer {
         // Upgrade to WebSocket
         let ws_stream = async_tungstenite::accept_async(stream)
             .await
-            .map_err(|e| Error::Network(format!("WebSocket upgrade failed: {}", e)))?;
+            .map_err(|e| Error::network(format!("WebSocket upgrade failed: {}", e)))?;
 
         let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
@@ -1020,7 +1020,7 @@ impl SignalingClient {
 
         let (ws_stream, _) = async_tungstenite::async_std::connect_async(&self.server_url)
             .await
-            .map_err(|e| Error::Network(format!("Failed to connect to signaling server: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to connect to signaling server: {}", e)))?;
 
         let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
@@ -1033,7 +1033,7 @@ impl SignalingClient {
         ws_sink
             .send(WsMessage::Text(json))
             .await
-            .map_err(|e| Error::Network(format!("Failed to send Join: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to send Join: {}", e)))?;
 
         // Create channels
         let (out_tx, out_rx) = smol::channel::bounded::<SignalingMessage>(32);
@@ -1081,11 +1081,11 @@ impl SignalingClient {
         let tx = self
             .tx
             .as_ref()
-            .ok_or_else(|| Error::Network("Not connected".to_string()))?;
+            .ok_or_else(|| Error::network("Not connected".to_string()))?;
 
         tx.send(message)
             .await
-            .map_err(|e| Error::Network(format!("Failed to send: {}", e)))
+            .map_err(|e| Error::network(format!("Failed to send: {}", e)))
     }
 
     /// Receive a signaling message (non-blocking)
@@ -1093,13 +1093,13 @@ impl SignalingClient {
         let rx = self
             .rx
             .as_ref()
-            .ok_or_else(|| Error::Network("Not connected".to_string()))?;
+            .ok_or_else(|| Error::network("Not connected".to_string()))?;
 
         match rx.try_recv() {
             Ok(msg) => Ok(Some(msg)),
             Err(smol::channel::TryRecvError::Empty) => Ok(None),
             Err(smol::channel::TryRecvError::Closed) => {
-                Err(Error::Network("Channel closed".to_string()))
+                Err(Error::network("Channel closed".to_string()))
             }
         }
     }

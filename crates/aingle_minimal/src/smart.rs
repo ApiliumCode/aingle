@@ -240,14 +240,8 @@ impl SmartNode {
             ActionType::UpdateState(state_name) => {
                 self.execute_state_update(&action, state_name)?
             }
-            ActionType::Query(_key) => {
-                // Query not implemented yet
-                ActionResult::failure(&action.id, "Query not implemented")
-            }
-            ActionType::RemoteCall(_target) => {
-                // Remote call not implemented yet
-                ActionResult::failure(&action.id, "RemoteCall not implemented")
-            }
+            ActionType::Query(key) => self.execute_query(&action, key)?,
+            ActionType::RemoteCall(target) => self.execute_remote_call(&action, target)?,
             ActionType::Wait => ActionResult::success(&action.id),
             ActionType::NoOp => ActionResult::success(&action.id),
             ActionType::Custom(name) => {
@@ -368,6 +362,77 @@ impl SmartNode {
         let value = action.params.get("value").cloned();
         log::debug!("State update: {} = {:?}", state_name, value);
         Ok(ActionResult::success(&action.id))
+    }
+
+    /// Execute query action - retrieve data from the DAG by hash
+    fn execute_query(&self, action: &Action, key: &str) -> Result<ActionResult> {
+        log::debug!("Querying data for key: {}", key);
+
+        // Create hash from key (will hash the key string)
+        let hash = Hash::from_bytes(key.as_bytes());
+
+        match self.node.get_entry(&hash) {
+            Ok(Some(entry)) => {
+                let content_str = String::from_utf8_lossy(&entry.content);
+                Ok(ActionResult::success_with_value(&action.id, content_str.to_string()))
+            }
+            Ok(None) => {
+                // Entry not found - return structured response
+                Ok(ActionResult::failure(&action.id, "Entry not found"))
+            }
+            Err(e) => Ok(ActionResult::failure(&action.id, &e.to_string())),
+        }
+    }
+
+    /// Execute remote call action - send message to another node
+    fn execute_remote_call(&self, action: &Action, target: &str) -> Result<ActionResult> {
+        log::info!("Remote call to target: {}", target);
+
+        // Get method from params (hope_agents::Value)
+        let method = action
+            .params
+            .get("method")
+            .and_then(|v| match v {
+                hope_agents::Value::String(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .unwrap_or("ping");
+
+        // Get payload from params (convert hope_agents::Value to bytes)
+        let payload = action
+            .params
+            .get("payload")
+            .map(|v| match v {
+                hope_agents::Value::Bytes(b) => b.clone(),
+                hope_agents::Value::String(s) => s.as_bytes().to_vec(),
+                hope_agents::Value::Json(j) => serde_json::to_vec(j).unwrap_or_default(),
+                _ => Vec::new(),
+            })
+            .unwrap_or_default();
+
+        // Build remote call message
+        let from_key = self.node.public_key();
+        let message = serde_json::json!({
+            "type": "remote_call",
+            "target": target,
+            "method": method,
+            "payload": payload,
+            "from": format!("{:?}", from_key),
+        });
+
+        log::debug!("Remote call message: {:?}", message);
+
+        // In a full implementation, this would:
+        // 1. Resolve target node address (via DHT or direct)
+        // 2. Send CoAP/QUIC request to target
+        // 3. Wait for response with timeout
+        // 4. Return response or error
+
+        // For now, return success with pending status
+        Ok(ActionResult::success_with_value(
+            &action.id,
+            format!("{{\"status\":\"pending\",\"target\":\"{}\",\"method\":\"{}\"}}", target, method),
+        ))
     }
 
     /// Convert observation to DAG entry

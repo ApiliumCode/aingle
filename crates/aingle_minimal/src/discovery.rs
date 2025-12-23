@@ -81,7 +81,7 @@ impl Discovery {
     /// Create a new discovery service
     pub fn new(node_id: String, port: u16) -> Result<Self> {
         let daemon = ServiceDaemon::new()
-            .map_err(|e| Error::Network(format!("Failed to create mDNS daemon: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to create mDNS daemon: {}", e)))?;
 
         Ok(Self {
             daemon,
@@ -101,7 +101,7 @@ impl Discovery {
 
         // Get local IP addresses
         let addresses: Vec<IpAddr> = if_addrs::get_if_addrs()
-            .map_err(|e| Error::Network(format!("Failed to get local addresses: {}", e)))?
+            .map_err(|e| Error::network(format!("Failed to get local addresses: {}", e)))?
             .into_iter()
             .filter(|iface| !iface.is_loopback())
             .map(|iface| iface.ip())
@@ -131,11 +131,11 @@ impl Discovery {
             self.port,
             properties,
         )
-        .map_err(|e| Error::Network(format!("Failed to create service info: {}", e)))?;
+        .map_err(|e| Error::network(format!("Failed to create service info: {}", e)))?;
 
         self.daemon
             .register(service_info)
-            .map_err(|e| Error::Network(format!("Failed to register mDNS service: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to register mDNS service: {}", e)))?;
 
         self.registered = true;
         log::info!(
@@ -155,7 +155,7 @@ impl Discovery {
         let receiver = self
             .daemon
             .browse(SERVICE_TYPE)
-            .map_err(|e| Error::Network(format!("Failed to browse mDNS: {}", e)))?;
+            .map_err(|e| Error::network(format!("Failed to browse mDNS: {}", e)))?;
 
         let peers = self.peers.clone();
         let running = self.running.clone();

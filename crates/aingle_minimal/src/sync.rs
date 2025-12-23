@@ -259,13 +259,10 @@ impl SyncManager {
         state.remote_seq = from_seq;
 
         // Get records newer than their sequence
-        let records = Vec::new();
         let latest_seq = storage.get_latest_seq().unwrap_or(0);
 
-        // Simple approach: return records from from_seq to latest
-        // In production, would need proper action chain traversal
-        if from_seq < latest_seq {
-            // Return indicator that we have newer records
+        // Fetch records from from_seq to latest_seq, limited by limit
+        let records = if from_seq < latest_seq {
             log::debug!(
                 "Peer {} at seq {}, we have seq {}, sending up to {} records",
                 from,
@@ -273,8 +270,11 @@ impl SyncManager {
                 latest_seq,
                 limit
             );
-            // TODO: Implement actual record fetching by sequence range
-        }
+            storage.get_records_by_seq_range(from_seq, latest_seq + 1, limit)
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         if records.is_empty() {
             None

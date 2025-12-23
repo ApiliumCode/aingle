@@ -323,11 +323,11 @@ impl WalletManager {
         {
             // Initialize HID API for device discovery
             let api = HidApi::new()
-                .map_err(|e| Error::Network(format!("Failed to initialize HID API: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to initialize HID API: {}", e)))?;
 
             // Create HID transport to Ledger device
             let transport = TransportNativeHID::new(&api)
-                .map_err(|e| Error::Network(format!("Failed to open HID transport: {}", e)))?;
+                .map_err(|e| Error::network(format!("Failed to open HID transport: {}", e)))?;
 
             // Query device info via GET_VERSION command
             let version_cmd = APDUCommand {
@@ -340,7 +340,7 @@ impl WalletManager {
 
             let answer = transport
                 .exchange(&version_cmd)
-                .map_err(|e| Error::Network(format!("APDU exchange failed: {}", e)))?;
+                .map_err(|e| Error::network(format!("APDU exchange failed: {}", e)))?;
 
             // Parse version response
             let (wallet_type, firmware_version) = if answer.data().len() >= 3 {
@@ -420,7 +420,7 @@ impl WalletManager {
     /// Get public key from derivation path
     pub async fn get_public_key(&mut self, path: &DerivationPath) -> Result<HwPublicKey> {
         if self.state != WalletState::Connected {
-            return Err(Error::Network("Wallet not connected".to_string()));
+            return Err(Error::network("Wallet not connected".to_string()));
         }
 
         log::debug!("Getting public key for path: {}", path.to_string());
@@ -430,7 +430,7 @@ impl WalletManager {
             let transport = self
                 .transport
                 .as_ref()
-                .ok_or_else(|| Error::Network("Transport not initialized".to_string()))?;
+                .ok_or_else(|| Error::network("Transport not initialized".to_string()))?;
 
             // Send GET_PUBLIC_KEY APDU command
             let cmd = APDUCommand {
@@ -443,7 +443,7 @@ impl WalletManager {
 
             let answer = transport
                 .exchange(&cmd)
-                .map_err(|e| Error::Network(format!("APDU exchange failed: {}", e)))?;
+                .map_err(|e| Error::network(format!("APDU exchange failed: {}", e)))?;
 
             // Check status code
             if answer.retcode() != 0x9000 {
@@ -453,7 +453,7 @@ impl WalletManager {
                     0x6D00 => "Invalid instruction",
                     _ => "Unknown error",
                 };
-                return Err(Error::Network(format!(
+                return Err(Error::network(format!(
                     "Device error: {} (0x{:04X})",
                     error_msg,
                     answer.retcode()
@@ -501,7 +501,7 @@ impl WalletManager {
     /// This will prompt the user to confirm on the device.
     pub async fn sign_hash(&mut self, hash: &[u8], path: &DerivationPath) -> Result<HwSignature> {
         if self.state != WalletState::Connected {
-            return Err(Error::Network("Wallet not connected".to_string()));
+            return Err(Error::network("Wallet not connected".to_string()));
         }
 
         if hash.len() != 32 {
@@ -519,7 +519,7 @@ impl WalletManager {
             let transport = self
                 .transport
                 .as_ref()
-                .ok_or_else(|| Error::Network("Transport not initialized".to_string()))?;
+                .ok_or_else(|| Error::network("Transport not initialized".to_string()))?;
 
             // Build APDU data: derivation path + hash
             let mut data = path.to_bytes();
@@ -538,7 +538,7 @@ impl WalletManager {
             let answer = transport.exchange(&cmd).map_err(|e| {
                 self.state = WalletState::Connected;
                 self.stats.failures += 1;
-                Error::Network(format!("APDU exchange failed: {}", e))
+                Error::network(format!("APDU exchange failed: {}", e))
             })?;
 
             // Check status code
@@ -553,7 +553,7 @@ impl WalletManager {
                     0x6FAA => "Device is locked",
                     _ => "Unknown error",
                 };
-                return Err(Error::Network(format!(
+                return Err(Error::network(format!(
                     "Signing failed: {} (0x{:04X})",
                     error_msg,
                     answer.retcode()
