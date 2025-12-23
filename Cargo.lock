@@ -145,11 +145,11 @@ dependencies = [
 name = "ai_autonomous_agent"
 version = "0.1.0"
 dependencies = [
- "hope_agents",
+ "hope_agents 0.2.0",
  "rand 0.9.2",
  "serde",
  "serde_json",
- "titans_memory",
+ "titans_memory 0.2.0",
 ]
 
 [[package]]
@@ -565,7 +565,7 @@ dependencies = [
  "env_logger",
  "esp32-nimble",
  "futures-util",
- "hope_agents",
+ "hope_agents 0.1.0",
  "if-addrs 0.13.4",
  "ledger-transport",
  "ledger-transport-hid",
@@ -581,7 +581,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smol",
- "titans_memory",
+ "titans_memory 0.1.0",
  "uuid",
  "webrtc",
 ]
@@ -4783,6 +4783,19 @@ dependencies = [
 
 [[package]]
 name = "hope_agents"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fecd5b7c6f06a594c2530d6ce8b3a6f88cce272b163cc8eec5edb4cdbac21c2"
+dependencies = [
+ "chrono",
+ "log",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hope_agents"
 version = "0.2.0"
 dependencies = [
  "chrono",
@@ -4791,7 +4804,7 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_json",
- "titans_memory",
+ "titans_memory 0.2.0",
 ]
 
 [[package]]
@@ -9928,6 +9941,19 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "titans_memory"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0305f54897e871182c1cc5c8b52ad9cad46ee30bc8490a8927c90af080204001"
+dependencies = [
+ "blake3",
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "titans_memory"
