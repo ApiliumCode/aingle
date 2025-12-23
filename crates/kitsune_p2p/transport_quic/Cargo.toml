@@ -15,7 +15,7 @@ edition = "2018"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("test_utils"))'] }
 
 [dependencies]
-blake2b_simd = "0.5.10"
+blake2b_simd = "1.0.3"
 futures = "0.3"
 if-addrs = "0.6"
 kitsune_p2p_types = { version = "0.0.1", path = "../types" }
