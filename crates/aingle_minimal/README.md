@@ -35,6 +35,7 @@ Ultra-lightweight AIngle node for IoT devices with **< 1MB RAM** footprint. Supp
 | Feature | Description | Use Case |
 |---------|-------------|----------|
 | `coap` | CoAP protocol (default) | IoT communication |
+| `rest` | REST API server | SDK integration |
 | `sqlite` | SQLite storage | Edge devices |
 | `rocksdb` | RocksDB storage | High-performance |
 | `ble` | Bluetooth LE (Desktop) | macOS/Linux/Windows |
@@ -48,7 +49,7 @@ Ultra-lightweight AIngle node for IoT devices with **< 1MB RAM** footprint. Supp
 ```toml
 # Cargo.toml
 [dependencies]
-aingle_minimal = "0.1"
+aingle_minimal = "0.3"
 ```
 
 ```rust,ignore
@@ -61,6 +62,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## REST API & SDKs
+
+Enable the `rest` feature to expose an HTTP API for SDK integration:
+
+```bash
+# Run with REST API on port 8080
+aingle-minimal run --rest-port 8080
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/info` | Node information |
+| POST | `/api/v1/entries` | Create entry |
+| GET | `/api/v1/entries/:hash` | Get entry |
+| GET | `/api/v1/peers` | List peers |
+| GET | `/api/v1/stats` | Statistics |
+
+### Official SDKs
+
+| Language | Package |
+|----------|---------|
+| JavaScript | [@apilium/aingle-sdk](https://github.com/ApiliumCode/aingle-sdk-js) |
+| Python | [aingle-sdk](https://github.com/ApiliumCode/aingle-sdk-python) |
+| Go | [aingle-sdk-go](https://github.com/ApiliumCode/aingle-sdk-go) |
+| Swift | [AIngleSDK](https://github.com/ApiliumCode/aingle-sdk-swift) |
+| Kotlin | [aingle-sdk](https://github.com/ApiliumCode/aingle-sdk-kotlin) |
 
 ## Platform Support
 
