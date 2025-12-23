@@ -26,7 +26,7 @@ ai_hash = { path = "../../ai_hash" }
 aingle_types = { path = "../../aingle_types" }
 aingle_zome_types = { path = "../../aingle_zome_types" }
 rand = "0.9"
-strum = "0.26"
+strum = "0.27"
 strum_macros = "0.26"
 aingle_util = { version = "0.0.1", path = "../../aingle_util" }
 
