@@ -549,7 +549,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_minimal"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-io",
  "async-tungstenite",

@@ -5,6 +5,20 @@ All notable changes to `aingle_minimal` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2024-12-23
+
+### Fixed
+
+- CI workflow focused on aingle_minimal crate only
+- Documentation workflow using stable Rust
+- Release workflow building aingle-minimal binary
+- All GitHub Actions now pass consistently
+
+### Changed
+
+- Simplified CI to avoid broken workspace crates
+- Documentation builds only aingle_minimal docs
+
 ## [0.2.0] - 2024-12-23
 
 ### Added
@@ -83,5 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - mDNS peer discovery
 - Configuration presets: `iot_mode()`, `low_power()`, `production()`
 
-[0.2.0]: https://github.com/AIngleCode/aingle/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/AIngleCode/aingle/releases/tag/v0.1.0
+[0.2.1]: https://github.com/ApiliumCode/aingle/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/ApiliumCode/aingle/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ApiliumCode/aingle/releases/tag/v0.1.0
