@@ -276,7 +276,7 @@ impl QuicServer {
     // Generate self-signed certificate for development
     fn generate_server_config(&self) -> Result<(ServerConfig, CertificateDer<'static>)> {
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])
-            .map_err(|e| Error::Crypto(format!("Failed to generate certificate: {}", e)))?;
+            .map_err(|e| Error::crypto(format!("Failed to generate certificate: {}", e)))?;
 
         let cert_der = CertificateDer::from(cert.cert.der().to_vec());
         let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
@@ -284,13 +284,13 @@ impl QuicServer {
         let mut server_crypto = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(vec![cert_der.clone()], key_der)
-            .map_err(|e| Error::Crypto(format!("TLS config error: {}", e)))?;
+            .map_err(|e| Error::crypto(format!("TLS config error: {}", e)))?;
 
         server_crypto.alpn_protocols = vec![b"aingle".to_vec()];
 
         let mut server_config = ServerConfig::with_crypto(Arc::new(
             quinn::crypto::rustls::QuicServerConfig::try_from(server_crypto)
-                .map_err(|e| Error::Crypto(format!("QUIC crypto error: {}", e)))?,
+                .map_err(|e| Error::crypto(format!("QUIC crypto error: {}", e)))?,
         ));
 
         // Configure transport
@@ -319,7 +319,7 @@ impl QuicServer {
 
         let mut client_config = ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
-                .map_err(|e| Error::Crypto(format!("QUIC crypto error: {}", e)))?,
+                .map_err(|e| Error::crypto(format!("QUIC crypto error: {}", e)))?,
         ));
 
         // Configure transport
