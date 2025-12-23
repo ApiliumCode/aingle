@@ -287,8 +287,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Minimum supported Rust version.
 ///
-/// This crate requires at least Rust 1.70 to compile.
-pub const MSRV: &str = "1.70";
+/// This crate requires at least Rust 1.85 to compile.
+pub const MSRV: &str = "1.85";
 
 /// Target memory budget in bytes (512KB).
 ///

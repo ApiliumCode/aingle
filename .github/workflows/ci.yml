@@ -9,7 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  MSRV: "1.83"
+  MSRV: "1.85"
 
 jobs:
   # MSRV (Minimum Supported Rust Version) check
