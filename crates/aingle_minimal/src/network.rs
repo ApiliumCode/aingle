@@ -207,11 +207,7 @@ impl MeshManager {
     }
 
     /// Wrap a message for mesh relay
-    pub fn wrap_for_relay(
-        node_id: &str,
-        message: Message,
-        ttl: Option<u8>,
-    ) -> Message {
+    pub fn wrap_for_relay(node_id: &str, message: Message, ttl: Option<u8>) -> Message {
         let message_id = Self::generate_message_id(node_id);
         Message::MeshRelay {
             message_id,
@@ -639,12 +635,7 @@ impl Network {
             return Err(e);
         }
 
-        log::debug!(
-            "RPC call {} to {}: method={}",
-            request_id,
-            addr,
-            method
-        );
+        log::debug!("RPC call {} to {}: method={}", request_id, addr, method);
 
         // Wait for response with timeout
         match smol::future::or(
@@ -698,11 +689,7 @@ impl Network {
             let elapsed = pending.sent_at.elapsed();
 
             if let Err(e) = pending.response_tx.try_send(response) {
-                log::warn!(
-                    "Failed to deliver RPC response {}: {:?}",
-                    request_id,
-                    e
-                );
+                log::warn!("Failed to deliver RPC response {}: {:?}", request_id, e);
             } else {
                 log::debug!(
                     "RPC {} response delivered (method={}, elapsed={:?})",
@@ -1703,7 +1690,13 @@ mod tests {
         assert!(json.contains("get_status"));
 
         let parsed: Message = serde_json::from_str(&json).unwrap();
-        if let Message::RemoteCall { request_id, from, method, payload } = parsed {
+        if let Message::RemoteCall {
+            request_id,
+            from,
+            method,
+            payload,
+        } = parsed
+        {
             assert_eq!(request_id, "rpc-123");
             assert_eq!(from, "node-abc");
             assert_eq!(method, "get_status");
@@ -1727,7 +1720,12 @@ mod tests {
         assert!(json.contains("true"));
 
         let parsed: Message = serde_json::from_str(&json).unwrap();
-        if let Message::RemoteCallResponse { request_id, success, data } = parsed {
+        if let Message::RemoteCallResponse {
+            request_id,
+            success,
+            data,
+        } = parsed
+        {
             assert_eq!(request_id, "rpc-456");
             assert!(success);
             assert_eq!(data, b"result data".to_vec());
@@ -1763,12 +1761,9 @@ mod tests {
 
         smol::block_on(async {
             let addr: SocketAddr = "127.0.0.1:5683".parse().unwrap();
-            let result = network.send_remote_call(
-                &addr,
-                "test_method",
-                vec![],
-                Duration::from_secs(1),
-            ).await;
+            let result = network
+                .send_remote_call(&addr, "test_method", vec![], Duration::from_secs(1))
+                .await;
 
             // Without CoAP feature, should return error
             assert!(result.is_err());
@@ -1798,8 +1793,7 @@ mod tests {
     fn test_mesh_manager_process_relay_new() {
         let mut mesh = MeshManager::new();
 
-        let (should_process, should_relay, new_ttl) =
-            mesh.process_relay("msg-1", 5);
+        let (should_process, should_relay, new_ttl) = mesh.process_relay("msg-1", 5);
 
         assert!(should_process);
         assert!(should_relay);
@@ -1835,8 +1829,7 @@ mod tests {
     fn test_mesh_manager_process_relay_ttl_one() {
         let mut mesh = MeshManager::new();
 
-        let (should_process, should_relay, new_ttl) =
-            mesh.process_relay("msg-1", 1);
+        let (should_process, should_relay, new_ttl) = mesh.process_relay("msg-1", 1);
 
         assert!(should_process);
         assert!(!should_relay); // TTL=0 after decrement, no relay

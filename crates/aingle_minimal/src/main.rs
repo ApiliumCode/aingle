@@ -137,11 +137,9 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(&cli.log_level),
-    )
-    .format_timestamp_millis()
-    .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&cli.log_level))
+        .format_timestamp_millis()
+        .init();
 
     match cli.command {
         Some(Commands::Run {
@@ -169,7 +167,10 @@ fn main() -> Result<()> {
         Some(Commands::Info) => show_info(),
         Some(Commands::Config { action }) => config_action(action),
         Some(Commands::Version) => show_version(),
-        Some(Commands::Bench { entries, iterations }) => run_benchmark(entries, iterations),
+        Some(Commands::Bench {
+            entries,
+            iterations,
+        }) => run_benchmark(entries, iterations),
         None => {
             // Default: show help
             print_banner();
@@ -240,10 +241,7 @@ fn run_node(
     }
 
     // Update transport config
-    config.transport = aingle_minimal::TransportConfig::Coap {
-        bind_addr,
-        port,
-    };
+    config.transport = aingle_minimal::TransportConfig::Coap { bind_addr, port };
 
     // Print configuration
     println!("\nConfiguration:");
@@ -316,7 +314,10 @@ fn show_info() -> Result<()> {
     println!("Build Information:");
     println!("  Version: {}", aingle_minimal::VERSION);
     println!("  MSRV: {}", aingle_minimal::MSRV);
-    println!("  Memory budget: {} KB", aingle_minimal::MEMORY_BUDGET / 1024);
+    println!(
+        "  Memory budget: {} KB",
+        aingle_minimal::MEMORY_BUDGET / 1024
+    );
     println!();
 
     println!("Features:");
@@ -408,7 +409,10 @@ fn print_config(config: &Config) {
     println!("\nGossip:");
     println!("    max_peers: {}", config.gossip.max_peers);
     println!("    loop_delay: {:?}", config.gossip.loop_delay);
-    println!("    output_target_mbps: {}", config.gossip.output_target_mbps);
+    println!(
+        "    output_target_mbps: {}",
+        config.gossip.output_target_mbps
+    );
     println!("\nStorage:");
     println!("    db_path: {}", config.storage.db_path);
     println!("    backend: {:?}", config.storage.backend);
@@ -430,13 +434,21 @@ fn print_config(config: &Config) {
             println!("    mode: {:?}", mode);
         }
         #[cfg(feature = "webrtc")]
-        aingle_minimal::TransportConfig::WebRtc { stun_server, signaling_port, .. } => {
+        aingle_minimal::TransportConfig::WebRtc {
+            stun_server,
+            signaling_port,
+            ..
+        } => {
             println!("    type: WebRTC");
             println!("    stun_server: {}", stun_server);
             println!("    signaling_port: {}", signaling_port);
         }
         #[cfg(feature = "ble")]
-        aingle_minimal::TransportConfig::Ble { device_name, mesh_relay, tx_power } => {
+        aingle_minimal::TransportConfig::Ble {
+            device_name,
+            mesh_relay,
+            tx_power,
+        } => {
             println!("    type: Bluetooth LE");
             println!("    device_name: {}", device_name);
             println!("    mesh_relay: {}", mesh_relay);
@@ -450,7 +462,10 @@ fn show_version() -> Result<()> {
     println!();
     println!("Build info:");
     println!("  Rust MSRV: {}", aingle_minimal::MSRV);
-    println!("  Target memory: {} KB", aingle_minimal::MEMORY_BUDGET / 1024);
+    println!(
+        "  Target memory: {} KB",
+        aingle_minimal::MEMORY_BUDGET / 1024
+    );
 
     #[cfg(debug_assertions)]
     println!("  Profile: debug");

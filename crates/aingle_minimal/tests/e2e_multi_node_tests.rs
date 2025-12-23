@@ -186,7 +186,13 @@ fn test_create_multiple_entries() {
     for (i, h1) in hashes.iter().enumerate() {
         for (j, h2) in hashes.iter().enumerate() {
             if i != j {
-                assert_ne!(h1.to_hex(), h2.to_hex(), "Hashes {} and {} are duplicates", i, j);
+                assert_ne!(
+                    h1.to_hex(),
+                    h2.to_hex(),
+                    "Hashes {} and {} are duplicates",
+                    i,
+                    j
+                );
             }
         }
     }
@@ -221,9 +227,7 @@ fn test_gossip_manager_tracking() {
     let mut gossip = GossipManager::new(config);
 
     // Announce some hashes
-    let hashes: Vec<_> = (0..5)
-        .map(|i| Hash::from_bytes(&[i; 32]))
-        .collect();
+    let hashes: Vec<_> = (0..5).map(|i| Hash::from_bytes(&[i; 32])).collect();
 
     for hash in &hashes {
         gossip.announce(hash.clone());
@@ -231,7 +235,10 @@ fn test_gossip_manager_tracking() {
 
     // All announced hashes should be known
     for hash in &hashes {
-        assert!(gossip.is_known(hash), "Hash should be known after announcement");
+        assert!(
+            gossip.is_known(hash),
+            "Hash should be known after announcement"
+        );
     }
 
     // Unknown hash should not be known
@@ -280,7 +287,11 @@ fn test_bloom_filter_set_reconciliation() {
     // Node A can identify what B might be missing (0-4)
     for i in 0..5 {
         let hash = Hash::from_bytes(&[i; 32]);
-        assert!(!filter_node_b.may_contain(&hash), "Node B shouldn't have hash {}", i);
+        assert!(
+            !filter_node_b.may_contain(&hash),
+            "Node B shouldn't have hash {}",
+            i
+        );
     }
 
     // Both should have 5-9
@@ -336,7 +347,11 @@ fn test_sync_local_hash_management() {
     let filter = sync.build_local_filter();
     for i in 0..50 {
         let hash = Hash::from_bytes(&[i; 32]);
-        assert!(filter.may_contain(&hash), "Filter should contain hash {}", i);
+        assert!(
+            filter.may_contain(&hash),
+            "Filter should contain hash {}",
+            i
+        );
     }
 
     // Note: Bloom filters can have false positives, so we don't assert !may_contain for unknown
@@ -425,7 +440,10 @@ fn test_two_node_data_exchange_simulation() {
         }
     }
     // At least some of node1's hashes should be missing from node2
-    assert!(missing_count > 0 || node1_hashes.is_empty(), "Should identify hashes to sync");
+    assert!(
+        missing_count > 0 || node1_hashes.is_empty(),
+        "Should identify hashes to sync"
+    );
 }
 
 /// Simulate three node mesh communication
@@ -555,9 +573,7 @@ fn test_gossip_concurrent_announcements() {
     let mut gossip = GossipManager::new(GossipConfig::default());
 
     // Simulate multiple nodes announcing different hashes
-    let hashes: Vec<_> = (0..20)
-        .map(|i| Hash::from_bytes(&[i; 32]))
-        .collect();
+    let hashes: Vec<_> = (0..20).map(|i| Hash::from_bytes(&[i; 32])).collect();
 
     // Announce all hashes
     for hash in &hashes {
@@ -756,7 +772,9 @@ fn test_many_peers() {
 
     // Add 100 peers
     for i in 0..100 {
-        let addr: SocketAddr = format!("10.0.{}.{}:5683", i / 256, i % 256).parse().unwrap();
+        let addr: SocketAddr = format!("10.0.{}.{}:5683", i / 256, i % 256)
+            .parse()
+            .unwrap();
         node.add_peer(addr);
     }
 

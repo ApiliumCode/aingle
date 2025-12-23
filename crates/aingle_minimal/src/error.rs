@@ -79,7 +79,10 @@ pub enum Error {
 #[derive(Debug, Clone)]
 pub enum CryptoError {
     /// Invalid key format or length.
-    InvalidKey { expected_len: usize, actual_len: usize },
+    InvalidKey {
+        expected_len: usize,
+        actual_len: usize,
+    },
     /// Signature verification failed.
     InvalidSignature,
     /// Key generation failed.
@@ -225,8 +228,15 @@ impl std::fmt::Display for Error {
 impl std::fmt::Display for CryptoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CryptoError::InvalidKey { expected_len, actual_len } => {
-                write!(f, "Invalid key: expected {} bytes, got {}", expected_len, actual_len)
+            CryptoError::InvalidKey {
+                expected_len,
+                actual_len,
+            } => {
+                write!(
+                    f,
+                    "Invalid key: expected {} bytes, got {}",
+                    expected_len, actual_len
+                )
             }
             CryptoError::InvalidSignature => write!(f, "Invalid signature"),
             CryptoError::KeyGenerationFailed(s) => write!(f, "Key generation failed: {}", s),
@@ -735,7 +745,13 @@ mod tests {
     #[test]
     fn test_crypto_error_display() {
         assert_eq!(
-            format!("{}", CryptoError::InvalidKey { expected_len: 32, actual_len: 16 }),
+            format!(
+                "{}",
+                CryptoError::InvalidKey {
+                    expected_len: 32,
+                    actual_len: 16
+                }
+            ),
             "Invalid key: expected 32 bytes, got 16"
         );
         assert_eq!(

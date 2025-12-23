@@ -6,7 +6,9 @@
 use crate::config::StorageConfig;
 use crate::error::Result;
 use crate::storage_trait::{StorageBackend, StorageStats};
-use crate::types::{Action, ActionType, AgentPubKey, Entry, Hash, Link, Record, Signature, Timestamp};
+use crate::types::{
+    Action, ActionType, AgentPubKey, Entry, Hash, Link, Record, Signature, Timestamp,
+};
 use rusqlite::{params, Connection};
 
 // ============================================================================
@@ -315,7 +317,7 @@ impl Storage {
              FROM actions
              WHERE seq >= ? AND seq < ?
              ORDER BY seq ASC
-             LIMIT ?"
+             LIMIT ?",
         )?;
 
         let rows = stmt.query_map(params![from_seq, to_seq, limit], |row| {
@@ -399,10 +401,7 @@ impl Storage {
                 None
             };
 
-            records.push(Record {
-                action,
-                entry,
-            });
+            records.push(Record { action, entry });
         }
 
         Ok(records)

@@ -817,14 +817,21 @@ impl MinimalNode {
         for record in peer_records {
             // Skip peers with very low quality or that haven't been seen in > 24 hours
             if record.quality < 10 {
-                log::debug!("Skipping low-quality peer: {} (quality={})", record.addr, record.quality);
+                log::debug!(
+                    "Skipping low-quality peer: {} (quality={})",
+                    record.addr,
+                    record.quality
+                );
                 continue;
             }
 
             let age_secs = now.saturating_sub(record.last_seen_secs);
             if age_secs > 24 * 60 * 60 {
-                log::debug!("Skipping stale peer: {} (last seen {} hours ago)",
-                    record.addr, age_secs / 3600);
+                log::debug!(
+                    "Skipping stale peer: {} (last seen {} hours ago)",
+                    record.addr,
+                    age_secs / 3600
+                );
                 continue;
             }
 
@@ -1372,7 +1379,9 @@ mod tests {
         }];
 
         let json = serde_json::to_string(&records).unwrap();
-        node.storage.set_metadata(PEERS_METADATA_KEY, &json).unwrap();
+        node.storage
+            .set_metadata(PEERS_METADATA_KEY, &json)
+            .unwrap();
 
         // Load peers - should skip the low-quality peer
         node.load_peers().unwrap();
@@ -1402,7 +1411,9 @@ mod tests {
         }];
 
         let json = serde_json::to_string(&records).unwrap();
-        node.storage.set_metadata(PEERS_METADATA_KEY, &json).unwrap();
+        node.storage
+            .set_metadata(PEERS_METADATA_KEY, &json)
+            .unwrap();
 
         // Load peers - should skip the stale peer
         node.load_peers().unwrap();
@@ -1431,7 +1442,9 @@ mod tests {
         }];
 
         let json = serde_json::to_string(&records).unwrap();
-        node.storage.set_metadata(PEERS_METADATA_KEY, &json).unwrap();
+        node.storage
+            .set_metadata(PEERS_METADATA_KEY, &json)
+            .unwrap();
 
         // Load peers - should accept the good peer
         node.load_peers().unwrap();
@@ -1460,7 +1473,9 @@ mod tests {
         }];
 
         let json = serde_json::to_string(&records).unwrap();
-        node.storage.set_metadata(PEERS_METADATA_KEY, &json).unwrap();
+        node.storage
+            .set_metadata(PEERS_METADATA_KEY, &json)
+            .unwrap();
 
         // Load peers - should succeed but skip invalid address
         let result = node.load_peers();

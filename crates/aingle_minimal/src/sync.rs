@@ -270,7 +270,8 @@ impl SyncManager {
                 latest_seq,
                 limit
             );
-            storage.get_records_by_seq_range(from_seq, latest_seq + 1, limit)
+            storage
+                .get_records_by_seq_range(from_seq, latest_seq + 1, limit)
                 .unwrap_or_default()
         } else {
             Vec::new()

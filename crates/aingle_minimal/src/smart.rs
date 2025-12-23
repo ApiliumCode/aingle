@@ -374,7 +374,10 @@ impl SmartNode {
         match self.node.get_entry(&hash) {
             Ok(Some(entry)) => {
                 let content_str = String::from_utf8_lossy(&entry.content);
-                Ok(ActionResult::success_with_value(&action.id, content_str.to_string()))
+                Ok(ActionResult::success_with_value(
+                    &action.id,
+                    content_str.to_string(),
+                ))
             }
             Ok(None) => {
                 // Entry not found - return structured response
@@ -431,7 +434,10 @@ impl SmartNode {
         // For now, return success with pending status
         Ok(ActionResult::success_with_value(
             &action.id,
-            format!("{{\"status\":\"pending\",\"target\":\"{}\",\"method\":\"{}\"}}", target, method),
+            format!(
+                "{{\"status\":\"pending\",\"target\":\"{}\",\"method\":\"{}\"}}",
+                target, method
+            ),
         ))
     }
 

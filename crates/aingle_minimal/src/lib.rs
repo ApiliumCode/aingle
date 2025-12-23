@@ -207,6 +207,8 @@ pub mod network;
 pub mod node;
 pub mod ota;
 pub mod power;
+#[cfg(feature = "quic")]
+pub mod quic;
 pub mod sensors;
 #[cfg(feature = "smart_agents")]
 pub mod smart;
@@ -216,8 +218,6 @@ pub mod types;
 pub mod wallet;
 #[cfg(feature = "webrtc")]
 pub mod webrtc;
-#[cfg(feature = "quic")]
-pub mod quic;
 
 // Storage - trait is always available
 pub mod storage_trait;
@@ -243,8 +243,6 @@ pub use storage_trait::{StorageBackend, StorageStats};
 pub use bluetooth::{BleConfig, BleManager, BlePeer, BleState, BleStats};
 #[cfg(feature = "coap")]
 pub use coap::{CoapConfig, CoapServer};
-#[cfg(feature = "quic")]
-pub use quic::{QuicConfig, QuicServer};
 pub use config::{Config, GossipConfig, MeshMode, PowerMode, StorageConfig, TransportConfig};
 pub use discovery::{DiscoveredPeer, Discovery};
 #[cfg(feature = "coap")]
@@ -259,6 +257,8 @@ pub use memory::IoTMemory;
 pub use node::{MinimalNode, PeerRecord};
 pub use ota::{OtaManager, UpdateChannel, UpdateInfo, UpdateState};
 pub use power::{BatteryInfo, PowerManager, PowerProfile};
+#[cfg(feature = "quic")]
+pub use quic::{QuicConfig, QuicServer};
 pub use sensors::{CalibrationParams, Sensor, SensorManager, SensorReading, SensorType};
 #[cfg(feature = "smart_agents")]
 pub use smart::{IoTPolicyBuilder, SensorAdapter, SmartNode, SmartNodeConfig, SmartNodeStats};

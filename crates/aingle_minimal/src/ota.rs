@@ -83,7 +83,10 @@ impl UpdateInfo {
     /// Check if update is newer than current version
     pub fn is_newer(&self, current_version: &str) -> bool {
         // Use proper semver comparison
-        match (Version::parse(&self.version), Version::parse(current_version)) {
+        match (
+            Version::parse(&self.version),
+            Version::parse(current_version),
+        ) {
             (Ok(update_ver), Ok(current)) => update_ver > current,
             // Fallback to string comparison if parsing fails
             _ => self.version.as_str() > current_version,

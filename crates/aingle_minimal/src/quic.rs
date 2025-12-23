@@ -22,7 +22,7 @@
 
 use crate::error::{Error, Result};
 use crate::network::Message;
-use quinn::{Connection, Endpoint, ServerConfig, ClientConfig};
+use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -117,11 +117,7 @@ impl QuicServer {
         let endpoint = Endpoint::server(server_config, addr)
             .map_err(|e| Error::network(format!("Failed to create QUIC endpoint: {}", e)))?;
 
-        log::info!(
-            "QUIC server started on {} (node: {})",
-            addr,
-            self.node_id
-        );
+        log::info!("QUIC server started on {} (node: {})", addr, self.node_id);
 
         self.endpoint = Some(endpoint);
         Ok(())
@@ -129,8 +125,7 @@ impl QuicServer {
 
     /// Accept incoming connections
     pub async fn accept(&mut self) -> Result<Option<SocketAddr>> {
-        let endpoint = self.endpoint.as_ref()
-            .ok_or(Error::NotInitialized)?;
+        let endpoint = self.endpoint.as_ref().ok_or(Error::NotInitialized)?;
 
         if let Some(incoming) = endpoint.accept().await {
             match incoming.await {
@@ -150,8 +145,7 @@ impl QuicServer {
 
     /// Connect to a remote peer
     pub async fn connect(&mut self, addr: &SocketAddr) -> Result<()> {
-        let endpoint = self.endpoint.as_ref()
-            .ok_or(Error::NotInitialized)?;
+        let endpoint = self.endpoint.as_ref().ok_or(Error::NotInitialized)?;
 
         // Create client config that accepts any certificate (for development)
         let client_config = self.generate_client_config()?;
@@ -169,27 +163,33 @@ impl QuicServer {
 
     /// Send a message to a peer
     pub async fn send(&mut self, addr: &SocketAddr, message: &Message) -> Result<()> {
-        let connection = self.connections.get(addr)
+        let connection = self
+            .connections
+            .get(addr)
             .ok_or_else(|| Error::network(format!("No connection to {}", addr)))?;
 
         let payload = serde_json::to_vec(message)?;
 
         // Open a unidirectional stream
-        let mut send_stream = connection.open_uni()
+        let mut send_stream = connection
+            .open_uni()
             .await
             .map_err(|e| Error::network(format!("Failed to open stream: {}", e)))?;
 
         // Write length-prefixed message
         let len = payload.len() as u32;
-        send_stream.write_all(&len.to_be_bytes())
+        send_stream
+            .write_all(&len.to_be_bytes())
             .await
             .map_err(|e| Error::network(format!("Failed to write length: {}", e)))?;
 
-        send_stream.write_all(&payload)
+        send_stream
+            .write_all(&payload)
             .await
             .map_err(|e| Error::network(format!("Failed to write payload: {}", e)))?;
 
-        send_stream.finish()
+        send_stream
+            .finish()
             .map_err(|e| Error::network(format!("Failed to finish stream: {}", e)))?;
 
         log::trace!("Sent message to {}: {:?}", addr, message);
@@ -290,15 +290,17 @@ impl QuicServer {
 
         let mut server_config = ServerConfig::with_crypto(Arc::new(
             quinn::crypto::rustls::QuicServerConfig::try_from(server_crypto)
-                .map_err(|e| Error::Crypto(format!("QUIC crypto error: {}", e)))?
+                .map_err(|e| Error::Crypto(format!("QUIC crypto error: {}", e)))?,
         ));
 
         // Configure transport
         let mut transport = quinn::TransportConfig::default();
         transport.keep_alive_interval(Some(self.config.keep_alive));
         transport.max_idle_timeout(Some(
-            self.config.idle_timeout.try_into()
-                .map_err(|e| Error::network(format!("Invalid timeout: {}", e)))?
+            self.config
+                .idle_timeout
+                .try_into()
+                .map_err(|e| Error::network(format!("Invalid timeout: {}", e)))?,
         ));
         transport.max_concurrent_uni_streams(self.config.max_concurrent_streams.into());
         transport.max_concurrent_bidi_streams(self.config.max_concurrent_streams.into());
@@ -317,15 +319,17 @@ impl QuicServer {
 
         let mut client_config = ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
-                .map_err(|e| Error::Crypto(format!("QUIC crypto error: {}", e)))?
+                .map_err(|e| Error::Crypto(format!("QUIC crypto error: {}", e)))?,
         ));
 
         // Configure transport
         let mut transport = quinn::TransportConfig::default();
         transport.keep_alive_interval(Some(self.config.keep_alive));
         transport.max_idle_timeout(Some(
-            self.config.idle_timeout.try_into()
-                .map_err(|e| Error::network(format!("Invalid timeout: {}", e)))?
+            self.config
+                .idle_timeout
+                .try_into()
+                .map_err(|e| Error::network(format!("Invalid timeout: {}", e)))?,
         ));
 
         client_config.transport_config(Arc::new(transport));

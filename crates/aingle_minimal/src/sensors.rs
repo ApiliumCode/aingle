@@ -498,7 +498,10 @@ pub mod adapters {
 
         /// Verify checksum
         fn verify_checksum(raw: &[u8; 5]) -> bool {
-            let sum = raw[0].wrapping_add(raw[1]).wrapping_add(raw[2]).wrapping_add(raw[3]);
+            let sum = raw[0]
+                .wrapping_add(raw[1])
+                .wrapping_add(raw[2])
+                .wrapping_add(raw[3]);
             sum == raw[4]
         }
 
@@ -506,11 +509,19 @@ pub mod adapters {
         pub fn read_humidity(&self) -> Result<SensorReading> {
             if self.simulated {
                 let value = self.calibration.apply(self.sim_humidity);
-                return Ok(SensorReading::new(SensorType::Humidity, value, "%".to_string()));
+                return Ok(SensorReading::new(
+                    SensorType::Humidity,
+                    value,
+                    "%".to_string(),
+                ));
             }
             let humidity = Self::parse_humidity(&self.last_raw);
             let value = self.calibration.apply(humidity);
-            Ok(SensorReading::new(SensorType::Humidity, value, "%".to_string()))
+            Ok(SensorReading::new(
+                SensorType::Humidity,
+                value,
+                "%".to_string(),
+            ))
         }
     }
 
@@ -536,7 +547,9 @@ pub mod adapters {
 
             // Verify checksum
             if !Self::verify_checksum(&self.last_raw) {
-                return Err(Error::ValidationFailed("DHT22 checksum mismatch".to_string()));
+                return Err(Error::ValidationFailed(
+                    "DHT22 checksum mismatch".to_string(),
+                ));
             }
 
             let temp = Self::parse_temperature(&self.last_raw);
@@ -721,7 +734,11 @@ pub mod adapters {
                 ));
             }
             // Would read from I2C here
-            Ok(SensorReading::new(SensorType::Temperature, 0.0, "°C".to_string()))
+            Ok(SensorReading::new(
+                SensorType::Temperature,
+                0.0,
+                "°C".to_string(),
+            ))
         }
     }
 
@@ -864,8 +881,16 @@ pub mod adapters {
                 accel_range: AccelRange::G2,
                 gyro_range: GyroRange::Dps250,
                 simulated: true,
-                sim_accel: Axis3D { x: 0.0, y: 0.0, z: 1.0 }, // Earth gravity on Z
-                sim_gyro: Axis3D { x: 0.0, y: 0.0, z: 0.0 },
+                sim_accel: Axis3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 1.0,
+                }, // Earth gravity on Z
+                sim_gyro: Axis3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
             }
         }
 
@@ -881,8 +906,16 @@ pub mod adapters {
                 accel_range: AccelRange::G2,
                 gyro_range: GyroRange::Dps250,
                 simulated: false,
-                sim_accel: Axis3D { x: 0.0, y: 0.0, z: 0.0 },
-                sim_gyro: Axis3D { x: 0.0, y: 0.0, z: 0.0 },
+                sim_accel: Axis3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                sim_gyro: Axis3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
             }
         }
 
@@ -911,14 +944,25 @@ pub mod adapters {
             if self.simulated {
                 let magnitude = self.sim_gyro.magnitude();
                 let value = self.calibration.apply(magnitude);
-                let mut reading = SensorReading::new(SensorType::Gyroscope, value, "°/s".to_string());
-                reading.metadata.insert("x".to_string(), format!("{:.4}", self.sim_gyro.x));
-                reading.metadata.insert("y".to_string(), format!("{:.4}", self.sim_gyro.y));
-                reading.metadata.insert("z".to_string(), format!("{:.4}", self.sim_gyro.z));
+                let mut reading =
+                    SensorReading::new(SensorType::Gyroscope, value, "°/s".to_string());
+                reading
+                    .metadata
+                    .insert("x".to_string(), format!("{:.4}", self.sim_gyro.x));
+                reading
+                    .metadata
+                    .insert("y".to_string(), format!("{:.4}", self.sim_gyro.y));
+                reading
+                    .metadata
+                    .insert("z".to_string(), format!("{:.4}", self.sim_gyro.z));
                 return Ok(reading);
             }
             // Would read from I2C here
-            Ok(SensorReading::new(SensorType::Gyroscope, 0.0, "°/s".to_string()))
+            Ok(SensorReading::new(
+                SensorType::Gyroscope,
+                0.0,
+                "°/s".to_string(),
+            ))
         }
 
         /// Read accelerometer as Axis3D
@@ -930,7 +974,11 @@ pub mod adapters {
                     z: self.sim_accel.z + (rand::random::<f64>() - 0.5) * 0.01,
                 });
             }
-            Ok(Axis3D { x: 0.0, y: 0.0, z: 0.0 })
+            Ok(Axis3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            })
         }
     }
 
@@ -957,14 +1005,17 @@ pub mod adapters {
                 let magnitude = accel.magnitude();
                 let value = self.calibration.apply(magnitude);
 
-                let mut reading = SensorReading::new(
-                    SensorType::Accelerometer,
-                    value,
-                    "g".to_string(),
-                );
-                reading.metadata.insert("x".to_string(), format!("{:.4}", accel.x));
-                reading.metadata.insert("y".to_string(), format!("{:.4}", accel.y));
-                reading.metadata.insert("z".to_string(), format!("{:.4}", accel.z));
+                let mut reading =
+                    SensorReading::new(SensorType::Accelerometer, value, "g".to_string());
+                reading
+                    .metadata
+                    .insert("x".to_string(), format!("{:.4}", accel.x));
+                reading
+                    .metadata
+                    .insert("y".to_string(), format!("{:.4}", accel.y));
+                reading
+                    .metadata
+                    .insert("z".to_string(), format!("{:.4}", accel.z));
                 return Ok(reading);
             }
 
