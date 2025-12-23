@@ -27,19 +27,19 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            name: aingle-linux-x86_64
+            name: aingle-minimal-linux-x86_64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            name: aingle-linux-aarch64
+            name: aingle-minimal-linux-aarch64
           - target: x86_64-apple-darwin
             os: macos-latest
-            name: aingle-macos-x86_64
+            name: aingle-minimal-macos-x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
-            name: aingle-macos-aarch64
+            name: aingle-minimal-macos-aarch64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            name: aingle-windows-x86_64.exe
+            name: aingle-minimal-windows-x86_64.exe
 
     steps:
       - uses: actions/checkout@v6
@@ -75,7 +75,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.target }}-cargo-release-
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p aingle
+        run: cargo build --release --target ${{ matrix.target }} -p aingle_minimal
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
@@ -83,14 +83,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/aingle dist/${{ matrix.name }}
+          cp target/${{ matrix.target }}/release/aingle-minimal dist/${{ matrix.name }}
           cd dist && tar -czvf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
 
       - name: Create archive (Windows)
         if: runner.os == 'Windows'
         run: |
           mkdir dist
-          copy target\${{ matrix.target }}\release\aingle.exe dist\${{ matrix.name }}
+          copy target\${{ matrix.target }}\release\aingle-minimal.exe dist\${{ matrix.name }}
           cd dist && 7z a -tzip ${{ matrix.name }}.zip ${{ matrix.name }}
 
       - name: Upload artifact
@@ -148,19 +148,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsodium-dev libssl-dev pkg-config
 
-      - name: Publish crates (dry-run)
-        run: |
-          echo "Would publish the following crates:"
-          echo "- aingle_types"
-          echo "- aingle_keystore"
-          echo "- aingle_state"
-          echo "- aingle_conductor_api"
-          echo "- aingle_websocket"
-          echo "- aingle_p2p"
-          echo "- aingle"
-          echo ""
-          echo "Skipping actual publish (requires CARGO_REGISTRY_TOKEN)"
-        # Uncomment to enable actual publishing:
-        # cargo publish -p aingle_types --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        # cargo publish -p aingle_keystore --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        # ... etc
+      - name: Publish aingle_minimal
+        run: cargo publish -p aingle_minimal --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        continue-on-error: true  # May fail if version already published
