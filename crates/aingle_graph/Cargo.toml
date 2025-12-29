@@ -55,7 +55,7 @@ rio_api = { version = "0.8", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
-tempfile = "3.10"
+tempfile = "3.24"
 
 [[bench]]
 name = "graph_bench"
