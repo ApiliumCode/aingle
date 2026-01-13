@@ -28,7 +28,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Hashing
-blake3 = "1.5"
+blake3 = "1.8"
 sha2 = "0.10"
 
 # Error handling
@@ -47,5 +47,5 @@ tracing = "0.1"
 dashmap = "6.0"
 
 [dev-dependencies]
-tempfile = "3.10"
+tempfile = "3.24"
 tokio-test = "0.4"

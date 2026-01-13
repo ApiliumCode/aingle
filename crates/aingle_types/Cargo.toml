@@ -23,7 +23,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 derive_more = "0.99.3"
 either = "1.5"
 fixt = { path = "../fixt", version = "0.0.1" }
-flate2 = "1.0.14"
+flate2 = "1.1.8"
 futures = "0.3"
 ai_hash = { version = "^0.0.1", path = "../ai_hash", features = ["string-encoding"] }
 aingle_keystore = { version = "0.0.1", path = "../aingle_keystore" }

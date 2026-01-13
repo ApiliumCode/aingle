@@ -62,7 +62,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Crypto - minimal set
-blake3 = { version = "1.5", default-features = false, features = ["std"] }
+blake3 = { version = "1.8", default-features = false, features = ["std"] }
 rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
 
 # Networking - CoAP for IoT (lightweight UDP-based protocol)

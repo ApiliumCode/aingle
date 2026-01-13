@@ -13,7 +13,7 @@ documentation = "https://docs.rs/mr_bundle"
 bytes = "1.0"
 derive_more = "0.99"
 either = "1.5"
-flate2 = "1.0"
+flate2 = "1.1"
 aingle_util = { path = "../aingle_util", version = "0.0.1" }
 futures = "0.3"
 reqwest = "0.12"
