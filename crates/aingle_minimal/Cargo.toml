@@ -62,7 +62,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Crypto - minimal set
-blake3 = { version = "1.5", default-features = false, features = ["std"] }
+blake3 = { version = "1.8", default-features = false, features = ["std"] }
 rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
 
 # Networking - CoAP for IoT (lightweight UDP-based protocol)
@@ -83,7 +83,7 @@ if-addrs = { version = "0.13", optional = true }
 
 # WebRTC for browser support
 webrtc = { version = "0.14", optional = true }
-bytes = { version = "1.0", optional = true }
+bytes = { version = "1.11", optional = true }
 # WebSocket signaling server for WebRTC
 async-tungstenite = { version = "0.27", features = ["async-std-runtime"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink"], optional = true }
@@ -95,7 +95,7 @@ rcgen = { version = "0.13", optional = true }
 
 # Bluetooth LE for IoT mesh
 btleplug = { version = "0.11", optional = true }
-uuid = { version = "1.0", optional = true }
+uuid = { version = "1.20", optional = true }
 
 # ESP32 NimBLE for embedded BLE (requires ESP-IDF)
 esp32-nimble = { version = "0.8", optional = true }
