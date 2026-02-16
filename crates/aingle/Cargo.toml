@@ -21,7 +21,7 @@ directories = "2.0.2"
 either = "1.5.0"
 fallible-iterator = "0.2.0"
 fixt = { version = "^0.0.1", path = "../fixt" }
-futures = "0.3.1"
+futures = "0.3.32"
 ghost_actor = "0.3.0-alpha.1"
 ai_hash = { version = "^0.0.1", path = "../ai_hash", features = ["full"] }
 aingle_cascade = { version = "0.0.1", path = "../aingle_cascade" }
@@ -37,7 +37,7 @@ aingle_wasmer_host = "0.0.1"
 aingle_websocket = { version = "0.0.1", path = "../aingle_websocket" }
 wasmer = "=6.0.0"
 aingle_zome_types = { version = "^0.0.1", path = "../aingle_zome_types" }
-human-panic = "2.0.4"
+human-panic = "2.0.6"
 kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p/kitsune_p2p" }
 kitsune_p2p_types = { version = "0.0.1", path = "../kitsune_p2p/types" }
 lazy_static = "1.4.0"
@@ -90,11 +90,11 @@ sd-notify = "0.3.0"
 
 [dev-dependencies]
 anyhow = "1.0"
-assert_cmd = "2.0"
+assert_cmd = "2.1"
 criterion = "0.5"
 maplit = "1"
 pretty_assertions = "0.7.2"
-serial_test = "3.0"
+serial_test = "3.3"
 test-case = "3.3"
 
 # Dependencies for test_utils: keep in sync with above

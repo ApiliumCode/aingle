@@ -20,7 +20,7 @@ either = "1.5.0"
 fallible-iterator = "0.2.0"
 failure = "0.1.6"
 fixt = { version = "^0.0.1", path = "../fixt" }
-futures = "0.3.1"
+futures = "0.3.32"
 ai_hash = { path = "../ai_hash", features = ["rusqlite"], version = "0.0.1" }
 aingle_middleware_bytes = "=0.0.3"
 aingle_zome_types = { version = "^0.0.1", path = "../aingle_zome_types" }
