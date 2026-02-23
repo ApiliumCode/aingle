@@ -3,6 +3,7 @@
 //! Provides agent consistency scoring and batch assertion verification
 //! for the skill reputation system.
 
+use crate::middleware::{is_in_namespace, RequestNamespace};
 use crate::state::AppState;
 use aingle_graph::{NodeId, Value};
 use axum::{
@@ -71,18 +72,25 @@ pub struct BatchVerifyAssertionsResponse {
 /// have been verified through PoL validation.
 pub async fn get_agent_consistency(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Path(agent_id): Path<String>,
 ) -> impl IntoResponse {
     let graph = state.graph.read().await;
     let logic = state.logic.read().await;
+
+    // Determine namespace prefix for agent node
+    let ns_prefix = ns_ext
+        .as_ref()
+        .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone())
+        .unwrap_or_else(|| "mayros".to_string());
 
     let mut total: usize = 0;
     let mut verified: usize = 0;
 
     // Find all triples where the object references this agent node.
     // Convention: `{ns}:assertedBy` or `{ns}:ownedBy` predicates point
-    // to agent nodes like `mayros:agent:{id}` or `agent:{id}`.
-    let agent_node = Value::node(NodeId::named(format!("mayros:agent:{}", agent_id)));
+    // to agent nodes like `{ns}:agent:{id}` or `agent:{id}`.
+    let agent_node = Value::node(NodeId::named(format!("{}:agent:{}", ns_prefix, agent_id)));
 
     if let Ok(triples) = graph.get_object(&agent_node) {
         for triple in &triples {
@@ -106,8 +114,8 @@ pub async fn get_agent_consistency(
     }
 
     // Secondary pass: catch assertions stored under agent-prefixed subjects
-    // (e.g. "mayros:agent:{id}:assertion:xyz")
-    let agent_prefix = format!("mayros:agent:{}:", agent_id);
+    // (e.g. "{ns}:agent:{id}:assertion:xyz")
+    let agent_prefix = format!("{}:agent:{}:", ns_prefix, agent_id);
     if let Ok(prefixed_subjects) = graph.subjects_with_prefix(&agent_prefix) {
         for subj in &prefixed_subjects {
             if let Ok(subj_triples) = graph.get_subject(subj) {
@@ -145,13 +153,30 @@ pub async fn get_agent_consistency(
 /// and if it passes PoL validation.
 pub async fn batch_verify_assertions(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(req): Json<BatchVerifyAssertionsRequest>,
 ) -> impl IntoResponse {
     let graph = state.graph.read().await;
     let logic = state.logic.read().await;
+
+    // Extract namespace for filtering
+    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+
     let mut results: Vec<AssertionVerifyResult> = Vec::new();
 
     for assertion in &req.assertions {
+        // Skip assertions whose subject is outside the namespace
+        if let Some(ref ns) = ns_filter {
+            if !is_in_namespace(&assertion.subject, ns) {
+                results.push(AssertionVerifyResult {
+                    subject: assertion.subject.clone(),
+                    predicate: assertion.predicate.clone(),
+                    verified: false,
+                });
+                continue;
+            }
+        }
+
         let subj = NodeId::named(&assertion.subject);
 
         // Find all triples for this subject

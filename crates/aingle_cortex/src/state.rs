@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 #[cfg(feature = "auth")]
 use crate::auth::UserStore;
 use crate::proofs::ProofStore;
+use crate::rest::audit::AuditLog;
 
 /// The shared state accessible by all API handlers.
 ///
@@ -28,6 +29,8 @@ pub struct AppState {
     pub proof_store: Arc<ProofStore>,
     /// Manager for temporary sandbox namespaces used by skill verification.
     pub sandbox_manager: Arc<SandboxManager>,
+    /// Audit log for tracking API actions.
+    pub audit_log: Arc<RwLock<AuditLog>>,
     /// The user store for authentication and authorization.
     ///
     /// This field is only available if the `auth` feature is enabled.
@@ -58,6 +61,7 @@ impl AppState {
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
+            audit_log: Arc::new(RwLock::new(AuditLog::default())),
             #[cfg(feature = "auth")]
             user_store,
         }
@@ -83,6 +87,33 @@ impl AppState {
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
+            audit_log: Arc::new(RwLock::new(AuditLog::default())),
+            #[cfg(feature = "auth")]
+            user_store,
+        }
+    }
+
+    /// Creates a new `AppState` with a file-backed audit log.
+    pub fn with_audit_path(path: std::path::PathBuf) -> Self {
+        let graph = GraphDB::memory().expect("Failed to create in-memory graph");
+        let logic = RuleEngine::new();
+        let memory = TitansMemory::agent_mode();
+
+        #[cfg(feature = "auth")]
+        let user_store = {
+            let store = Arc::new(UserStore::new());
+            let _ = store.init_default_admin();
+            store
+        };
+
+        Self {
+            graph: Arc::new(RwLock::new(graph)),
+            logic: Arc::new(RwLock::new(logic)),
+            memory: Arc::new(RwLock::new(memory)),
+            broadcaster: Arc::new(EventBroadcaster::new()),
+            proof_store: Arc::new(ProofStore::new()),
+            sandbox_manager: Arc::new(SandboxManager::new()),
+            audit_log: Arc::new(RwLock::new(AuditLog::with_path(10_000, path))),
             #[cfg(feature = "auth")]
             user_store,
         }

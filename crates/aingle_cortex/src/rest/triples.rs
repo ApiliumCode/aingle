@@ -8,6 +8,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::middleware::{is_in_namespace, RequestNamespace};
+use crate::rest::audit::AuditEntry;
 use crate::state::{AppState, Event};
 use aingle_graph::{NodeId, Predicate, Triple, TripleId, TriplePattern, Value};
 
@@ -122,6 +124,7 @@ fn default_limit() -> usize {
 /// POST /api/v1/triples
 pub async fn create_triple(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(req): Json<CreateTripleRequest>,
 ) -> Result<(StatusCode, Json<TripleDto>)> {
     // Validate input
@@ -130,6 +133,16 @@ pub async fn create_triple(
     }
     if req.predicate.is_empty() {
         return Err(Error::InvalidInput("Predicate cannot be empty".to_string()));
+    }
+
+    // Enforce namespace scoping
+    if let Some(axum::Extension(RequestNamespace(Some(ref ns)))) = ns_ext {
+        if !is_in_namespace(&req.subject, ns) {
+            return Err(Error::Forbidden(format!(
+                "Subject \"{}\" is not in namespace \"{}\"",
+                req.subject, ns
+            )));
+        }
     }
 
     let object: Value = req.object.clone().into();
@@ -146,6 +159,23 @@ pub async fn create_triple(
         let graph = state.graph.read().await;
         graph.insert(triple.clone())?
     };
+
+    // Record audit entry
+    {
+        let namespace = ns_ext
+            .as_ref()
+            .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
+        let mut audit = state.audit_log.write().await;
+        audit.record(AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
+            namespace,
+            action: "create".to_string(),
+            resource: format!("/api/v1/triples/{}", triple_id.to_hex()),
+            details: Some(format!("subject={}", req.subject)),
+            request_id: None,
+        });
+    }
 
     // Broadcast event
     state.broadcaster.broadcast(Event::TripleAdded {
@@ -181,10 +211,24 @@ pub async fn get_triple(
 /// DELETE /api/v1/triples/:id
 pub async fn delete_triple(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
     let triple_id = TripleId::from_hex(&id)
         .ok_or_else(|| Error::InvalidInput(format!("Invalid triple ID: {}", id)))?;
+
+    // Enforce namespace on delete
+    if let Some(axum::Extension(RequestNamespace(Some(ref ns)))) = ns_ext {
+        let graph = state.graph.read().await;
+        if let Some(triple) = graph.get(&triple_id)? {
+            if !is_in_namespace(&triple.subject.to_string(), ns) {
+                return Err(Error::Forbidden(format!(
+                    "Triple subject is not in namespace \"{}\"",
+                    ns
+                )));
+            }
+        }
+    }
 
     let deleted = {
         let graph = state.graph.read().await;
@@ -192,6 +236,23 @@ pub async fn delete_triple(
     };
 
     if deleted {
+        // Record audit entry
+        {
+            let namespace = ns_ext
+                .as_ref()
+                .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
+            let mut audit = state.audit_log.write().await;
+            audit.record(AuditEntry {
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
+                namespace,
+                action: "delete".to_string(),
+                resource: format!("/api/v1/triples/{}", id),
+                details: None,
+                request_id: None,
+            });
+        }
+
         state
             .broadcaster
             .broadcast(Event::TripleDeleted { hash: id });
@@ -206,6 +267,7 @@ pub async fn delete_triple(
 /// GET /api/v1/triples
 pub async fn list_triples(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Query(query): Query<ListTriplesQuery>,
 ) -> Result<Json<ListTriplesResponse>> {
     let graph = state.graph.read().await;
@@ -221,6 +283,14 @@ pub async fn list_triples(
     }
 
     let triples = graph.find(pattern)?;
+
+    // Filter by namespace if present
+    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+    let triples: Vec<Triple> = if let Some(ref ns) = ns_filter {
+        triples.into_iter().filter(|t| is_in_namespace(&t.subject.to_string(), ns)).collect()
+    } else {
+        triples
+    };
 
     // Apply pagination
     let total = triples.len();

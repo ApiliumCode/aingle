@@ -7,6 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::middleware::{is_in_namespace, RequestNamespace};
 use crate::rest::triples::{TripleDto, ValueDto};
 use crate::state::{AppState, Event};
 use aingle_graph::{NodeId, Predicate, Triple, Value};
@@ -66,14 +67,27 @@ pub struct ValidationMessage {
 /// POST /api/v1/validate
 pub async fn validate_triples(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(req): Json<ValidateRequest>,
 ) -> Result<Json<ValidateResponse>> {
     let logic = state.logic.read().await;
+
+    // Extract namespace if present
+    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
 
     let mut results = Vec::new();
     let mut all_valid = true;
 
     for input in req.triples {
+        // Enforce namespace on input subjects
+        if let Some(ref ns) = ns_filter {
+            if !is_in_namespace(&input.subject, ns) {
+                return Err(Error::Forbidden(format!(
+                    "Subject \"{}\" is not in namespace \"{}\"",
+                    input.subject, ns
+                )));
+            }
+        }
         let object: Value = input.object.clone().into();
 
         // Create a triple for validation

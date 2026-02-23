@@ -7,9 +7,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+use crate::middleware::{is_in_namespace, RequestNamespace};
 use crate::rest::triples::{TripleDto, ValueDto};
 use crate::state::AppState;
-use aingle_graph::{NodeId, Predicate, TriplePattern, Value};
+use aingle_graph::{NodeId, Predicate, Triple, TriplePattern, Value};
 
 /// Pattern query request
 #[derive(Debug, Deserialize)]
@@ -53,6 +54,7 @@ pub struct PatternDescription {
 /// POST /api/v1/query
 pub async fn query_pattern(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(req): Json<PatternQueryRequest>,
 ) -> Result<Json<PatternQueryResponse>> {
     let graph = state.graph.read().await;
@@ -72,6 +74,14 @@ pub async fn query_pattern(
     }
 
     let triples = graph.find(pattern)?;
+
+    // Filter by namespace if present
+    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+    let triples: Vec<Triple> = if let Some(ref ns) = ns_filter {
+        triples.into_iter().filter(|t| is_in_namespace(&t.subject.to_string(), ns)).collect()
+    } else {
+        triples
+    };
 
     let total = triples.len();
     let matches: Vec<TripleDto> = triples
@@ -110,6 +120,7 @@ pub struct ListSubjectsQuery {
 /// GET /api/v1/query/subjects
 pub async fn list_subjects(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Query(query): Query<ListSubjectsQuery>,
 ) -> Result<Json<ListSubjectsResponse>> {
     let graph = state.graph.read().await;
@@ -121,7 +132,12 @@ pub async fn list_subjects(
     };
 
     let triples = graph.find(pattern)?;
-    let mut subjects: Vec<String> = triples.into_iter().map(|t| t.subject.to_string()).collect();
+    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+    let mut subjects: Vec<String> = triples
+        .into_iter()
+        .map(|t| t.subject.to_string())
+        .filter(|s| ns_filter.as_ref().map_or(true, |ns| is_in_namespace(s, ns)))
+        .collect();
     subjects.sort();
     subjects.dedup();
 
@@ -153,6 +169,7 @@ pub struct ListPredicatesQuery {
 /// GET /api/v1/query/predicates
 pub async fn list_predicates(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Query(query): Query<ListPredicatesQuery>,
 ) -> Result<Json<ListPredicatesResponse>> {
     let graph = state.graph.read().await;
@@ -164,8 +181,10 @@ pub async fn list_predicates(
     };
 
     let triples = graph.find(pattern)?;
+    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
     let mut predicates: Vec<String> = triples
         .into_iter()
+        .filter(|t| ns_filter.as_ref().map_or(true, |ns| is_in_namespace(&t.subject.to_string(), ns)))
         .map(|t| t.predicate.to_string())
         .collect();
     predicates.sort();

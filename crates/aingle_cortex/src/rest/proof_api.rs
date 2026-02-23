@@ -7,6 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::middleware::{is_in_namespace, RequestNamespace};
 use crate::proofs::{ProofId, ProofMetadata, ProofType, StoredProof, SubmitProofRequest};
 use crate::state::AppState;
 
@@ -15,8 +16,23 @@ use crate::state::AppState;
 /// POST /api/v1/proofs
 pub async fn submit_proof(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(request): Json<SubmitProofRequest>,
 ) -> Result<Json<SubmitProofResponse>> {
+    // Enforce namespace: submitter must belong to the namespace
+    if let Some(axum::Extension(RequestNamespace(Some(ref ns)))) = ns_ext {
+        if let Some(ref meta) = request.metadata {
+            if let Some(ref submitter) = meta.submitter {
+                if !is_in_namespace(submitter, ns) {
+                    return Err(Error::Forbidden(format!(
+                        "Submitter \"{}\" is not in namespace \"{}\"",
+                        submitter, ns
+                    )));
+                }
+            }
+        }
+    }
+
     let proof_id = state
         .proof_store
         .submit(request)
@@ -152,11 +168,23 @@ pub async fn verify_proofs_batch(
 /// GET /api/v1/proofs
 pub async fn list_proofs(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Query(params): Query<ListProofsQuery>,
 ) -> Result<Json<ListProofsResponse>> {
     let proofs = state.proof_store.list(params.proof_type).await;
 
     let mut filtered_proofs = proofs;
+
+    // Filter by namespace: only show proofs whose submitter is in the namespace
+    if let Some(axum::Extension(RequestNamespace(Some(ref ns)))) = ns_ext {
+        filtered_proofs.retain(|p| {
+            p.metadata
+                .submitter
+                .as_deref()
+                .map(|s| is_in_namespace(s, ns))
+                .unwrap_or(false)
+        });
+    }
 
     // Apply verified filter
     if let Some(verified) = params.verified {
@@ -183,8 +211,23 @@ pub async fn list_proofs(
 /// DELETE /api/v1/proofs/:id
 pub async fn delete_proof(
     State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
     Path(proof_id): Path<ProofId>,
 ) -> Result<Json<DeleteProofResponse>> {
+    // Enforce namespace: verify the proof's submitter is in the namespace
+    if let Some(axum::Extension(RequestNamespace(Some(ref ns)))) = ns_ext {
+        if let Some(proof) = state.proof_store.get(&proof_id).await {
+            if let Some(ref submitter) = proof.metadata.submitter {
+                if !is_in_namespace(submitter, ns) {
+                    return Err(Error::Forbidden(format!(
+                        "Proof submitter is not in namespace \"{}\"",
+                        ns
+                    )));
+                }
+            }
+        }
+    }
+
     let deleted = state.proof_store.delete(&proof_id).await;
 
     if deleted {
@@ -347,7 +390,7 @@ mod tests {
             metadata: None,
         };
 
-        let response = submit_proof(AxumState(state.clone()), Json(request))
+        let response = submit_proof(AxumState(state.clone()), None, Json(request))
             .await
             .unwrap();
 
@@ -370,7 +413,7 @@ mod tests {
                 proof_data: serde_json::json!({"test": "data"}),
                 metadata: None,
             };
-            submit_proof(AxumState(state.clone()), Json(request))
+            submit_proof(AxumState(state.clone()), None, Json(request))
                 .await
                 .unwrap();
         }
@@ -381,7 +424,7 @@ mod tests {
             limit: Some(10),
         };
 
-        let response = list_proofs(AxumState(state), Query(query)).await.unwrap();
+        let response = list_proofs(AxumState(state), None, Query(query)).await.unwrap();
 
         assert_eq!(response.0.count, 3);
     }
@@ -396,7 +439,7 @@ mod tests {
             metadata: None,
         };
 
-        submit_proof(AxumState(state.clone()), Json(request))
+        submit_proof(AxumState(state.clone()), None, Json(request))
             .await
             .unwrap();
 

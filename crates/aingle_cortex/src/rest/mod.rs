@@ -26,6 +26,7 @@
 //! - `GET    /api/v1/agents/:id/consistency` - Agent assertion consistency score
 //! - `POST   /api/v1/assertions/verify-batch` - Batch verify assertion proofs
 
+pub mod audit;
 mod memory;
 mod observability;
 mod proof;
@@ -102,4 +103,6 @@ pub fn router() -> Router<AppState> {
         .merge(skill_verification::skill_verification_router())
         // Reputation endpoints (Phase 3)
         .merge(reputation::reputation_router())
+        // Audit log endpoints (Phase 6.5)
+        .merge(audit::audit_router())
 }
