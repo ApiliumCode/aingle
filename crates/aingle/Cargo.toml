@@ -36,7 +36,7 @@ aingle_types = { version = "0.0.1", path = "../aingle_types" }
 aingle_cortex = { version = "0.2.3", path = "../aingle_cortex", default-features = false, features = ["rest"] }
 aingle_wasmer_host = "0.0.1"
 aingle_websocket = { version = "0.0.1", path = "../aingle_websocket" }
-wasmer = "=6.0.0"
+wasmer = "=7.0.1"
 aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types" }
 human-panic = "2.0.4"
 kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p/kitsune_p2p" }
