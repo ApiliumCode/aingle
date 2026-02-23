@@ -19,7 +19,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 derive_more = "0.99.3"
 directories = "2.0.2"
 either = "1.5.0"
-fallible-iterator = "0.2.0"
+fallible-iterator = "0.3.0"
 ai_fixt = { version = "^0.0.1", path = "../ai_fixt" }
 futures = "0.3.32"
 ghost_actor = "0.3.0-alpha.1"
