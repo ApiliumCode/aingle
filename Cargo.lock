@@ -181,6 +181,7 @@ dependencies = [
  "aingle_ai",
  "aingle_cascade",
  "aingle_conductor_api",
+ "aingle_cortex",
  "aingle_keystore",
  "aingle_middleware_bytes",
  "aingle_p2p",
@@ -437,6 +438,7 @@ dependencies = [
  "aingle_graph",
  "aingle_logic",
  "aingle_zk",
+ "aingle_zome_types",
  "argon2",
  "async-graphql",
  "async-graphql-axum",
@@ -456,6 +458,7 @@ dependencies = [
  "spargebra",
  "tempfile",
  "thiserror 2.0.17",
+ "titans_memory 0.2.0",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -549,7 +552,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_minimal"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-io",
  "async-tungstenite",

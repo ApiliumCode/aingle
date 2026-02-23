@@ -3,6 +3,7 @@
 use aingle_graph::GraphDB;
 use aingle_logic::RuleEngine;
 use std::sync::Arc;
+use titans_memory::{MemoryConfig, TitansMemory};
 use tokio::sync::RwLock;
 
 #[cfg(feature = "auth")]
@@ -19,6 +20,8 @@ pub struct AppState {
     pub graph: Arc<RwLock<GraphDB>>,
     /// A thread-safe reference to the logic and validation engine.
     pub logic: Arc<RwLock<RuleEngine>>,
+    /// The Titans dual-memory system (STM + LTM with consolidation).
+    pub memory: Arc<RwLock<TitansMemory>>,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
@@ -36,6 +39,7 @@ impl AppState {
     pub fn new() -> Self {
         let graph = GraphDB::memory().expect("Failed to create in-memory graph");
         let logic = RuleEngine::new();
+        let memory = TitansMemory::agent_mode();
 
         #[cfg(feature = "auth")]
         let user_store = {
@@ -48,6 +52,7 @@ impl AppState {
         Self {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
+            memory: Arc::new(RwLock::new(memory)),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             #[cfg(feature = "auth")]
@@ -58,6 +63,7 @@ impl AppState {
     /// Creates a new `AppState` with a pre-configured `GraphDB` instance.
     pub fn with_graph(graph: GraphDB) -> Self {
         let logic = RuleEngine::new();
+        let memory = TitansMemory::agent_mode();
 
         #[cfg(feature = "auth")]
         let user_store = {
@@ -70,11 +76,20 @@ impl AppState {
         Self {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
+            memory: Arc::new(RwLock::new(memory)),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             #[cfg(feature = "auth")]
             user_store,
         }
+    }
+
+    /// Returns an internal Cortex client configured for same-process access.
+    ///
+    /// This client calls the Cortex REST API and can be used by host functions
+    /// to bridge WASM zome code with the semantic graph.
+    pub fn cortex_client(&self) -> crate::client::CortexInternalClient {
+        crate::client::CortexInternalClient::default_client()
     }
 
     /// Gathers and returns statistics about the graph and connected clients.

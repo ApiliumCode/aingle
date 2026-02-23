@@ -17,6 +17,8 @@
 //! - `GET    /api/v1/proof/:hash` - Get proof
 //! - `POST   /api/v1/verify` - Verify proof
 
+mod memory;
+mod observability;
 mod proof;
 mod proof_api;
 mod query;
@@ -81,4 +83,8 @@ pub fn router() -> Router<AppState> {
             "/api/v1/proofs/:id/verify",
             get(proof_api::verify_proof_by_id),
         )
+        // Titans Memory endpoints
+        .merge(memory::memory_router())
+        // Semantic Observability endpoints
+        .merge(observability::observability_router())
 }

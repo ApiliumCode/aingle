@@ -65,6 +65,12 @@ pub mod x_salsa20_poly1305;
 pub mod zome;
 #[allow(missing_docs)]
 pub mod zome_io;
+/// Types for semantic graph operations across the WASM boundary.
+///
+/// Provides RDF triple types, graph query/store types, and Titans memory
+/// recall/remember types for use by zome code to interact with AIngle Cortex.
+#[allow(missing_docs)]
+pub mod graph;
 
 #[allow(missing_docs)]
 #[cfg(feature = "fixturators")]

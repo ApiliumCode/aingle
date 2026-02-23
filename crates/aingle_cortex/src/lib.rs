@@ -160,6 +160,7 @@
 
 #[cfg(feature = "auth")]
 pub mod auth;
+pub mod client;
 pub mod error;
 #[cfg(feature = "graphql")]
 pub mod graphql;
@@ -171,6 +172,7 @@ pub mod server;
 pub mod sparql;
 pub mod state;
 
+pub use client::{CortexClientConfig, CortexInternalClient};
 pub use error::{Error, Result};
 pub use server::{CortexConfig, CortexServer};
 pub use state::AppState;

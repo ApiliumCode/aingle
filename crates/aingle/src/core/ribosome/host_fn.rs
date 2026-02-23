@@ -172,4 +172,12 @@ host_fn_api_impls! {
     // These are constant for the lifetime of a zome call.
     fn zome_info (()) -> zt::info::ZomeInfo;
 
+    // Semantic graph operations — query/store triples via Cortex.
+    fn graph_query (zt::graph::GraphQueryInput) -> zt::graph::GraphQueryOutput;
+    fn graph_store (zt::graph::GraphStoreInput) -> zt::graph::GraphStoreOutput;
+
+    // Titans memory operations — recall/remember via Cortex.
+    fn memory_recall (zt::graph::MemoryRecallInput) -> zt::graph::MemoryRecallOutput;
+    fn memory_remember (zt::graph::MemoryRememberInput) -> zt::graph::MemoryRememberOutput;
+
 }

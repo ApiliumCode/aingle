@@ -67,6 +67,10 @@ use crate::core::ribosome::host_fn::x_25519_x_salsa20_poly1305_encrypt::x_25519_
 use crate::core::ribosome::host_fn::x_salsa20_poly1305_decrypt::x_salsa20_poly1305_decrypt;
 use crate::core::ribosome::host_fn::x_salsa20_poly1305_encrypt::x_salsa20_poly1305_encrypt;
 use crate::core::ribosome::host_fn::zome_info::zome_info;
+use crate::core::ribosome::host_fn::graph_query::graph_query;
+use crate::core::ribosome::host_fn::graph_store::graph_store;
+use crate::core::ribosome::host_fn::memory_recall::memory_recall;
+use crate::core::ribosome::host_fn::memory_remember::memory_remember;
 use crate::core::ribosome::CallContext;
 use crate::core::ribosome::Invocation;
 use crate::core::ribosome::RibosomeT;
@@ -567,6 +571,29 @@ impl RealRibosome {
             imports.define("env", "__delete", host_fn!(store, func_env, unreachable));
             imports.define("env", "__schedule", host_fn!(store, func_env, unreachable));
         }
+
+        // Semantic graph and Titans memory host functions.
+        // These are always available (gated by Cortex connectivity, not permissions).
+        imports.define(
+            "env",
+            "__graph_query",
+            host_fn!(store, func_env, graph_query),
+        );
+        imports.define(
+            "env",
+            "__graph_store",
+            host_fn!(store, func_env, graph_store),
+        );
+        imports.define(
+            "env",
+            "__memory_recall",
+            host_fn!(store, func_env, memory_recall),
+        );
+        imports.define(
+            "env",
+            "__memory_remember",
+            host_fn!(store, func_env, memory_remember),
+        );
 
         (imports, func_env)
     }
