@@ -16,6 +16,8 @@
 //!     .layer(rate_limiter.into_layer());
 //! ```
 
+pub mod namespace;
 pub mod rate_limit;
 
+pub use namespace::{namespace_extractor, is_in_namespace, scope_subject, RequestNamespace};
 pub use rate_limit::{RateLimitError, RateLimiter, RateLimiterLayer};

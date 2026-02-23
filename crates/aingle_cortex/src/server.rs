@@ -6,6 +6,7 @@ use crate::state::AppState;
 
 use axum::Router;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -27,6 +28,8 @@ pub struct CortexConfig {
     pub rate_limit_enabled: bool,
     /// The number of requests allowed per minute per IP address if rate limiting is enabled.
     pub rate_limit_rpm: u32,
+    /// Optional file path for JSONL audit log persistence.
+    pub audit_log_path: Option<PathBuf>,
 }
 
 impl Default for CortexConfig {
@@ -40,6 +43,7 @@ impl Default for CortexConfig {
             tracing: true,
             rate_limit_enabled: true,
             rate_limit_rpm: 100, // 100 requests per minute
+            audit_log_path: None,
         }
     }
 }
@@ -78,10 +82,12 @@ pub struct CortexServer {
 impl CortexServer {
     /// Creates a new `CortexServer` with a given configuration and a default, in-memory `AppState`.
     pub fn new(config: CortexConfig) -> Result<Self> {
-        Ok(Self {
-            config,
-            state: AppState::new(),
-        })
+        let state = if let Some(ref path) = config.audit_log_path {
+            AppState::with_audit_path(path.clone())
+        } else {
+            AppState::new()
+        };
+        Ok(Self { config, state })
     }
 
     /// Creates a new `CortexServer` with a given configuration and a pre-existing `AppState`.
@@ -112,6 +118,13 @@ impl CortexServer {
         {
             app = app.merge(crate::auth::router());
         }
+
+        // Add namespace extraction middleware (requires auth feature for JWT parsing).
+        #[cfg(feature = "auth")]
+        let app = {
+            use crate::middleware::namespace_extractor;
+            app.layer(axum::middleware::from_fn(namespace_extractor))
+        };
 
         // Add the shared state to the router.
         let app = app.with_state(self.state.clone());

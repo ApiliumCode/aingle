@@ -33,6 +33,9 @@ pub struct Claims {
     pub roles: Vec<String>,
     /// Token type: "access" or "refresh"
     pub token_type: String,
+    /// Namespace scope (for scoped access control)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 impl Claims {
@@ -46,6 +49,7 @@ impl Claims {
             iat: now.timestamp(),
             roles,
             token_type: "access".to_string(),
+            namespace: None,
         }
     }
 
@@ -59,6 +63,26 @@ impl Claims {
             iat: now.timestamp(),
             roles,
             token_type: "access".to_string(),
+            namespace: None,
+        }
+    }
+
+    /// Create new access token claims with namespace scope
+    pub fn new_access_with_namespace(
+        user_id: &str,
+        username: &str,
+        roles: Vec<String>,
+        namespace: String,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            sub: user_id.to_string(),
+            username: Some(username.to_string()),
+            exp: (now + Duration::hours(TOKEN_EXPIRATION_HOURS)).timestamp(),
+            iat: now.timestamp(),
+            roles,
+            token_type: "access".to_string(),
+            namespace: Some(namespace),
         }
     }
 
@@ -72,6 +96,7 @@ impl Claims {
             iat: now.timestamp(),
             roles: vec![],
             token_type: "refresh".to_string(),
+            namespace: None,
         }
     }
 
