@@ -1,6 +1,6 @@
 [package]
 name = "aingle_zome_types"
-version = "0.0.3"
+version = "0.0.4"
 description = "AIngle zome types"
 license = "Apache-2.0"
 homepage = "https://apilium.com"

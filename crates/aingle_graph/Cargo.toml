@@ -1,6 +1,6 @@
 [package]
 name = "aingle_graph"
-version = "0.2.1"
+version = "0.2.2"
 description = "Native GraphDB for AIngle - Semantic triple store with SPO indexes"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
