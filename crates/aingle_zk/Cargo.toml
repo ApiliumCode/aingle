@@ -1,6 +1,6 @@
 [package]
 name = "aingle_zk"
-version = "0.2.0"
+version = "0.2.1"
 description = "Zero-Knowledge Proofs for AIngle - privacy-preserving cryptographic primitives"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
