@@ -75,7 +75,7 @@ async-io = "2.3"
 # SQLite - lightweight, good for IoT edge devices
 rusqlite = { version = "0.25", default-features = false, features = ["bundled"], optional = true }
 # RocksDB - high-performance LSM tree, production-ready
-rocksdb = { version = "0.22", optional = true }
+rocksdb = { version = "0.24", optional = true }
 
 # mDNS/DNS-SD for peer discovery
 mdns-sd = { version = "0.11", optional = true }
