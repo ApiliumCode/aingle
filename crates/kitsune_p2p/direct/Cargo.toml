@@ -18,7 +18,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("test_util
 arrayref = "0.3.6"
 base64 = "0.21"
 derive_more = "0.99"
-futures = "0.3.14"
+futures = "0.3.32"
 hyper = { version = "0.14", features = ["server","http1","http2","tcp"] }
 kitsune_p2p_direct_api = { version = "0.0.1", path = "../direct_api" }
 kitsune_p2p_types = { version = "0.0.1", path = "../types" }
