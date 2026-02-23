@@ -15,7 +15,7 @@ edition = "2018"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("test_utils"))'] }
 
 [dependencies]
-base64 = "0.21"
+base64 = "0.22"
 derive_more = "0.99.7"
 futures = "0.3"
 ghost_actor = { version = "0.3.0-alpha.1", features = ["test_utils"] }

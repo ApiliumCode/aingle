@@ -13,6 +13,6 @@ edition = "2018"
 
 [dependencies]
 arrayref = "0.3.6"
-base64 = "0.21"
+base64 = "0.22"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["preserve_order"] }

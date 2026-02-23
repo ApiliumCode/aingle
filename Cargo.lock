@@ -178,7 +178,7 @@ dependencies = [
  "ai_fixt",
  "aingle_middleware_bytes",
  "arbitrary",
- "base64 0.21.7",
+ "base64 0.22.1",
  "blake2b_simd",
  "derive_more 0.99.20",
  "rand 0.9.2",
@@ -217,7 +217,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "byteorder",
  "cfg-if 0.1.10",
  "chrono",
@@ -696,7 +696,7 @@ dependencies = [
  "aingle_wasm_test_utils",
  "aingle_zome_types",
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.1",
  "byteorder",
  "chrono",
  "derive_more 0.99.20",
@@ -742,7 +742,7 @@ dependencies = [
  "async-trait",
  "automap",
  "backtrace",
- "base64 0.21.7",
+ "base64 0.22.1",
  "cfg-if 0.1.10",
  "chrono",
  "derive_builder 0.9.0",
@@ -5621,7 +5621,7 @@ dependencies = [
  "ai_fixt",
  "aingle-observability",
  "arrayref",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bloomfilter",
  "derive_more 0.99.20",
  "futures",
@@ -5651,7 +5651,7 @@ name = "kitsune_p2p_direct"
 version = "0.0.1"
 dependencies = [
  "arrayref",
- "base64 0.21.7",
+ "base64 0.22.1",
  "derive_more 0.99.20",
  "futures",
  "hyper 0.14.32",
@@ -5675,7 +5675,7 @@ name = "kitsune_p2p_direct_api"
 version = "0.0.1"
 dependencies = [
  "arrayref",
- "base64 0.21.7",
+ "base64 0.22.1",
  "serde",
  "serde_json",
 ]
@@ -5695,7 +5695,7 @@ name = "kitsune_p2p_mdns"
 version = "0.0.1"
 dependencies = [
  "async-stream 0.3.6",
- "base64 0.21.7",
+ "base64 0.22.1",
  "futures-core",
  "futures-util",
  "libmdns",
@@ -5710,7 +5710,7 @@ name = "kitsune_p2p_proxy"
 version = "0.0.1"
 dependencies = [
  "aingle-observability",
- "base64 0.21.7",
+ "base64 0.22.1",
  "blake2b_simd",
  "criterion",
  "crossterm",
@@ -5757,7 +5757,7 @@ name = "kitsune_p2p_types"
 version = "0.0.1"
 dependencies = [
  "aingle-observability",
- "base64 0.21.7",
+ "base64 0.22.1",
  "criterion",
  "derive_more 0.99.20",
  "futures",
