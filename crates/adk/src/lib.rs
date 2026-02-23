@@ -484,6 +484,20 @@ pub mod time;
 /// The host provides the random bytes because any/all wasm implementations of randomness is flawed and insecure.
 pub mod random;
 
+/// Interact with the Cortex semantic graph (RDF triples) from within a zome.
+///
+/// Provides [`graph_query`] to search for triples by pattern, subject, or predicate,
+/// and [`graph_store`] to persist new triples. Convenience helpers like
+/// [`graph_store_literal`] and [`graph_query_by_subject`] simplify common patterns.
+pub mod graph;
+
+/// Interact with the Titans memory system from within a zome.
+///
+/// Provides [`memory_recall`] to search for memories by query text and optional filters,
+/// and [`memory_remember`] to store new memories with tags and importance scores.
+/// Convenience helpers like [`recall`] and [`remember`] simplify common patterns.
+pub mod memory;
+
 /// The interface between the host and guest is implemented as an `AdkT` trait.
 ///
 /// The `set_adk` function globally sets a `RefCell` to track the current ADK implementation.

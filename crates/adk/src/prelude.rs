@@ -27,6 +27,12 @@ pub use crate::entry_def;
 pub use crate::entry_def_index;
 pub use crate::entry_defs;
 pub use crate::entry_type;
+pub use crate::graph::graph_query;
+pub use crate::graph::graph_query_by_subject;
+pub use crate::graph::graph_query_pattern;
+pub use crate::graph::graph_store;
+pub use crate::graph::graph_store_literal;
+pub use crate::graph::graph_store_node;
 pub use crate::hash_path::anchor::anchor;
 pub use crate::hash_path::anchor::get_anchor;
 pub use crate::hash_path::anchor::list_anchor_addresses;
@@ -42,6 +48,12 @@ pub use crate::link::get_link_details;
 pub use crate::link::get_links;
 pub use crate::map_extern;
 pub use crate::map_extern::ExternResult;
+pub use crate::memory::memory_recall;
+pub use crate::memory::memory_remember;
+pub use crate::memory::recall;
+pub use crate::memory::recall_by_type;
+pub use crate::memory::remember;
+pub use crate::memory::remember_important;
 pub use crate::p2p::call;
 pub use crate::p2p::call_remote;
 pub use crate::p2p::emit_signal;
@@ -121,7 +133,11 @@ macro_rules! aingle_externs {
             __x_salsa20_poly1305_decrypt,
             __x_25519_x_salsa20_poly1305_encrypt,
             __x_25519_x_salsa20_poly1305_decrypt,
-            __create_x25519_keypair
+            __create_x25519_keypair,
+            __graph_query,
+            __graph_store,
+            __memory_recall,
+            __memory_remember
         );
     };
 }

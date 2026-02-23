@@ -82,6 +82,24 @@ pub trait AdkT: Send + Sync {
         &self,
         x_25519_x_salsa20_poly1305_decrypt: X25519XSalsa20Poly1305Decrypt,
     ) -> ExternResult<Option<XSalsa20Poly1305Data>>;
+    // Graph (Cortex semantic graph)
+    fn graph_query(
+        &self,
+        input: aingle_zome_types::graph::GraphQueryInput,
+    ) -> ExternResult<aingle_zome_types::graph::GraphQueryOutput>;
+    fn graph_store(
+        &self,
+        input: aingle_zome_types::graph::GraphStoreInput,
+    ) -> ExternResult<aingle_zome_types::graph::GraphStoreOutput>;
+    // Memory (Titans)
+    fn memory_recall(
+        &self,
+        input: aingle_zome_types::graph::MemoryRecallInput,
+    ) -> ExternResult<aingle_zome_types::graph::MemoryRecallOutput>;
+    fn memory_remember(
+        &self,
+        input: aingle_zome_types::graph::MemoryRememberInput,
+    ) -> ExternResult<aingle_zome_types::graph::MemoryRememberOutput>;
 }
 
 /// Used as a placeholder before any other Adk is registered.
@@ -214,6 +232,32 @@ impl AdkT for ErrAdk {
         &self,
         _: X25519XSalsa20Poly1305Decrypt,
     ) -> ExternResult<Option<XSalsa20Poly1305Data>> {
+        Self::err()
+    }
+    // Graph
+    fn graph_query(
+        &self,
+        _: aingle_zome_types::graph::GraphQueryInput,
+    ) -> ExternResult<aingle_zome_types::graph::GraphQueryOutput> {
+        Self::err()
+    }
+    fn graph_store(
+        &self,
+        _: aingle_zome_types::graph::GraphStoreInput,
+    ) -> ExternResult<aingle_zome_types::graph::GraphStoreOutput> {
+        Self::err()
+    }
+    // Memory
+    fn memory_recall(
+        &self,
+        _: aingle_zome_types::graph::MemoryRecallInput,
+    ) -> ExternResult<aingle_zome_types::graph::MemoryRecallOutput> {
+        Self::err()
+    }
+    fn memory_remember(
+        &self,
+        _: aingle_zome_types::graph::MemoryRememberInput,
+    ) -> ExternResult<aingle_zome_types::graph::MemoryRememberOutput> {
         Self::err()
     }
 }
@@ -366,6 +410,44 @@ impl AdkT for HostAdk {
         host_call::<X25519XSalsa20Poly1305Decrypt, Option<XSalsa20Poly1305Data>>(
             __x_25519_x_salsa20_poly1305_decrypt,
             x_25519_x_salsa20_poly1305_decrypt,
+        )
+    }
+
+    fn graph_query(
+        &self,
+        input: aingle_zome_types::graph::GraphQueryInput,
+    ) -> ExternResult<aingle_zome_types::graph::GraphQueryOutput> {
+        host_call::<aingle_zome_types::graph::GraphQueryInput, aingle_zome_types::graph::GraphQueryOutput>(
+            __graph_query,
+            input,
+        )
+    }
+    fn graph_store(
+        &self,
+        input: aingle_zome_types::graph::GraphStoreInput,
+    ) -> ExternResult<aingle_zome_types::graph::GraphStoreOutput> {
+        host_call::<aingle_zome_types::graph::GraphStoreInput, aingle_zome_types::graph::GraphStoreOutput>(
+            __graph_store,
+            input,
+        )
+    }
+
+    fn memory_recall(
+        &self,
+        input: aingle_zome_types::graph::MemoryRecallInput,
+    ) -> ExternResult<aingle_zome_types::graph::MemoryRecallOutput> {
+        host_call::<aingle_zome_types::graph::MemoryRecallInput, aingle_zome_types::graph::MemoryRecallOutput>(
+            __memory_recall,
+            input,
+        )
+    }
+    fn memory_remember(
+        &self,
+        input: aingle_zome_types::graph::MemoryRememberInput,
+    ) -> ExternResult<aingle_zome_types::graph::MemoryRememberOutput> {
+        host_call::<aingle_zome_types::graph::MemoryRememberInput, aingle_zome_types::graph::MemoryRememberOutput>(
+            __memory_remember,
+            input,
         )
     }
 }
