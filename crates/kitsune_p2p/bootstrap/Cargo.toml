@@ -16,7 +16,7 @@ edition = "2018"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 warp = "0.3"
-rmp-serde = "0.15"
+rmp-serde = "1"
 parking_lot = "0.12"
 rand = "0.9"
 serde = { version = "1", features = [ "derive", "rc" ] }

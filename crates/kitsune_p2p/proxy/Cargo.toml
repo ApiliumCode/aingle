@@ -26,7 +26,7 @@ lair_keystore_api = "0.0.11"
 nanoid = "0.4"
 observability = { version = "0.1", package = "aingle-observability" }
 parking_lot = "0.12"
-rmp-serde = "0.15"
+rmp-serde = "1"
 rustls = { workspace = true }
 rustls-pki-types = "1"
 serde = { version = "1", features = [ "derive" ] }
