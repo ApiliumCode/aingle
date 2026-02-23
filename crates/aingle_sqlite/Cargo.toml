@@ -17,7 +17,7 @@ chashmap = "2.2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 derive_more = "0.99.3"
 either = "1.5.0"
-fallible-iterator = "0.2.0"
+fallible-iterator = "0.3.0"
 failure = "0.1.6"
 ai_fixt = { version = "^0.0.1", path = "../ai_fixt" }
 futures = "0.3.1"
