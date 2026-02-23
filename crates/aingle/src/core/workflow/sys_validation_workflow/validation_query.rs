@@ -91,7 +91,7 @@ mod tests {
     use aingle_types::sgd_op::SgdOpHashed;
     use aingle_zome_types::fixt::*;
     use aingle_zome_types::ValidationStatus;
-    use fixt::prelude::*;
+    use ai_fixt::prelude::*;
 
     use super::*;
 

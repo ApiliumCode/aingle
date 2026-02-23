@@ -113,25 +113,25 @@ mod test {
 
     #[test]
     fn migrate_agent_callback_result_fold() {
-        let mut rng = ::fixt::rng();
+        let mut rng = ::ai_fixt::rng();
 
         let result_pass = || MigrateAgentResult::Pass;
         let result_fail = || {
             MigrateAgentResult::Fail(
-                ZomeNameFixturator::new(::fixt::Empty).next().unwrap(),
+                ZomeNameFixturator::new(::ai_fixt::Empty).next().unwrap(),
                 "".into(),
             )
         };
 
         let cb_pass = || {
             (
-                ZomeNameFixturator::new(::fixt::Empty).next().unwrap(),
+                ZomeNameFixturator::new(::ai_fixt::Empty).next().unwrap(),
                 MigrateAgentCallbackResult::Pass,
             )
         };
         let cb_fail = || {
             (
-                ZomeNameFixturator::new(::fixt::Empty).next().unwrap(),
+                ZomeNameFixturator::new(::ai_fixt::Empty).next().unwrap(),
                 MigrateAgentCallbackResult::Fail("".into()),
             )
         };
@@ -163,7 +163,7 @@ mod test {
     async fn migrate_agent_invocation_allow_side_effects() {
         use aingle_types::access::Permission::*;
         let migrate_agent_host_access =
-            MigrateAgentHostAccessFixturator::new(::fixt::Unpredictable)
+            MigrateAgentHostAccessFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap();
         assert_eq!(
@@ -182,7 +182,7 @@ mod test {
 
     #[test]
     fn migrate_agent_invocation_zomes() {
-        let migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::fixt::Unpredictable)
+        let migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         assert_eq!(ZomesToInvoke::All, migrate_agent_invocation.zomes(),);
@@ -191,7 +191,7 @@ mod test {
     #[test]
     fn migrate_agent_invocation_fn_components() {
         let mut migrate_agent_invocation =
-            MigrateAgentInvocationFixturator::new(::fixt::Unpredictable)
+            MigrateAgentInvocationFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap();
 
@@ -205,7 +205,7 @@ mod test {
 
     #[test]
     fn migrate_agent_invocation_host_input() {
-        let migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::fixt::Empty)
+        let migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
 
@@ -213,7 +213,7 @@ mod test {
 
         assert_eq!(
             host_input,
-            ExternIO::encode(MigrateAgentFixturator::new(::fixt::Empty).next().unwrap()).unwrap(),
+            ExternIO::encode(MigrateAgentFixturator::new(::ai_fixt::Empty).next().unwrap()).unwrap(),
         );
     }
 }
@@ -231,13 +231,13 @@ mod slow_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_migrate_agent_unimplemented() {
-        let host_access = MigrateAgentHostAccessFixturator::new(::fixt::Unpredictable)
+        let host_access = MigrateAgentHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::Foo]))
             .next()
             .unwrap();
-        let mut migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::fixt::Empty)
+        let mut migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         migrate_agent_invocation.saf_def = ribosome.saf_file.saf_def().clone();
@@ -250,13 +250,13 @@ mod slow_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_migrate_agent_implemented_pass() {
-        let host_access = MigrateAgentHostAccessFixturator::new(::fixt::Unpredictable)
+        let host_access = MigrateAgentHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::MigrateAgentPass]))
             .next()
             .unwrap();
-        let mut migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::fixt::Empty)
+        let mut migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         migrate_agent_invocation.saf_def = ribosome.saf_file.saf_def().clone();
@@ -269,13 +269,13 @@ mod slow_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_migrate_agent_implemented_fail() {
-        let host_access = MigrateAgentHostAccessFixturator::new(::fixt::Unpredictable)
+        let host_access = MigrateAgentHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::MigrateAgentFail]))
             .next()
             .unwrap();
-        let mut migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::fixt::Empty)
+        let mut migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         migrate_agent_invocation.saf_def = ribosome.saf_file.saf_def().clone();
@@ -291,7 +291,7 @@ mod slow_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_migrate_agent_multi_implemented_fail() {
-        let host_access = MigrateAgentHostAccessFixturator::new(::fixt::Unpredictable)
+        let host_access = MigrateAgentHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![
@@ -300,7 +300,7 @@ mod slow_tests {
         ]))
         .next()
         .unwrap();
-        let mut migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::fixt::Empty)
+        let mut migrate_agent_invocation = MigrateAgentInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         migrate_agent_invocation.saf_def = ribosome.saf_file.saf_def().clone();

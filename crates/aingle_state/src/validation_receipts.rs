@@ -129,7 +129,7 @@ mod tests {
     use aingle_types::sgd_op::SgdOpHashed;
     use aingle_types::timestamp;
     use aingle_zome_types::fixt::*;
-    use fixt::prelude::*;
+    use ai_fixt::prelude::*;
 
     async fn fake_vr(
         sgd_op_hash: &SgdOpHash,

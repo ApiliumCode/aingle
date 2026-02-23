@@ -18,7 +18,7 @@ use aingle_zome_types::SignedHeaderHashed;
 use aingle_zome_types::Update;
 use std::convert::TryInto;
 
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 #[derive(Debug)]
 pub struct ElementTestData {
     pub store_element_op: SgdOpHashed,

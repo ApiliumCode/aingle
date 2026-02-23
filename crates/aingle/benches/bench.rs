@@ -1,4 +1,4 @@
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use adk::prelude::*;
 use ai_hash::fixt::AgentPubKeyFixturator;
 use aingle::core::ribosome::RibosomeT;

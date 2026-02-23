@@ -97,7 +97,7 @@ mod slow_tests {
     };
     use crate::fixt::curve::Zomes;
     use crate::fixt::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::fixt::AgentPubKeyFixturator;
     use aingle_types::prelude::*;
     use aingle_wasm_test_utils::TestWasm;

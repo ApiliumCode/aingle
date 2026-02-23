@@ -5,7 +5,7 @@ use crate::core::workflow::incoming_sgd_ops_workflow::op_exists;
 use crate::fixt::SafFileFixturator;
 use crate::fixt::SignatureFixturator;
 use crate::test_utils::test_network;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use ai_hash::HasHash;
 use aingle_state::prelude::*;
 use aingle_types::prelude::*;

@@ -1,4 +1,4 @@
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use ai_hash::AgentPubKey;
 use ai_hash::EntryHash;
 use ai_hash::HeaderHash;

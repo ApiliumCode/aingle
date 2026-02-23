@@ -1,6 +1,6 @@
 use crate::prelude::mutations_helpers::insert_valid_authored_op;
 use crate::scratch::Scratch;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use ai_hash::*;
 use aingle_sqlite::rusqlite::TransactionBehavior;
 use aingle_sqlite::rusqlite::{Transaction, NO_PARAMS};

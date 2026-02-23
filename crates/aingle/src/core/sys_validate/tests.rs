@@ -2,7 +2,7 @@ use super::*;
 use crate::conductor::api::error::ConductorApiError;
 use crate::conductor::api::MockCellConductorApi;
 use crate::test_utils::fake_genesis;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use error::SysValidationError;
 
 use aingle_keystore::AgentPubKeyExt;

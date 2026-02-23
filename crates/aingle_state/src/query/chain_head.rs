@@ -93,7 +93,7 @@ impl Query for ChainHeadQuery {
 mod tests {
     use super::*;
     use crate::mutations::{insert_header, insert_op_lite};
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_sqlite::schema::SCHEMA_CELL;
     use aingle_types::sgd_op::OpOrder;
     use aingle_types::sgd_op::SgdOpLight;

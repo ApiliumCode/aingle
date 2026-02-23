@@ -298,7 +298,7 @@ pub mod tests {
     use crate::core::workflow::error::WorkflowError;
     use crate::core::workflow::genesis_workflow::tests::fake_genesis;
     use crate::fixt::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
 
     use aingle_p2p::AingleP2pCellFixturator;
     use aingle_state::prelude::test_cell_env;
@@ -349,7 +349,7 @@ pub mod tests {
         // FIXME: CAP: Set this function to private
         let invocation =
             crate::fixt::ZomeCallInvocationFixturator::new(crate::fixt::NamedInvocation(
-                aingle_types::fixt::CellIdFixturator::new(::fixt::Unpredictable)
+                aingle_types::fixt::CellIdFixturator::new(::ai_fixt::Unpredictable)
                     .next()
                     .unwrap(),
                 TestWasm::Foo.into(),
@@ -421,7 +421,7 @@ pub mod tests {
 
         let invocation =
             crate::fixt::ZomeCallInvocationFixturator::new(crate::fixt::NamedInvocation(
-                aingle_types::fixt::CellIdFixturator::new(::fixt::Unpredictable)
+                aingle_types::fixt::CellIdFixturator::new(::ai_fixt::Unpredictable)
                     .next()
                     .unwrap(),
                 TestWasm::Foo.into(),
@@ -456,7 +456,7 @@ pub mod tests {
         let ribosome = MockRibosomeT::new();
         let invocation =
             crate::fixt::ZomeCallInvocationFixturator::new(crate::fixt::NamedInvocation(
-                aingle_types::fixt::CellIdFixturator::new(::fixt::Unpredictable)
+                aingle_types::fixt::CellIdFixturator::new(::ai_fixt::Unpredictable)
                     .next()
                     .unwrap(),
                 TestWasm::Foo.into(),
@@ -490,7 +490,7 @@ pub mod tests {
         // TODO: Make this mock return an output
         let invocation =
             crate::fixt::ZomeCallInvocationFixturator::new(crate::fixt::NamedInvocation(
-                aingle_types::fixt::CellIdFixturator::new(::fixt::Unpredictable)
+                aingle_types::fixt::CellIdFixturator::new(::ai_fixt::Unpredictable)
                     .next()
                     .unwrap(),
                 TestWasm::Foo.into(),

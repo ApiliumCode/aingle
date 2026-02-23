@@ -1,5 +1,5 @@
 #![allow(clippy::clippy::redundant_clone)]
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use ai_hash::*;
 use aingle_types::sgd_op::SgdOpHashed;
 use aingle_types::{header::NewEntryHeader, sgd_op::SgdOp};

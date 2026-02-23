@@ -28,7 +28,7 @@ use crate::core::ribosome::ZomeCallHostAccess;
 use crate::core::ribosome::ZomeCallInvocation;
 use crate::core::ribosome::ZomesToInvoke;
 use crate::test_utils::fake_genesis;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 pub use ai_hash::fixt::*;
 use ai_hash::HeaderHash;
 use ai_hash::WasmHash;

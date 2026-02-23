@@ -23,7 +23,7 @@ use aingle_zome_types::SignedHeaderHashed;
 use aingle_zome_types::ValidationStatus;
 use std::convert::TryInto;
 
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 #[derive(Debug)]
 pub struct EntryTestData {
     pub store_entry_op: SgdOpHashed,

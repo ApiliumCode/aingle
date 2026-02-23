@@ -11,7 +11,7 @@ use crate::fixt::OpenChainFixturator;
 use crate::fixt::SafFixturator;
 use crate::fixt::UpdateFixturator;
 use crate::prelude::*;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use ai_hash::fixt::HeaderHashFixturator;
 use ai_hash::*;
 use aingle_zome_types::Entry;

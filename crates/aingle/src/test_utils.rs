@@ -9,7 +9,7 @@ use crate::conductor::p2p_agent_store;
 use crate::conductor::ConductorBuilder;
 use crate::conductor::ConductorHandle;
 use crate::core::ribosome::ZomeCallInvocation;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use adk::prelude::ZomeName;
 use ai_hash::fixt::*;
 use ai_hash::*;

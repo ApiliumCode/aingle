@@ -449,7 +449,7 @@ mod tests {
     use super::SignedHeader;
     use super::SignedHeaderHashed;
     use crate::prelude::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::AiHashed;
     use ai_hash::HasHash;
 

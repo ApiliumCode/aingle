@@ -27,7 +27,7 @@ pub fn zome_info(
 #[cfg(feature = "slow_tests")]
 pub mod test {
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_wasm_test_utils::TestWasm;
     use aingle_zome_types::prelude::*;

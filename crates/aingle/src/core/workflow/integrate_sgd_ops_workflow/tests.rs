@@ -5,7 +5,7 @@ use super::*;
 
 use crate::core::queue_consumer::TriggerSender;
 use crate::here;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use aingle_sqlite::db::WriteManager;
 use aingle_state::query::link::GetLinksQuery;
 use aingle_state::workspace::WorkspaceError;
@@ -1140,7 +1140,7 @@ mod slow_tests {
     use crate::test_utils::host_fn_caller::*;
     use crate::test_utils::setup_app;
     use crate::test_utils::wait_for_integration;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::EntryHash;
     use aingle_middleware_bytes::SerializedBytes;
     use aingle_sqlite::prelude::*;

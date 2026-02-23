@@ -74,7 +74,7 @@ pub fn delete_link<'a>(
 #[cfg(feature = "slow_tests")]
 pub mod slow_tests {
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::HeaderHash;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_wasm_test_utils::TestWasm;

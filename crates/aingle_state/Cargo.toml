@@ -15,7 +15,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 derive_more = "0.99.3"
 either = "1.5"
 aingle_sqlite = { version = "0.0.1", path = "../aingle_sqlite" }
-ai_hash = { version = "^0.0.1", path = "../ai_hash", features = ["full"] }
+ai_hash = { version = ">=0.0.1", path = "../ai_hash", features = ["full"] }
 fallible-iterator = "0.2.0"
 aingle_keystore = { version = "0.0.1", path = "../aingle_keystore" }
 aingle_middleware_bytes = "=0.0.3"
@@ -23,7 +23,7 @@ aingle_p2p = { version = "0.0.1", path = "../aingle_p2p" }
 aingle_types = { version = "0.0.1", path = "../aingle_types" }
 aingle_util = { version = "0.0.1", path = "../aingle_util" }
 aingle_wasm_test_utils = { path = "../test_utils/wasm", optional = true, version = "0.0.1" }
-aingle_zome_types = { version = "^0.0.1", path = "../aingle_zome_types", features = [ "full" ] }
+aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types", features = [ "full" ] }
 kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p/kitsune_p2p" }
 mockall = "0.11"
 parking_lot = "0.12"
@@ -40,7 +40,7 @@ base64 = {version = "0.21", optional = true}
 
 [dev-dependencies]
 anyhow = "1.0"
-fixt = { version = "^0.0.1", path = "../fixt" }
+ai_fixt = { version = "^0.0.1", path = "../ai_fixt" }
 adk = { version = "^0.0.1", path = "../adk" }
 aingle_wasm_test_utils = { path = "../test_utils/wasm", version = "0.0.1" }
 matches = "0.1.8"

@@ -1,5 +1,5 @@
 use crate::test_utils::{test_cell_env, TestEnv};
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use ai_hash::AgentPubKey;
 use ai_hash::HeaderHash;
 use aingle_sqlite::db::ReadManager;

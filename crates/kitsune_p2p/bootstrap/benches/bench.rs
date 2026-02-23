@@ -5,7 +5,7 @@ use criterion::criterion_main;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 
-use fixt::prelude::*;
+use ai_fixt::prelude::*;
 use kitsune_p2p::agent_store::AgentInfoSigned;
 use kitsune_p2p::dependencies::url2::url2;
 use kitsune_p2p::fixt::*;

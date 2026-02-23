@@ -26,7 +26,7 @@ pub fn agent_info<'a>(
 #[cfg(feature = "slow_tests")]
 pub mod test {
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
 
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_types::prelude::*;

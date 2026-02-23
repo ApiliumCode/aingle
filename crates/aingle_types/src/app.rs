@@ -625,7 +625,7 @@ impl AppSlot {
 mod tests {
     use super::{ActiveApp, AppSlot};
     use crate::prelude::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use std::collections::HashSet;
 
     #[test]

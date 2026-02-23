@@ -7,7 +7,7 @@ use aingle_zome_types::fixt::*;
 use aingle_zome_types::ValidationStatus;
 use chrono::Duration;
 use chrono::Utc;
-use fixt::prelude::*;
+use ai_fixt::prelude::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_sgd_op_query() {

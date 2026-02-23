@@ -13,12 +13,12 @@ edition = "2018"
 directories = "2.0.2"
 derive_more = "0.99.3"
 kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p/kitsune_p2p" }
-ai_hash = { version = "^0.0.1", path = "../ai_hash", features = ["full"] }
+ai_hash = { version = ">=0.0.1", path = "../ai_hash", features = ["full"] }
 aingle_p2p = { version = "0.0.1", path = "../aingle_p2p" }
 aingle_state = { version = "0.0.1", path = "../aingle_state" }
 aingle_middleware_bytes = "=0.0.3"
 aingle_types = { version = "0.0.1", path = "../aingle_types" }
-aingle_zome_types = { version = "^0.0.1", path = "../aingle_zome_types" }
+aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types" }
 serde = { version = "1.0", features = [ "derive" ] }
 serde_derive = "1.0"
 serde_yml = "0.0.12"

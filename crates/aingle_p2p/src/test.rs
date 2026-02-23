@@ -1,7 +1,7 @@
 use crate::actor::*;
 use crate::AIngleP2pCell;
 use crate::*;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use ai_hash::fixt::AgentPubKeyFixturator;
 use ai_hash::fixt::SafHashFixturator;
 use ai_hash::AgentPubKey;
@@ -141,7 +141,7 @@ fixturator!(
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use futures::future::FutureExt;
     use ghost_actor::GhostControlSender;
 

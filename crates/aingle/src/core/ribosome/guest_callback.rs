@@ -91,11 +91,11 @@ mod tests {
 
         let mut invocation = MockInvocation::new();
 
-        let host_access = ZomeCallHostAccessFixturator::new(::fixt::Empty)
+        let host_access = ZomeCallHostAccessFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
-        let zome_fixturator = ZomeFixturator::new(::fixt::Unpredictable);
-        let mut fn_components_fixturator = FnComponentsFixturator::new(::fixt::Unpredictable);
+        let zome_fixturator = ZomeFixturator::new(::ai_fixt::Unpredictable);
+        let mut fn_components_fixturator = FnComponentsFixturator::new(::ai_fixt::Unpredictable);
 
         // let returning_init_invocation = init_invocation.clone();
         let zomes: Vec<Zome> = zome_fixturator.take(3).collect();

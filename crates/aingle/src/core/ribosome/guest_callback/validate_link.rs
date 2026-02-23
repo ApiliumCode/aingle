@@ -176,7 +176,7 @@ mod test {
     use crate::core::ribosome::Invocation;
     use crate::core::ribosome::ZomesToInvoke;
     use crate::fixt::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_types::access::Permission;
     use aingle_types::prelude::*;
     use aingle_zome_types::validate_link::ValidateCreateLinkData;
@@ -186,7 +186,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_link_add_callback_result_fold() {
-        let mut rng = ::fixt::rng();
+        let mut rng = ::ai_fixt::rng();
 
         let result_valid = || ValidateLinkResult::Valid;
         let result_invalid = || ValidateLinkResult::Invalid("".into());
@@ -220,7 +220,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_link_add_invocation_allow_side_effects() {
         let validate_link_add_host_access =
-            ValidateLinkHostAccessFixturator::new(::fixt::Unpredictable)
+            ValidateLinkHostAccessFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap();
         let mut access = HostFnAccess::none();
@@ -232,7 +232,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_link_add_invocation_zomes() {
         let validate_create_link_invocation =
-            ValidateCreateLinkInvocationFixturator::new(::fixt::Unpredictable)
+            ValidateCreateLinkInvocationFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap();
         let zome = validate_create_link_invocation.zome.clone();
@@ -245,7 +245,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_link_add_invocation_fn_components() {
         let validate_create_link_invocation =
-            ValidateCreateLinkInvocationFixturator::new(::fixt::Unpredictable)
+            ValidateCreateLinkInvocationFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap();
 
@@ -258,7 +258,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_link_add_invocation_host_input() {
         let validate_create_link_invocation =
-            ValidateCreateLinkInvocationFixturator::new(::fixt::Unpredictable)
+            ValidateCreateLinkInvocationFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap();
 
@@ -284,7 +284,7 @@ mod slow_tests {
     use crate::core::ribosome::RibosomeT;
     use crate::fixt::curve::Zomes;
     use crate::fixt::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::HeaderHash;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_state::source_chain::SourceChainResult;

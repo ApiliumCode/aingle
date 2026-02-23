@@ -1,5 +1,5 @@
 use super::*;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use aingle_keystore::AgentPubKeyExt;
 
 #[tokio::test(flavor = "multi_thread")]

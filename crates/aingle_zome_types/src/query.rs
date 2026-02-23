@@ -179,7 +179,7 @@ mod tests {
     use crate::fixt::*;
     use crate::header::EntryType;
     use crate::Header;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
 
     use super::ChainQueryFilter;
 

@@ -140,7 +140,7 @@ mod test {
     use crate::fixt::ValidateHostAccessFixturator;
     use crate::fixt::ValidateInvocationFixturator;
     use crate::fixt::ZomeCallCapGrantFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::fixt::AgentPubKeyFixturator;
     use aingle_types::prelude::*;
     use rand::seq::IndexedRandom;
@@ -148,7 +148,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_callback_result_fold() {
-        let mut rng = ::fixt::rng();
+        let mut rng = ::ai_fixt::rng();
 
         let result_valid = || ValidateResult::Valid;
         let result_ud = || ValidateResult::UnresolvedDependencies(vec![]);
@@ -187,7 +187,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_invocation_allow_side_effects() {
-        let validate_host_access = ValidateHostAccessFixturator::new(::fixt::Unpredictable)
+        let validate_host_access = ValidateHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let mut access = HostFnAccess::none();
@@ -199,7 +199,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_invocation_zomes() {
-        let validate_invocation = ValidateInvocationFixturator::new(::fixt::Unpredictable)
+        let validate_invocation = ValidateInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let zomes_to_invoke = validate_invocation.zomes_to_invoke.clone();
@@ -208,12 +208,12 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_invocation_fn_components() {
-        let mut validate_invocation = ValidateInvocationFixturator::new(::fixt::Unpredictable)
+        let mut validate_invocation = ValidateInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
 
         let agent_entry = Entry::Agent(
-            AgentPubKeyFixturator::new(::fixt::Unpredictable)
+            AgentPubKeyFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap()
                 .into(),
@@ -226,7 +226,7 @@ mod test {
         }
 
         let app_entry = Entry::App(
-            AppEntryBytesFixturator::new(::fixt::Unpredictable)
+            AppEntryBytesFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap()
                 .into(),
@@ -239,7 +239,7 @@ mod test {
         }
 
         let capclaim_entry = Entry::CapClaim(
-            CapClaimFixturator::new(::fixt::Unpredictable)
+            CapClaimFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap()
                 .into(),
@@ -252,7 +252,7 @@ mod test {
         }
 
         let capgrant_entry = Entry::CapGrant(
-            ZomeCallCapGrantFixturator::new(::fixt::Unpredictable)
+            ZomeCallCapGrantFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap()
                 .into(),
@@ -267,7 +267,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn validate_invocation_host_input() {
-        let validate_invocation = ValidateInvocationFixturator::new(::fixt::Unpredictable)
+        let validate_invocation = ValidateInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
 
@@ -288,7 +288,7 @@ mod slow_tests {
     use crate::core::ribosome::ZomesToInvoke;
     use crate::fixt::curve::Zomes;
     use crate::fixt::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::fixt::AgentPubKeyFixturator;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_state::source_chain::SourceChainResult;
@@ -301,7 +301,7 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::Foo]))
             .next()
             .unwrap();
-        let mut validate_invocation = ValidateInvocationFixturator::new(::fixt::Empty)
+        let mut validate_invocation = ValidateInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         validate_invocation.zomes_to_invoke = ZomesToInvoke::One(TestWasm::Foo.into());
@@ -317,7 +317,7 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::ValidateValid]))
             .next()
             .unwrap();
-        let mut validate_invocation = ValidateInvocationFixturator::new(::fixt::Empty)
+        let mut validate_invocation = ValidateInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         validate_invocation.zomes_to_invoke = ZomesToInvoke::One(TestWasm::ValidateValid.into());
@@ -333,7 +333,7 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::ValidateInvalid]))
             .next()
             .unwrap();
-        let mut validate_invocation = ValidateInvocationFixturator::new(::fixt::Empty)
+        let mut validate_invocation = ValidateInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         validate_invocation.zomes_to_invoke = ZomesToInvoke::One(TestWasm::ValidateInvalid.into());
@@ -349,11 +349,11 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::ValidateInvalid]))
             .next()
             .unwrap();
-        let mut validate_invocation = ValidateInvocationFixturator::new(::fixt::Empty)
+        let mut validate_invocation = ValidateInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         let entry = Entry::Agent(
-            AgentPubKeyFixturator::new(::fixt::Unpredictable)
+            AgentPubKeyFixturator::new(::ai_fixt::Unpredictable)
                 .next()
                 .unwrap()
                 .into(),

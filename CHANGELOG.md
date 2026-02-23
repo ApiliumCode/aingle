@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### Core Infrastructure
-- `aingle` - Main conductor and runtime based on Holochain architecture
+- `aingle` - Main conductor and runtime based on distributed P2P architecture
 - `aingle_minimal` - Ultra-light IoT node (<1MB RAM) with CoAP transport
 - `aingle_p2p` - P2P networking via Kitsune protocol (QUIC/WebRTC)
 - `aingle_sqlite` - SQLite storage backend

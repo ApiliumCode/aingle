@@ -36,7 +36,7 @@ pub fn sign_ephemeral(
 #[cfg(feature = "slow_tests")]
 pub mod wasm_test {
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::*;
     use aingle_keystore::AgentPubKeyExt;
     use aingle_state::host_fn_workspace::HostFnWorkspace;

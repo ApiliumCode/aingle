@@ -23,7 +23,7 @@ fn delete(header_hash: HeaderHash) -> ExternResult<HeaderHash> {
 
 #[cfg(test)]
 pub mod test {
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::*;
 
     #[test]

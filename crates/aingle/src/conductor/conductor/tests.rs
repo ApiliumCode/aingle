@@ -7,7 +7,7 @@ use crate::test_utils::fake_valid_saf_file;
 use crate::{
     assert_eq_retry_10s, core::ribosome::guest_callback::genesis_self_check::GenesisSelfCheckResult,
 };
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use aingle_conductor_api::{AdminRequest, AdminResponse, AppRequest, AppResponse, ZomeCall};
 use aingle_keystore::crude_mock_keystore::spawn_crude_mock_keystore;
 use aingle_state::prelude::*;

@@ -79,7 +79,7 @@ pub(crate) fn get_original_address<'a>(
 #[cfg(feature = "slow_tests")]
 pub mod wasm_test {
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::*;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_wasm_test_utils::TestWasm;

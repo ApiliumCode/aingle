@@ -89,7 +89,7 @@ mod test {
     use crate::fixt::EntryDefsFixturator;
     use crate::fixt::EntryDefsInvocationFixturator;
     use crate::fixt::ZomeNameFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_types::prelude::*;
     use aingle_zome_types::entry_def::EntryDefsCallbackResult;
     use aingle_zome_types::ExternIO;
@@ -98,11 +98,11 @@ mod test {
     #[test]
     /// this is a non-standard fold test because the result is not so simple
     fn entry_defs_callback_result_fold() {
-        let mut rng = ::fixt::rng();
+        let mut rng = ::ai_fixt::rng();
 
-        let mut zome_name_fixturator = ZomeNameFixturator::new(::fixt::Unpredictable);
-        let mut entry_defs_fixturator = EntryDefsFixturator::new(::fixt::Unpredictable);
-        let mut string_fixturator = StringFixturator::new(::fixt::Unpredictable);
+        let mut zome_name_fixturator = ZomeNameFixturator::new(::ai_fixt::Unpredictable);
+        let mut entry_defs_fixturator = EntryDefsFixturator::new(::ai_fixt::Unpredictable);
+        let mut string_fixturator = StringFixturator::new(::ai_fixt::Unpredictable);
 
         // zero defs
         assert_eq!(EntryDefsResult::Defs(BTreeMap::new()), vec![].into(),);
@@ -178,7 +178,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn entry_defs_invocation_zomes() {
-        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::fixt::Unpredictable)
+        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         assert_eq!(ZomesToInvoke::All, entry_defs_invocation.zomes(),);
@@ -186,7 +186,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn entry_defs_invocation_fn_components() {
-        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::fixt::Unpredictable)
+        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
 
@@ -198,7 +198,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn entry_defs_invocation_host_input() {
-        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::fixt::Unpredictable)
+        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
 
@@ -218,7 +218,7 @@ mod slow_tests {
     use crate::fixt::EntryDefsInvocationFixturator;
     use crate::fixt::RealRibosomeFixturator;
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_types::prelude::*;
     use aingle_wasm_test_utils::TestWasm;
@@ -230,7 +230,7 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::Foo]))
             .next()
             .unwrap();
-        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::fixt::Empty)
+        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
 
@@ -266,7 +266,7 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::EntryDefs]))
             .next()
             .unwrap();
-        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::fixt::Empty)
+        let entry_defs_invocation = EntryDefsInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
 

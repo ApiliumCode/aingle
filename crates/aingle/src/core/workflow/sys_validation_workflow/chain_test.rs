@@ -2,7 +2,7 @@ use super::*;
 use crate::conductor::ConductorHandle;
 use crate::test_utils::setup_app;
 use crate::test_utils::wait_for_integration;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use aingle_keystore::AgentPubKeyExt;
 use aingle_middleware_bytes::SerializedBytes;
 use aingle_state::source_chain::SourceChain;

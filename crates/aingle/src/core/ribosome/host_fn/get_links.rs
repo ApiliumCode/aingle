@@ -53,7 +53,7 @@ pub mod slow_tests {
     use crate::test_utils::new_zome_call;
     use crate::test_utils::wait_for_integration_1m;
     use crate::test_utils::WaitOps;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::*;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_test_wasm_common::*;

@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/fixt",
-  "crates/fixt/test",
+  "crates/ai_fixt",
+  "crates/ai_fixt/test",
   "crates/adk",
   "crates/adk_derive",
   "crates/ai_hash",
@@ -111,3 +111,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 aingle_wasmer_common = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
 aingle_wasmer_guest = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
 aingle_wasmer_host = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
+# Local path overrides for renamed crates
+ai_fixt = { path = "crates/ai_fixt" }
+ai_hash = { path = "crates/ai_hash" }

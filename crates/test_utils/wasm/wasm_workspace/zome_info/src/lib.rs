@@ -7,7 +7,7 @@ fn zome_info(_: ()) -> ExternResult<ZomeInfo> {
 
 #[cfg(test)]
 pub mod tests {
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::*;
 
     #[test]

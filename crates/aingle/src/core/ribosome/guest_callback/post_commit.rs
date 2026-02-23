@@ -95,28 +95,28 @@ mod test {
     use crate::fixt::HeaderHashesFixturator;
     use crate::fixt::PostCommitHostAccessFixturator;
     use crate::fixt::PostCommitInvocationFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_types::prelude::*;
     use aingle_zome_types::post_commit::PostCommitCallbackResult;
     use aingle_zome_types::ExternIO;
 
     #[test]
     fn post_commit_callback_result_fold() {
-        let mut rng = ::fixt::rng();
+        let mut rng = ::ai_fixt::rng();
 
         let result_success = || PostCommitResult::Success;
         let result_fail = || {
             PostCommitResult::Fail(
-                HeaderHashesFixturator::new(::fixt::Empty).next().unwrap(),
-                StringFixturator::new(::fixt::Empty).next().unwrap(),
+                HeaderHashesFixturator::new(::ai_fixt::Empty).next().unwrap(),
+                StringFixturator::new(::ai_fixt::Empty).next().unwrap(),
             )
         };
 
         let cb_success = || PostCommitCallbackResult::Success;
         let cb_fail = || {
             PostCommitCallbackResult::Fail(
-                HeaderHashesFixturator::new(::fixt::Empty).next().unwrap(),
-                StringFixturator::new(::fixt::Empty).next().unwrap(),
+                HeaderHashesFixturator::new(::ai_fixt::Empty).next().unwrap(),
+                StringFixturator::new(::ai_fixt::Empty).next().unwrap(),
             )
         };
 
@@ -145,7 +145,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn post_commit_invocation_access() {
-        let post_commit_host_access = PostCommitHostAccessFixturator::new(::fixt::Unpredictable)
+        let post_commit_host_access = PostCommitHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         assert_eq!(
@@ -156,7 +156,7 @@ mod test {
 
     #[test]
     fn post_commit_invocation_zomes() {
-        let post_commit_invocation = PostCommitInvocationFixturator::new(::fixt::Unpredictable)
+        let post_commit_invocation = PostCommitInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let zome = post_commit_invocation.zome.clone();
@@ -165,7 +165,7 @@ mod test {
 
     #[test]
     fn post_commit_invocation_fn_components() {
-        let post_commit_invocation = PostCommitInvocationFixturator::new(::fixt::Unpredictable)
+        let post_commit_invocation = PostCommitInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
 
@@ -177,7 +177,7 @@ mod test {
 
     #[test]
     fn post_commit_invocation_host_input() {
-        let post_commit_invocation = PostCommitInvocationFixturator::new(::fixt::Empty)
+        let post_commit_invocation = PostCommitInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
 
@@ -185,7 +185,7 @@ mod test {
 
         assert_eq!(
             host_input,
-            ExternIO::encode(HeaderHashesFixturator::new(::fixt::Empty).next().unwrap()).unwrap(),
+            ExternIO::encode(HeaderHashesFixturator::new(::ai_fixt::Empty).next().unwrap()).unwrap(),
         );
     }
 }
@@ -204,13 +204,13 @@ mod slow_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_post_commit_unimplemented() {
-        let host_access = PostCommitHostAccessFixturator::new(::fixt::Unpredictable)
+        let host_access = PostCommitHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::Foo]))
             .next()
             .unwrap();
-        let mut post_commit_invocation = PostCommitInvocationFixturator::new(::fixt::Empty)
+        let mut post_commit_invocation = PostCommitInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         post_commit_invocation.zome = TestWasm::Foo.into();
@@ -223,13 +223,13 @@ mod slow_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_post_commit_implemented_success() {
-        let host_access = PostCommitHostAccessFixturator::new(::fixt::Unpredictable)
+        let host_access = PostCommitHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::PostCommitSuccess]))
             .next()
             .unwrap();
-        let mut post_commit_invocation = PostCommitInvocationFixturator::new(::fixt::Empty)
+        let mut post_commit_invocation = PostCommitInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         post_commit_invocation.zome = TestWasm::PostCommitSuccess.into();
@@ -242,13 +242,13 @@ mod slow_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_post_commit_implemented_fail() {
-        let host_access = PostCommitHostAccessFixturator::new(::fixt::Unpredictable)
+        let host_access = PostCommitHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::PostCommitFail]))
             .next()
             .unwrap();
-        let mut post_commit_invocation = PostCommitInvocationFixturator::new(::fixt::Empty)
+        let mut post_commit_invocation = PostCommitInvocationFixturator::new(::ai_fixt::Empty)
             .next()
             .unwrap();
         post_commit_invocation.zome = TestWasm::PostCommitFail.into();
@@ -259,7 +259,7 @@ mod slow_tests {
         assert_eq!(
             result,
             PostCommitResult::Fail(
-                vec![HeaderHashFixturator::new(::fixt::Empty)
+                vec![HeaderHashFixturator::new(::ai_fixt::Empty)
                     .next()
                     .unwrap()
                     .into()]

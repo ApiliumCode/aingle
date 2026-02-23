@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::fixt::*;
     use ai_hash::*;
     use aingle_types::fixt::HeaderBuilderCommonFixturator;

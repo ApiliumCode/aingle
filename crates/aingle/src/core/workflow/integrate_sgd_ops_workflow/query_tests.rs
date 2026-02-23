@@ -7,7 +7,7 @@ use aingle_sqlite::prelude::DatabaseResult;
 use aingle_state::prelude::*;
 use aingle_types::sgd_op::SgdOpHashed;
 use aingle_zome_types::fixt::*;
-use fixt::prelude::*;
+use ai_fixt::prelude::*;
 
 use super::*;
 

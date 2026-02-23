@@ -280,7 +280,7 @@ mod test {
     use crate::conductor::ConductorHandle;
     use crate::fixt::RealRibosomeFixturator;
     use crate::test_utils::conductor_setup::ConductorTestData;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_middleware_bytes::prelude::*;
     use aingle_p2p::{AgentPubKeyExt, SafHashExt};
     use aingle_sqlite::prelude::*;

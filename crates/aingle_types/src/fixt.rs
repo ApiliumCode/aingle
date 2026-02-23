@@ -4,7 +4,7 @@
 
 use crate::header::NewEntryHeader;
 use crate::prelude::*;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use rand::seq::IteratorRandom;
 use std::iter::Iterator;
 

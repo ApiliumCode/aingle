@@ -112,7 +112,7 @@ mod tests {
     use crate::test_utils::fake_genesis;
     use crate::test_utils::test_network_with_events;
     use crate::test_utils::TestNetwork;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_p2p::actor::AIngleP2pSender;
     use aingle_p2p::AIngleP2pRef;
     use futures::future::FutureExt;

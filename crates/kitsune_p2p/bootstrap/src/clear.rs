@@ -23,7 +23,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use fixt::prelude::*;
+    use ai_fixt::prelude::*;
     use kitsune_p2p::{agent_store::AgentInfoSigned, fixt::*, KitsuneSpace};
 
     #[tokio::test(flavor = "multi_thread")]

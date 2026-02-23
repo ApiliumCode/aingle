@@ -343,7 +343,7 @@ fn hash_path_linktag() {
 #[test]
 #[cfg(test)]
 fn hash_path_component() {
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
 
     let bytes: Vec<u8> = U8Fixturator::new(Unpredictable).take(5).collect();
 
@@ -381,7 +381,7 @@ fn hash_path_component() {
 #[test]
 #[cfg(test)]
 fn hash_path_path() {
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
 
     let components: Vec<Component> = {
         let mut vec = vec![];

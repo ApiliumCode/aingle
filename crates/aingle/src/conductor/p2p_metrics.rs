@@ -36,7 +36,7 @@ pub async fn query_metrics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_p2p::agent_ai_to_kit;
     use aingle_sqlite::db::{time_from_micros, time_to_micros};
     use aingle_state::prelude::test_p2p_metrics_env;

@@ -23,7 +23,7 @@ pub fn verify_signature(
 #[cfg(feature = "slow_tests")]
 pub mod wasm_test {
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::test_utils::fake_agent_pubkey_1;
     use adk::prelude::test_utils::fake_agent_pubkey_2;
     use adk::prelude::*;

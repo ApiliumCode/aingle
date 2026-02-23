@@ -18,4 +18,4 @@ default = []
 mock = ["adk/mock"]
 
 [dev-dependencies]
-fixt = { path = "../../../../fixt" }
+ai_fixt = { path = "../../../../ai_fixt" }

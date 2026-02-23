@@ -23,9 +23,9 @@ test_utils = [ "aingle_zome_types/test_utils" ]
 
 [dependencies]
 adk_derive = { version = "^0.0.1", path = "../adk_derive" }
-ai_hash = { version = "0.0.1", path = "../ai_hash", default-features = false, features = ["serialized-bytes", "string-encoding"] }
+ai_hash = { version = ">=0.0.1", path = "../ai_hash", default-features = false, features = ["serialized-bytes", "string-encoding"] }
 aingle_wasmer_guest = "=0.0.1"  # Pinned for WASM compatibility
-aingle_zome_types = { version = "0.0.1", path = "../aingle_zome_types", default-features = false }
+aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types", default-features = false }
 aingle_middleware_bytes = "=0.0.3"  # For SerializedBytesError -> WasmError conversion
 paste = "1.0"
 serde = "1.0"
@@ -40,4 +40,4 @@ version = "0.3"
 features = []
 
 [dev-dependencies]
-fixt = { path = "../fixt" }
+ai_fixt = { path = "../ai_fixt" }

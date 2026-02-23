@@ -284,7 +284,7 @@ pub mod tests {
     use super::*;
     use crate::app::app_manifest::AppManifest;
     use crate::prelude::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use std::path::PathBuf;
 
     #[cfg(feature = "arbitrary")]

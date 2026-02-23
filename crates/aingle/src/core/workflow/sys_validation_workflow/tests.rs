@@ -2,7 +2,7 @@ use crate::test_utils::host_fn_caller::*;
 use crate::test_utils::setup_app;
 use crate::test_utils::wait_for_integration;
 use crate::{conductor::ConductorHandle, core::MAX_TAG_SIZE};
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use adk::prelude::LinkTag;
 use ai_hash::AnySgdHash;
 use ai_hash::EntryHash;

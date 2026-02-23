@@ -131,7 +131,7 @@ impl Query for DeterministicGetAgentActivityQuery {
 mod tests {
     use super::*;
     use crate::test_utils::fill_db;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn agent_activity_query() {

@@ -719,7 +719,7 @@ pub async fn dump_state(
 pub mod tests {
     use super::*;
     use crate::prelude::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::*;
     use matches::assert_matches;
 

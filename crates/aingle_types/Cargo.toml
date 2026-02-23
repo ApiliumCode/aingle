@@ -22,14 +22,14 @@ cfg-if = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 derive_more = "0.99.3"
 either = "1.5"
-fixt = { path = "../fixt", version = "0.0.1" }
+ai_fixt = { path = "../ai_fixt", version = "0.0.1" }
 flate2 = "1.0.14"
 futures = "0.3"
-ai_hash = { version = "^0.0.1", path = "../ai_hash", features = ["string-encoding"] }
+ai_hash = { version = ">=0.0.1", path = "../ai_hash", features = ["string-encoding"] }
 aingle_keystore = { version = "0.0.1", path = "../aingle_keystore" }
 aingle_middleware_bytes = "=0.0.3"
 aingle_sqlite = { path = "../aingle_sqlite", version = "0.0.1" }
-aingle_zome_types = { path = "../aingle_zome_types", version = "0.0.1" }
+aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types" }
 itertools = { version = "0.10" }
 lazy_static = "1.4.0"
 mockall = "0.11"

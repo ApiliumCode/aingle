@@ -267,14 +267,14 @@ mod tests {
             Ok(inst) => {
                 println!("Module instantiated successfully!");
 
-                // Try to get and call the __hc__allocate_1 function to verify basics work
-                match inst.exports.get_function("__hc__allocate_1") {
+                // Try to get and call the __ai__allocate_1 function to verify basics work
+                match inst.exports.get_function("__ai__allocate_1") {
                     Ok(alloc) => {
-                        println!("Found __hc__allocate_1, calling...");
+                        println!("Found __ai__allocate_1, calling...");
                         let result = alloc.call(&mut store, &[Value::I32(100)]);
-                        println!("__hc__allocate_1 result: {:?}", result);
+                        println!("__ai__allocate_1 result: {:?}", result);
                     }
-                    Err(e) => println!("Could not get __hc__allocate_1: {}", e),
+                    Err(e) => println!("Could not get __ai__allocate_1: {}", e),
                 }
 
                 // Now try to call the zome_info export if it exists

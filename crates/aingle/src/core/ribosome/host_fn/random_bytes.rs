@@ -28,7 +28,7 @@ pub mod wasm_test {
     use crate::fixt::CallContextFixturator;
     use crate::fixt::RealRibosomeFixturator;
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_wasm_test_utils::TestWasm;
     use aingle_zome_types::fake_agent_pubkey_1;
@@ -40,7 +40,7 @@ pub mod wasm_test {
         let ribosome = RealRibosomeFixturator::new(crate::fixt::curve::Zomes(vec![]))
             .next()
             .unwrap();
-        let call_context = CallContextFixturator::new(::fixt::Unpredictable)
+        let call_context = CallContextFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         const LEN: u32 = 10;

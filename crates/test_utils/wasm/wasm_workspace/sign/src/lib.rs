@@ -93,7 +93,7 @@ fn verify_signature(agent_pub_key: AgentPubKey) -> ExternResult<()> {
 
 #[cfg(test)]
 pub mod tests {
-    use ::fixt::prelude::{fixt, paste, Predictable, Unpredictable};
+    use ::ai_fixt::prelude::{fixt, paste, Predictable, Unpredictable};
     use adk::prelude::*;
 
     #[test]

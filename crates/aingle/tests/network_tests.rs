@@ -3,7 +3,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(deprecated)]
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use adk::prelude::EntryVisibility;
 use ai_hash::hash_type;
 use ai_hash::hash_type::AnySgd;

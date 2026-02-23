@@ -17,7 +17,7 @@
 
 #![allow(deprecated)]
 
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use adk::prelude::*;
 use aingle::conductor::api::AdminRequest;
 use aingle::conductor::api::AdminResponse;

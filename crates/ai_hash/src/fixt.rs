@@ -18,7 +18,7 @@ use crate::SgdOpHash;
 use crate::SgdOpHashB64;
 use crate::WasmHash;
 use crate::WasmHashB64;
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use std::convert::TryFrom;
 
 pub type HashTypeEntry = hash_type::Entry;

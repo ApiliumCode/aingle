@@ -1,4 +1,4 @@
-use ::fixt::prelude::*;
+use ::ai_fixt::prelude::*;
 use adk::prelude::RemoteSignal;
 use aingle::sweettest::SweetAgents;
 use aingle::sweettest::SweetConductorBatch;

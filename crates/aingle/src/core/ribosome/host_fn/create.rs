@@ -110,7 +110,7 @@ pub mod wasm_test {
     use crate::conductor::api::ZomeCall;
     use crate::fixt::*;
     use crate::test_utils::setup_app;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::*;
     use ai_hash::AnySgdHash;
     use ai_hash::EntryHash;

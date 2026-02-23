@@ -189,7 +189,7 @@ pub fn dump_state(env: EnvRead, cell_id: Option<CellId>) -> StateQueryResult<P2p
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_state::test_utils::test_p2p_agent_store_env;
     use kitsune_p2p::fixt::AgentInfoSignedFixturator;
 

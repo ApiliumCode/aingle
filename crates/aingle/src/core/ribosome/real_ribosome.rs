@@ -172,7 +172,7 @@ impl RealRibosome {
 
             let allocate = instance
                 .exports
-                .get_typed_function::<i32, i32>(&store, "__hc__allocate_1")
+                .get_typed_function::<i32, i32>(&store, "__ai__allocate_1")
                 .map_err(|e| {
                     RibosomeError::WasmError(WasmError::Guest(format!(
                         "Failed to get allocate: {}",
@@ -182,7 +182,7 @@ impl RealRibosome {
 
             let deallocate = instance
                 .exports
-                .get_typed_function::<(i32, i32), ()>(&store, "__hc__deallocate_1")
+                .get_typed_function::<(i32, i32), ()>(&store, "__ai__deallocate_1")
                 .map_err(|e| {
                     RibosomeError::WasmError(WasmError::Guest(format!(
                         "Failed to get deallocate: {}",
@@ -788,7 +788,7 @@ impl RibosomeT for RealRibosome {
 #[cfg(feature = "slow_tests")]
 pub mod wasm_test {
     use crate::fixt::ZomeCallHostAccessFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use adk::prelude::*;
     use aingle_state::host_fn_workspace::HostFnWorkspace;
     use aingle_wasm_test_utils::TestWasm;

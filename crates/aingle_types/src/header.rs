@@ -429,7 +429,7 @@ mod tests {
     use crate::fixt::HeaderBuilderCommonFixturator;
     use crate::test_utils::fake_entry_hash;
     use crate::test_utils::fake_saf_hash;
-    use ::fixt::prelude::Unpredictable;
+    use ::ai_fixt::prelude::Unpredictable;
 
     #[test]
     fn test_header_msgpack_roundtrip() {

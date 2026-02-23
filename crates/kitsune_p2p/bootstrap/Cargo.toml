@@ -27,7 +27,7 @@ kitsune_p2p_types = { version = "0.0.1", path = "../types" }
 
 [dev-dependencies]
 kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p" }
-fixt = { path = "../../fixt" }
+ai_fixt = { path = "../../ai_fixt" }
 criterion = "0.5"
 reqwest = "0.12"
 

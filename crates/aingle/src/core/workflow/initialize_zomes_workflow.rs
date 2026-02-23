@@ -92,7 +92,7 @@ pub mod tests {
     use crate::fixt::SafDefFixturator;
     use crate::sweettest::*;
     use crate::test_utils::fake_genesis;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use ai_hash::SafHash;
     use aingle_p2p::AingleP2pCellFixturator;
     use aingle_state::prelude::test_cache_env;
@@ -103,7 +103,7 @@ pub mod tests {
     use aingle_zome_types::fake_agent_pubkey_1;
     use aingle_zome_types::CellId;
     use aingle_zome_types::Header;
-    use fixt::Unpredictable;
+    use ai_fixt::Unpredictable;
     use matches::assert_matches;
 
     async fn get_chain(cell: &SweetCell) -> SourceChain {

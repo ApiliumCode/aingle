@@ -52,3 +52,5 @@ opt-level = "z"
 aingle_wasmer_common = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
 aingle_wasmer_guest = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
 aingle_wasmer_host = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
+ai_fixt = { path = "../../../ai_fixt" }
+ ai_hash = { version = ">=0.0.1", path = "../../../ai_hash" }

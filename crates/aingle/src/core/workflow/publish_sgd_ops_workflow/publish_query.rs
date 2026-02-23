@@ -96,7 +96,7 @@ pub async fn get_ops_to_publish(
 
 // #[cfg(test)]
 // mod tests {
-//     use fixt::prelude::*;
+//     use ai_fixt::prelude::*;
 //     use ai_hash::EntryHash;
 //     use ai_hash::HasHash;
 //     use aingle_sqlite::db::WriteManager;

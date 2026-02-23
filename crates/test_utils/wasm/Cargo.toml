@@ -21,10 +21,10 @@ only_check = []
 
 
 [dependencies]
-fixt = { path = "../../fixt" }
-ai_hash = { path = "../../ai_hash" }
+ai_fixt = { path = "../../ai_fixt" }
+ ai_hash = { version = ">=0.0.1", path = "../../ai_hash" }
 aingle_types = { path = "../../aingle_types" }
-aingle_zome_types = { path = "../../aingle_zome_types" }
+aingle_zome_types = { version = ">=0.0.1", path = "../../aingle_zome_types" }
 rand = "0.9"
 strum = "0.26"
 strum_macros = "0.26"

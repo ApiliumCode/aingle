@@ -101,44 +101,44 @@ mod test {
     use crate::fixt::InitHostAccessFixturator;
     use crate::fixt::InitInvocationFixturator;
     use crate::fixt::ZomeNameFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_types::prelude::*;
     use aingle_zome_types::init::InitCallbackResult;
     use aingle_zome_types::ExternIO;
 
     #[test]
     fn init_callback_result_fold() {
-        let mut rng = ::fixt::rng();
+        let mut rng = ::ai_fixt::rng();
 
         let result_pass = || InitResult::Pass;
         let result_ud = || {
             InitResult::UnresolvedDependencies(
-                ZomeNameFixturator::new(::fixt::Predictable).next().unwrap(),
+                ZomeNameFixturator::new(::ai_fixt::Predictable).next().unwrap(),
                 vec![],
             )
         };
         let result_fail = || {
             InitResult::Fail(
-                ZomeNameFixturator::new(::fixt::Predictable).next().unwrap(),
+                ZomeNameFixturator::new(::ai_fixt::Predictable).next().unwrap(),
                 "".into(),
             )
         };
 
         let cb_pass = || {
             (
-                ZomeNameFixturator::new(::fixt::Predictable).next().unwrap(),
+                ZomeNameFixturator::new(::ai_fixt::Predictable).next().unwrap(),
                 InitCallbackResult::Pass,
             )
         };
         let cb_ud = || {
             (
-                ZomeNameFixturator::new(::fixt::Predictable).next().unwrap(),
+                ZomeNameFixturator::new(::ai_fixt::Predictable).next().unwrap(),
                 InitCallbackResult::UnresolvedDependencies(vec![]),
             )
         };
         let cb_fail = || {
             (
-                ZomeNameFixturator::new(::fixt::Predictable).next().unwrap(),
+                ZomeNameFixturator::new(::ai_fixt::Predictable).next().unwrap(),
                 InitCallbackResult::Fail("".into()),
             )
         };
@@ -172,7 +172,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn init_access() {
-        let init_host_access = InitHostAccessFixturator::new(::fixt::Unpredictable)
+        let init_host_access = InitHostAccessFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         assert_eq!(HostFnAccess::from(&init_host_access), HostFnAccess::all(),);
@@ -180,7 +180,7 @@ mod test {
 
     #[test]
     fn init_invocation_zomes() {
-        let init_invocation = InitInvocationFixturator::new(::fixt::Unpredictable)
+        let init_invocation = InitInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
         assert_eq!(ZomesToInvoke::All, init_invocation.zomes(),);
@@ -188,7 +188,7 @@ mod test {
 
     #[test]
     fn init_invocation_fn_components() {
-        let init_invocation = InitInvocationFixturator::new(::fixt::Unpredictable)
+        let init_invocation = InitInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
 
@@ -200,7 +200,7 @@ mod test {
 
     #[test]
     fn init_invocation_host_input() {
-        let init_invocation = InitInvocationFixturator::new(::fixt::Unpredictable)
+        let init_invocation = InitInvocationFixturator::new(::ai_fixt::Unpredictable)
             .next()
             .unwrap();
 
@@ -219,7 +219,7 @@ mod slow_tests {
     use crate::fixt::InitHostAccessFixturator;
     use crate::fixt::InitInvocationFixturator;
     use crate::fixt::RealRibosomeFixturator;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use aingle_wasm_test_utils::TestWasm;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -227,7 +227,7 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::Crud]))
             .next()
             .unwrap();
-        let mut init_invocation = InitInvocationFixturator::new(::fixt::Empty).next().unwrap();
+        let mut init_invocation = InitInvocationFixturator::new(::ai_fixt::Empty).next().unwrap();
         init_invocation.saf_def = ribosome.saf_file.saf_def().clone();
 
         let host_access = fixt!(InitHostAccess);
@@ -240,7 +240,7 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::InitPass]))
             .next()
             .unwrap();
-        let mut init_invocation = InitInvocationFixturator::new(::fixt::Empty).next().unwrap();
+        let mut init_invocation = InitInvocationFixturator::new(::ai_fixt::Empty).next().unwrap();
         init_invocation.saf_def = ribosome.saf_file.saf_def().clone();
 
         let host_access = fixt!(InitHostAccess);
@@ -253,7 +253,7 @@ mod slow_tests {
         let ribosome = RealRibosomeFixturator::new(Zomes(vec![TestWasm::InitFail]))
             .next()
             .unwrap();
-        let mut init_invocation = InitInvocationFixturator::new(::fixt::Empty).next().unwrap();
+        let mut init_invocation = InitInvocationFixturator::new(::ai_fixt::Empty).next().unwrap();
         init_invocation.saf_def = ribosome.saf_file.saf_def().clone();
 
         let host_access = fixt!(InitHostAccess);
@@ -270,7 +270,7 @@ mod slow_tests {
             RealRibosomeFixturator::new(Zomes(vec![TestWasm::InitPass, TestWasm::InitFail]))
                 .next()
                 .unwrap();
-        let mut init_invocation = InitInvocationFixturator::new(::fixt::Empty).next().unwrap();
+        let mut init_invocation = InitInvocationFixturator::new(::ai_fixt::Empty).next().unwrap();
         init_invocation.saf_def = ribosome.saf_file.saf_def().clone();
 
         let host_access = fixt!(InitHostAccess);

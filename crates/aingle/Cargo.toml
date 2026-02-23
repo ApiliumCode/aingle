@@ -20,10 +20,10 @@ derive_more = "0.99.3"
 directories = "2.0.2"
 either = "1.5.0"
 fallible-iterator = "0.2.0"
-fixt = { version = "^0.0.1", path = "../fixt" }
+ai_fixt = { version = "^0.0.1", path = "../ai_fixt" }
 futures = "0.3.1"
 ghost_actor = "0.3.0-alpha.1"
-ai_hash = { version = "^0.0.1", path = "../ai_hash", features = ["full"] }
+ai_hash = { version = ">=0.0.1", path = "../ai_hash", features = ["full"] }
 aingle_cascade = { version = "0.0.1", path = "../aingle_cascade" }
 aingle_conductor_api = { version = "0.0.1", path = "../aingle_conductor_api" }
 aingle_ai = { version = "0.1.0", path = "../aingle_ai", optional = true }
@@ -37,7 +37,7 @@ aingle_cortex = { version = "0.2.0", path = "../aingle_cortex", default-features
 aingle_wasmer_host = "0.0.1"
 aingle_websocket = { version = "0.0.1", path = "../aingle_websocket" }
 wasmer = "=6.0.0"
-aingle_zome_types = { version = "^0.0.1", path = "../aingle_zome_types" }
+aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types" }
 human-panic = "2.0.4"
 kitsune_p2p = { version = "0.0.1", path = "../kitsune_p2p/kitsune_p2p" }
 kitsune_p2p_types = { version = "0.0.1", path = "../kitsune_p2p/types" }

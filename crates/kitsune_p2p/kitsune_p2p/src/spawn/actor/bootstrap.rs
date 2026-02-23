@@ -168,7 +168,7 @@ mod tests {
     use crate::types::KitsuneAgent;
     use crate::types::KitsuneBinType;
     use crate::types::KitsuneSignature;
-    use ::fixt::prelude::*;
+    use ::ai_fixt::prelude::*;
     use kitsune_p2p_types::KitsuneError;
     use lair_keystore_api::internal::sign_ed25519::sign_ed25519_keypair_new_from_entropy;
     use std::convert::TryInto;
