@@ -12,7 +12,7 @@ edition = "2018"
 [dependencies]
 derive_more = "0.99.3"
 either = "1.5"
-fallible-iterator = "0.2"
+fallible-iterator = "0.3"
 ai_fixt = { version = "^0.0.1", path = "../ai_fixt" }
 futures = "0.3"
 ghost_actor = "0.3.0-alpha.1"

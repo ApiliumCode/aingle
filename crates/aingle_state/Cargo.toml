@@ -16,7 +16,7 @@ derive_more = "0.99.3"
 either = "1.5"
 aingle_sqlite = { version = "0.0.1", path = "../aingle_sqlite" }
 ai_hash = { version = ">=0.0.1", path = "../ai_hash", features = ["full"] }
-fallible-iterator = "0.2.0"
+fallible-iterator = "0.3.0"
 aingle_keystore = { version = "0.0.1", path = "../aingle_keystore" }
 aingle_middleware_bytes = "=0.0.3"
 aingle_p2p = { version = "0.0.1", path = "../aingle_p2p" }
