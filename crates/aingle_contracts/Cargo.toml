@@ -21,7 +21,7 @@ full = ["runtime"]
 # WASM runtime (optional - for execution)
 # Note: default-features = false required for MSRV 1.70 compatibility
 # wasmer 6.x uses dep: syntax which doesn't create implicit features
-wasmer = { version = "=6.0.0", optional = true, default-features = false, features = ["sys", "cranelift"] }
+wasmer = { version = "=7.0.1", optional = true, default-features = false, features = ["sys", "cranelift"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
