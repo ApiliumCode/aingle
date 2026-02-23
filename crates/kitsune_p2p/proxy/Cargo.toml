@@ -16,7 +16,7 @@ edition = "2018"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("test_utils"))'] }
 
 [dependencies]
-base64 = "0.21"
+base64 = "0.22"
 blake2b_simd = "0.5.10"
 derive_more = "0.99.7"
 futures = "0.3"
