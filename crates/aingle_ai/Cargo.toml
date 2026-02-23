@@ -41,7 +41,7 @@ blake2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Configuration
-toml = "0.8"
+toml = "0.9"
 
 # Optional: Full ML capabilities (disabled by default for IoT)
 [dependencies.candle-core]
