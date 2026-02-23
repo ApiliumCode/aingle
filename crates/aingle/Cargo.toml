@@ -1,6 +1,6 @@
 [package]
 name = "aingle"
-version = "0.0.100"
+version = "0.0.101"
 description = "AIngle, a framework for distributed applications"
 license = "Apache-2.0"
 homepage = "https://apilium.com"
@@ -33,7 +33,7 @@ aingle_sqlite = { version = "0.0.1", path = "../aingle_sqlite" }
 aingle_middleware_bytes = "=0.0.3"
 aingle_state = { version = "0.0.1", path = "../aingle_state" }
 aingle_types = { version = "0.0.1", path = "../aingle_types" }
-aingle_cortex = { version = "0.2.0", path = "../aingle_cortex", default-features = false, features = ["rest"] }
+aingle_cortex = { version = "0.2.2", path = "../aingle_cortex", default-features = false, features = ["rest"] }
 aingle_wasmer_host = "0.0.1"
 aingle_websocket = { version = "0.0.1", path = "../aingle_websocket" }
 wasmer = "=6.0.0"

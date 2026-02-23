@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "aingle"
-version = "0.0.100"
+version = "0.0.101"
 dependencies = [
  "adk",
  "ai_fixt",
@@ -456,7 +456,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aingle_graph 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "aingle_logic 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -988,7 +988,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_zome_types"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "ai_fixt",
  "ai_hash",
