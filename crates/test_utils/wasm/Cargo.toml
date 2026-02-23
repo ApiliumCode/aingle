@@ -31,5 +31,5 @@ strum_macros = "0.26"
 aingle_util = { version = "0.0.1", path = "../../aingle_util" }
 
 [build-dependencies]
-toml = "0.5"
+toml = "0.9"
 walkdir = "2.3.1"
