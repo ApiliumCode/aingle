@@ -141,11 +141,11 @@ dependencies = [
 name = "ai_autonomous_agent"
 version = "0.1.0"
 dependencies = [
- "hope_agents 0.2.0",
+ "hope_agents 0.2.1",
  "rand 0.9.2",
  "serde",
  "serde_json",
- "titans_memory 0.2.0",
+ "titans_memory 0.2.1",
 ]
 
 [[package]]
@@ -173,7 +173,7 @@ dependencies = [
 
 [[package]]
 name = "ai_hash"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "ai_fixt",
  "aingle_middleware_bytes",
@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_ai"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake2",
  "candle-core 0.9.2",
@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "aingle_graph",
  "aingle_logic",
@@ -477,7 +477,7 @@ dependencies = [
  "spargebra",
  "tempfile",
  "thiserror 2.0.18",
- "titans_memory 0.2.0",
+ "titans_memory 0.2.1",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -491,7 +491,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_graph"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bincode",
  "blake3",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_logic"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aingle_graph",
  "chrono",
@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_minimal"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-io",
  "async-tungstenite",
@@ -910,7 +910,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_zk"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "blake3",
@@ -931,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_zome_types"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "ai_fixt",
  "ai_hash",
@@ -5248,7 +5248,7 @@ dependencies = [
 
 [[package]]
 name = "hope_agents"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "criterion",
@@ -5256,7 +5256,7 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_json",
- "titans_memory 0.2.0",
+ "titans_memory 0.2.1",
 ]
 
 [[package]]
@@ -7405,7 +7405,7 @@ checksum = "0afd5c28e4a399c57ee2bc3accd40c7b671fdc7b6537499f14e95b265af7d7e0"
 dependencies = [
  "oxilangtag",
  "oxiri",
- "rand 0.9.2",
+ "rand 0.8.5",
  "thiserror 2.0.18",
 ]
 
@@ -9727,7 +9727,7 @@ version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9789,7 +9789,7 @@ dependencies = [
  "oxiri",
  "oxrdf",
  "peg",
- "rand 0.9.2",
+ "rand 0.8.5",
  "thiserror 2.0.18",
 ]
 
@@ -10385,7 +10385,7 @@ dependencies = [
 
 [[package]]
 name = "titans_memory"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "chrono",
@@ -10885,7 +10885,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if 0.1.10",
  "static_assertions",
 ]
 
