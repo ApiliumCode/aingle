@@ -16,7 +16,7 @@ serde = "1"
 serde_bytes = "0.11"
 
 arbitrary = {version = "1.0", optional = true}
-base64 = {version = "0.21", optional = true}
+base64 = {version = "0.22", optional = true}
 blake2b_simd = {version = "0.5.10", optional = true}
 derive_more = { version = "0.99", optional = true }
 ai_fixt = { version = ">=0.0.1", path = "../ai_fixt", optional = true }
