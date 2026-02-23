@@ -1,6 +1,6 @@
 [package]
 name = "aingle_cortex"
-version = "0.2.2"
+version = "0.2.3"
 description = "Córtex API - REST/GraphQL/SPARQL interface for AIngle semantic graphs"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -77,7 +77,8 @@ validator = { version = "0.20", features = ["derive"] }
 regex = "1.10"
 
 # HTTP client (for CortexInternalClient used by WASM host functions)
-reqwest = { version = "0.12", features = ["json"] }
+# Uses rustls-tls to avoid OpenSSL dependency (enables cross-compilation)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Zome types (for WASM boundary types in client.rs)
 aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types", default-features = false }
