@@ -19,6 +19,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
 
+    // Handle --version before anything else (no server init needed)
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let mut config = CortexConfig::default();
 
     // Simple argument parsing
@@ -75,6 +81,7 @@ fn print_help() {
     println!("    -h, --host <HOST>    Host to bind to (default: 127.0.0.1)");
     println!("    -p, --port <PORT>    Port to listen on (default: 8080)");
     println!("    --public             Bind to all interfaces (0.0.0.0)");
+    println!("    -V, --version        Print version and exit");
     println!("    --help               Print this help message");
     println!();
     println!("ENDPOINTS:");
