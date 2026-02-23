@@ -86,7 +86,7 @@ pub use node::NodeId;
 pub use predicate::Predicate;
 pub use query::{QueryBuilder, QueryResult, TriplePattern};
 pub use store::GraphStore;
-pub use triple::{Triple, TripleId, TripleMeta};
+pub use triple::{Triple, TripleBuilder, TripleId, TripleMeta};
 pub use value::Value;
 
 #[cfg(feature = "sled-backend")]
@@ -704,6 +704,37 @@ impl GraphDB {
         self.find(TriplePattern::object(object.clone()))
     }
 
+    /// Find all unique subjects whose name starts with `prefix`.
+    pub fn subjects_with_prefix(&self, prefix: &str) -> Result<Vec<NodeId>> {
+        let all = self.find(TriplePattern::any())?;
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for triple in all {
+            if let Some(name) = triple.subject.as_name() {
+                if name.starts_with(prefix) && seen.insert(triple.subject.clone()) {
+                    result.push(triple.subject.clone());
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    /// Delete all triples whose subject name starts with `prefix`. Returns count deleted.
+    pub fn delete_by_subject_prefix(&self, prefix: &str) -> Result<usize> {
+        let all = self.find(TriplePattern::any())?;
+        let mut deleted = 0usize;
+        for triple in all {
+            if let Some(name) = triple.subject.as_name() {
+                if name.starts_with(prefix) {
+                    if self.delete(&triple.id())? {
+                        deleted += 1;
+                    }
+                }
+            }
+        }
+        Ok(deleted)
+    }
+
     // ========== RDF Import/Export (requires "rdf" feature) ==========
 
     /// Imports triples from a string in Turtle format.
@@ -1256,5 +1287,93 @@ mod tests {
             .unwrap();
 
         assert!(reachable.is_empty());
+    }
+
+    #[test]
+    fn test_subjects_with_prefix() {
+        let db = GraphDB::memory().unwrap();
+
+        db.insert(Triple::new(
+            NodeId::named("mayros:agent:alice"),
+            Predicate::named("has_name"),
+            Value::literal("Alice"),
+        ))
+        .unwrap();
+        db.insert(Triple::new(
+            NodeId::named("mayros:agent:alice"),
+            Predicate::named("has_age"),
+            Value::integer(30),
+        ))
+        .unwrap();
+        db.insert(Triple::new(
+            NodeId::named("mayros:agent:bob"),
+            Predicate::named("has_name"),
+            Value::literal("Bob"),
+        ))
+        .unwrap();
+        db.insert(Triple::new(
+            NodeId::named("other:node"),
+            Predicate::named("has_name"),
+            Value::literal("Other"),
+        ))
+        .unwrap();
+
+        let subjects = db.subjects_with_prefix("mayros:agent:").unwrap();
+        assert_eq!(subjects.len(), 2);
+        assert!(subjects.contains(&NodeId::named("mayros:agent:alice")));
+        assert!(subjects.contains(&NodeId::named("mayros:agent:bob")));
+
+        // No matches
+        let empty = db.subjects_with_prefix("nonexistent:").unwrap();
+        assert!(empty.is_empty());
+
+        // Empty DB
+        let empty_db = GraphDB::memory().unwrap();
+        let empty_result = empty_db.subjects_with_prefix("any:").unwrap();
+        assert!(empty_result.is_empty());
+    }
+
+    #[test]
+    fn test_delete_by_subject_prefix() {
+        let db = GraphDB::memory().unwrap();
+
+        db.insert(Triple::new(
+            NodeId::named("sandbox:test:a"),
+            Predicate::named("p1"),
+            Value::literal("v1"),
+        ))
+        .unwrap();
+        db.insert(Triple::new(
+            NodeId::named("sandbox:test:a"),
+            Predicate::named("p2"),
+            Value::literal("v2"),
+        ))
+        .unwrap();
+        db.insert(Triple::new(
+            NodeId::named("sandbox:test:b"),
+            Predicate::named("p1"),
+            Value::literal("v3"),
+        ))
+        .unwrap();
+        db.insert(Triple::new(
+            NodeId::named("keep:this"),
+            Predicate::named("p1"),
+            Value::literal("v4"),
+        ))
+        .unwrap();
+
+        assert_eq!(db.count(), 4);
+
+        let deleted = db.delete_by_subject_prefix("sandbox:test:").unwrap();
+        assert_eq!(deleted, 3);
+        assert_eq!(db.count(), 1);
+
+        // Remaining triple is the "keep:this" one
+        let remaining = db.get_subject(&NodeId::named("keep:this")).unwrap();
+        assert_eq!(remaining.len(), 1);
+
+        // Deleting with no matches returns 0
+        let deleted_none = db.delete_by_subject_prefix("nonexistent:").unwrap();
+        assert_eq!(deleted_none, 0);
     }
 }

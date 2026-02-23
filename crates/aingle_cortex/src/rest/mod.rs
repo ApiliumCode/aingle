@@ -16,12 +16,23 @@
 //! - `POST   /api/v1/validate` - Validate triple(s)
 //! - `GET    /api/v1/proof/:hash` - Get proof
 //! - `POST   /api/v1/verify` - Verify proof
+//!
+//! ### Skill Verification (Phase 3)
+//! - `POST   /api/v1/skills/validate` - Validate semantic skill manifest
+//! - `POST   /api/v1/skills/sandbox` - Create temporary sandbox namespace
+//! - `DELETE /api/v1/skills/sandbox/:id` - Clean up sandbox namespace
+//!
+//! ### Reputation (Phase 3)
+//! - `GET    /api/v1/agents/:id/consistency` - Agent assertion consistency score
+//! - `POST   /api/v1/assertions/verify-batch` - Batch verify assertion proofs
 
 mod memory;
 mod observability;
 mod proof;
 mod proof_api;
 mod query;
+mod reputation;
+mod skill_verification;
 mod stats;
 mod triples;
 
@@ -87,4 +98,8 @@ pub fn router() -> Router<AppState> {
         .merge(memory::memory_router())
         // Semantic Observability endpoints
         .merge(observability::observability_router())
+        // Skill Verification endpoints (Phase 3)
+        .merge(skill_verification::skill_verification_router())
+        // Reputation endpoints (Phase 3)
+        .merge(reputation::reputation_router())
 }

@@ -3,7 +3,7 @@
 use aingle_graph::GraphDB;
 use aingle_logic::RuleEngine;
 use std::sync::Arc;
-use titans_memory::{MemoryConfig, TitansMemory};
+use titans_memory::TitansMemory;
 use tokio::sync::RwLock;
 
 #[cfg(feature = "auth")]
@@ -26,6 +26,8 @@ pub struct AppState {
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
     pub proof_store: Arc<ProofStore>,
+    /// Manager for temporary sandbox namespaces used by skill verification.
+    pub sandbox_manager: Arc<SandboxManager>,
     /// The user store for authentication and authorization.
     ///
     /// This field is only available if the `auth` feature is enabled.
@@ -55,6 +57,7 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
+            sandbox_manager: Arc::new(SandboxManager::new()),
             #[cfg(feature = "auth")]
             user_store,
         }
@@ -79,6 +82,7 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
+            sandbox_manager: Arc::new(SandboxManager::new()),
             #[cfg(feature = "auth")]
             user_store,
         }
@@ -205,5 +209,78 @@ impl Event {
     /// Serializes the event to a JSON string.
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox Manager
+// ---------------------------------------------------------------------------
+
+/// Entry for a sandbox namespace with TTL.
+struct SandboxEntry {
+    namespace: String,
+    created_at: std::time::Instant,
+    ttl: std::time::Duration,
+}
+
+/// Manager for temporary sandbox namespaces used by skill verification.
+///
+/// Sandboxes are isolated graph namespaces with a time-to-live (TTL).
+/// After TTL expiration, the sandbox should be cleaned up.
+pub struct SandboxManager {
+    entries: RwLock<std::collections::HashMap<String, SandboxEntry>>,
+}
+
+impl SandboxManager {
+    /// Creates a new, empty `SandboxManager`.
+    pub fn new() -> Self {
+        Self {
+            entries: RwLock::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Creates a new sandbox entry with the given ID, namespace, and TTL.
+    pub async fn create(&self, id: String, namespace: String, ttl_seconds: u64) {
+        let entry = SandboxEntry {
+            namespace,
+            created_at: std::time::Instant::now(),
+            ttl: std::time::Duration::from_secs(ttl_seconds),
+        };
+        let mut entries = self.entries.write().await;
+        entries.insert(id, entry);
+    }
+
+    /// Removes a sandbox by ID, returning the namespace if found.
+    pub async fn remove(&self, id: &str) -> Option<String> {
+        let mut entries = self.entries.write().await;
+        entries.remove(id).map(|e| e.namespace)
+    }
+
+    /// Returns the namespace for a sandbox if it exists and hasn't expired.
+    pub async fn get(&self, id: &str) -> Option<String> {
+        let entries = self.entries.read().await;
+        entries.get(id).and_then(|e| {
+            if e.created_at.elapsed() < e.ttl {
+                Some(e.namespace.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns a list of all expired sandbox IDs for cleanup.
+    pub async fn expired(&self) -> Vec<String> {
+        let entries = self.entries.read().await;
+        entries
+            .iter()
+            .filter(|(_, e)| e.created_at.elapsed() >= e.ttl)
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+}
+
+impl Default for SandboxManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
