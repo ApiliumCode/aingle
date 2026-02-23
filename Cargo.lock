@@ -456,7 +456,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "aingle_graph 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "aingle_logic 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -5037,6 +5037,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tower-service",
+ "webpki-roots 1.0.4",
 ]
 
 [[package]]
@@ -8425,6 +8426,8 @@ dependencies = [
  "native-tls",
  "percent-encoding 2.3.2",
  "pin-project-lite",
+ "quinn",
+ "rustls 0.23.35",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -8432,6 +8435,7 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-native-tls",
+ "tokio-rustls 0.26.4",
  "tower",
  "tower-http",
  "tower-service",
@@ -8439,6 +8443,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "webpki-roots 1.0.4",
 ]
 
 [[package]]
