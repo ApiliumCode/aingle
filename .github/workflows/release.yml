@@ -28,18 +28,23 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: aingle-minimal-linux-x86_64
+            cortex_name: aingle-cortex-linux-x86_64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             name: aingle-minimal-linux-aarch64
+            cortex_name: aingle-cortex-linux-aarch64
           - target: x86_64-apple-darwin
             os: macos-latest
             name: aingle-minimal-macos-x86_64
+            cortex_name: aingle-cortex-macos-x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
             name: aingle-minimal-macos-aarch64
+            cortex_name: aingle-cortex-macos-aarch64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: aingle-minimal-windows-x86_64.exe
+            cortex_name: aingle-cortex-windows-x86_64.exe
 
     steps:
       - uses: actions/checkout@v6
@@ -74,30 +79,47 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-cargo-release-
 
-      - name: Build release binary
+      - name: Build aingle-minimal
         run: cargo build --release --target ${{ matrix.target }} -p aingle_minimal --features rest
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
-      - name: Create archive (Unix)
+      - name: Build aingle-cortex
+        run: cargo build --release --target ${{ matrix.target }} -p aingle_cortex
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+      - name: Create archives (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/aingle-minimal dist/${{ matrix.name }}
-          cd dist && tar -czvf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          cp target/${{ matrix.target }}/release/aingle-cortex dist/${{ matrix.cortex_name }}
+          cd dist
+          tar -czvf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          tar -czvf ${{ matrix.cortex_name }}.tar.gz ${{ matrix.cortex_name }}
 
-      - name: Create archive (Windows)
+      - name: Create archives (Windows)
         if: runner.os == 'Windows'
         run: |
           mkdir dist
           copy target\${{ matrix.target }}\release\aingle-minimal.exe dist\${{ matrix.name }}
-          cd dist && 7z a -tzip ${{ matrix.name }}.zip ${{ matrix.name }}
+          copy target\${{ matrix.target }}\release\aingle-cortex.exe dist\${{ matrix.cortex_name }}
+          cd dist
+          7z a -tzip ${{ matrix.name }}.zip ${{ matrix.name }}
+          7z a -tzip ${{ matrix.cortex_name }}.zip ${{ matrix.cortex_name }}
 
-      - name: Upload artifact
+      - name: Upload aingle-minimal artifact
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}.*
+
+      - name: Upload aingle-cortex artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.cortex_name }}
+          path: dist/${{ matrix.cortex_name }}.*
 
   release:
     name: Create Release
@@ -112,7 +134,7 @@ jobs:
           path: artifacts
 
       - name: Display structure of downloaded files
-        run: ls -la artifacts/
+        run: ls -laR artifacts/
 
       - name: Generate changelog
         id: changelog
@@ -148,6 +170,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsodium-dev libssl-dev pkg-config
 
+      - name: Publish aingle_zome_types
+        run: cargo publish -p aingle_zome_types --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        continue-on-error: true
+
+      - name: Publish aingle_cortex
+        run: cargo publish -p aingle_cortex --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        continue-on-error: true
+
       - name: Publish aingle_minimal
         run: cargo publish -p aingle_minimal --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        continue-on-error: true  # May fail if version already published
+        continue-on-error: true
