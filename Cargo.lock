@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "aingle_graph",
  "aingle_logic",
