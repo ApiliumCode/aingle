@@ -23,15 +23,14 @@
 //! ```
 
 use axum::{
-    extract::Request,
+    extract::{ConnectInfo, Request},
     http::{HeaderValue, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use axum_client_ip::{InsecureClientIp, SecureClientIp};
 use dashmap::DashMap;
 use std::{
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -277,23 +276,22 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            // Extract IP address
+            // Extract IP address.
+            // 1. If behind a proxy, try X-Forwarded-For / X-Real-IP headers.
+            // 2. Fall back to ConnectInfo<SocketAddr> (direct connection IP).
             let ip = if limiter.secure_ip {
-                // Try secure extraction first (X-Forwarded-For, etc.)
-                req.extensions()
-                    .get::<SecureClientIp>()
-                    .map(|ip| ip.0)
-                    .or_else(|| req.extensions().get::<InsecureClientIp>().map(|ip| ip.0))
+                extract_proxy_ip(&req)
+                    .or_else(|| extract_connect_ip(&req))
             } else {
-                // Use direct connection IP
-                req.extensions().get::<InsecureClientIp>().map(|ip| ip.0)
+                extract_connect_ip(&req)
+                    .or_else(|| extract_proxy_ip(&req))
             };
 
             let ip = match ip {
                 Some(ip) => ip,
                 None => {
-                    // No IP available - return error
-                    return Ok(RateLimitError::IpNotAvailable.into_response());
+                    // Last resort: assume localhost for sidecar usage.
+                    IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
                 }
             };
 
@@ -325,32 +323,34 @@ where
     }
 }
 
-/// Axum middleware function (alternative to layer)
-pub async fn rate_limit_middleware(
-    InsecureClientIp(ip): InsecureClientIp,
-    req: Request,
-    next: Next,
-) -> Result<Response, RateLimitError> {
-    // This is a simpler version that can be used with axum::middleware::from_fn
-    // For production use, prefer the Layer-based approach above
+/// Extract client IP from `ConnectInfo<SocketAddr>` (direct connection).
+fn extract_connect_ip(req: &Request) -> Option<IpAddr> {
+    req.extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
+}
 
-    // You would need to pass the limiter through state or create it here
-    let limiter = RateLimiter::new(100);
-
-    match limiter.check(ip) {
-        Ok(remaining) => {
-            let mut response = next.run(req).await;
-
-            // Add headers
-            response.headers_mut().insert(
-                "X-RateLimit-Remaining",
-                HeaderValue::from_str(&remaining.to_string()).unwrap(),
-            );
-
-            Ok(response)
+/// Extract client IP from proxy headers (`X-Forwarded-For`, `X-Real-IP`).
+fn extract_proxy_ip(req: &Request) -> Option<IpAddr> {
+    // Try X-Forwarded-For first (first IP in the chain is the client)
+    if let Some(xff) = req.headers().get("x-forwarded-for") {
+        if let Ok(value) = xff.to_str() {
+            if let Some(first) = value.split(',').next() {
+                if let Ok(ip) = first.trim().parse::<IpAddr>() {
+                    return Some(ip);
+                }
+            }
         }
-        Err(err) => Err(err),
     }
+    // Try X-Real-IP
+    if let Some(xri) = req.headers().get("x-real-ip") {
+        if let Ok(value) = xri.to_str() {
+            if let Ok(ip) = value.trim().parse::<IpAddr>() {
+                return Some(ip);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
