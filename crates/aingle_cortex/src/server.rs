@@ -134,13 +134,11 @@ impl CortexServer {
         // Rate limiting layer.
         let app = if self.config.rate_limit_enabled {
             use crate::middleware::RateLimiter;
-            use axum_client_ip::SecureClientIpSource;
 
             let rate_limiter = RateLimiter::new(self.config.rate_limit_rpm)
                 .with_burst_capacity(self.config.rate_limit_rpm);
 
             app.layer(rate_limiter.into_layer())
-                .layer(SecureClientIpSource::ConnectInfo.into_extension())
         } else {
             app
         };
@@ -182,7 +180,11 @@ impl CortexServer {
         info!("SPARQL: http://{}/sparql", addr);
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, router).await?;
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await?;
 
         Ok(())
     }
@@ -203,9 +205,12 @@ impl CortexServer {
         info!("Starting Córtex API server on http://{}", addr);
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown_signal)
-            .await?;
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
 
         info!("Córtex API server stopped");
         Ok(())

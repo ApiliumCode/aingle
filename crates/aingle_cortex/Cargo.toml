@@ -86,9 +86,6 @@ aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types", defaul
 # Rate limiting
 dashmap = "6.0"
 
-# IP address handling
-axum-client-ip = "0.7"
-
 [dev-dependencies]
 tempfile = "3.25"
 reqwest = { version = "0.12", features = ["json"] }
