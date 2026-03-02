@@ -32,7 +32,7 @@ aingle_zk = { version = "0.2", path = "../aingle_zk" }
 titans_memory = { version = "0.2", path = "../titans_memory" }
 
 # Web framework (use 0.7 for async-graphql-axum compatibility)
-axum = { version = "0.7", features = ["ws", "macros"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
 
