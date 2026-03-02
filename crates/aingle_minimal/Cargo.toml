@@ -78,7 +78,7 @@ rusqlite = { version = "0.25", default-features = false, features = ["bundled"],
 rocksdb = { version = "0.24", optional = true }
 
 # mDNS/DNS-SD for peer discovery
-mdns-sd = { version = "0.11", optional = true }
+mdns-sd = { version = "0.18", optional = true }
 if-addrs = { version = "0.13", optional = true }
 
 # WebRTC for browser support
