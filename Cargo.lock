@@ -521,7 +521,7 @@ dependencies = [
  "lair_keystore_client",
  "serde",
  "serde_bytes",
- "sodoken",
+ "sodoken 0.1.0",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -6015,7 +6015,7 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_json",
- "sodoken",
+ "sodoken 0.1.0",
  "structopt",
  "tokio",
  "tokio-tungstenite 0.20.1",
@@ -6169,7 +6169,7 @@ dependencies = [
  "rayon",
  "rcgen 0.8.13",
  "ring 0.16.20",
- "sodoken",
+ "sodoken 0.0.4",
  "subtle",
  "thiserror 1.0.69",
  "tokio",
@@ -6186,7 +6186,7 @@ dependencies = [
  "futures",
  "ghost_actor",
  "lair_keystore_api",
- "sodoken",
+ "sodoken 0.0.4",
  "tempfile",
  "tokio",
  "tracing",
@@ -7377,7 +7377,7 @@ checksum = "0afd5c28e4a399c57ee2bc3accd40c7b671fdc7b6537499f14e95b265af7d7e0"
 dependencies = [
  "oxilangtag",
  "oxiri",
- "rand 0.8.5",
+ "rand 0.9.2",
  "thiserror 2.0.18",
 ]
 
@@ -9699,7 +9699,7 @@ version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9752,6 +9752,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sodoken"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95ab775722cb2ca6da016b4d0c0efac36f9aa59e53a2dd4cdeae7a0776f1c1d3"
+dependencies = [
+ "libc",
+ "libsodium-sys-stable",
+ "zeroize",
+]
+
+[[package]]
 name = "spargebra"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9761,7 +9772,7 @@ dependencies = [
  "oxiri",
  "oxrdf",
  "peg",
- "rand 0.8.5",
+ "rand 0.9.2",
  "thiserror 2.0.18",
 ]
 
@@ -10857,7 +10868,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.4",
  "static_assertions",
 ]
 
