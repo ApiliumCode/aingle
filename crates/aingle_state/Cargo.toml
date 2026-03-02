@@ -45,7 +45,7 @@ adk = { version = "^0.0.1", path = "../adk" }
 aingle_wasm_test_utils = { path = "../test_utils/wasm", version = "0.0.1" }
 matches = "0.1.8"
 observability = { version = "0.1", package = "aingle-observability" }
-pretty_assertions = "0.7.2"
+pretty_assertions = "1.4.1"
 
 tempdir = "0.3"
 
