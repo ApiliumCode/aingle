@@ -208,7 +208,7 @@ pub async fn batch_verify_assertions(
 pub fn reputation_router() -> axum::Router<AppState> {
     axum::Router::new()
         .route(
-            "/api/v1/agents/:id/consistency",
+            "/api/v1/agents/{id}/consistency",
             axum::routing::get(get_agent_consistency),
         )
         .route(
