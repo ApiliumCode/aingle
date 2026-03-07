@@ -283,20 +283,14 @@ impl DagEvent {
 ///     let broadcaster = EventBroadcaster::new();
 ///     let mut receiver = broadcaster.subscribe();
 ///
-///     // In another task, events can be broadcast
-///     let bc = broadcaster.clone();
-///     tokio::spawn(async move {
-///         bc.broadcast(DagEvent::ping()).await;
-///     });
+///     // Broadcast an event
+///     broadcaster.broadcast(DagEvent::ping()).await;
 ///
-///     // Receive events
-///     while let Ok(event) = receiver.recv().await {
-///         match event {
-///             DagEvent::Ping { timestamp } => {
-///                 println!("Received ping at {}", timestamp);
-///             }
-///             _ => {}
-///         }
+///     // Receive the event
+///     let event = receiver.recv().await.unwrap();
+///     match event {
+///         DagEvent::Ping { .. } => println!("Received ping"),
+///         _ => {}
 ///     }
 /// }
 /// ```
