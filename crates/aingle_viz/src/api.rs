@@ -369,8 +369,8 @@ pub fn create_router(state: ApiState) -> Router {
         // API endpoints
         .route("/api/dag", get(get_dag))
         .route("/api/dag/d3", get(get_dag_d3))
-        .route("/api/dag/entry/:hash", get(get_entry))
-        .route("/api/dag/agent/:id", get(get_agent_entries))
+        .route("/api/dag/entry/{hash}", get(get_entry))
+        .route("/api/dag/agent/{id}", get(get_agent_entries))
         .route("/api/dag/recent", get(get_recent))
         .route("/api/stats", get(get_stats))
         .route("/api/node", post(create_node))

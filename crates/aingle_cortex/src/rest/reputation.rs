@@ -75,64 +75,76 @@ pub async fn get_agent_consistency(
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Path(agent_id): Path<String>,
 ) -> impl IntoResponse {
-    let graph = state.graph.read().await;
-    let logic = state.logic.read().await;
-
     // Determine namespace prefix for agent node
     let ns_prefix = ns_ext
         .as_ref()
         .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone())
         .unwrap_or_else(|| "mayros".to_string());
 
+    // Phase 1: collect all triples we need from the graph, then drop the lock.
+    let (owned_subject_triples, prefixed_triples) = {
+        let graph = state.graph.read().await;
+
+        let agent_node = Value::node(NodeId::named(format!("{}:agent:{}", ns_prefix, agent_id)));
+
+        // Collect owned triples (assertedBy / ownedBy) and their subject triples.
+        let mut owned = Vec::new();
+        if let Ok(triples) = graph.get_object(&agent_node) {
+            for triple in &triples {
+                let pred_str = triple.predicate.as_str();
+                if pred_str.ends_with(":assertedBy") || pred_str.ends_with(":ownedBy") {
+                    let subject_triples = graph.get_subject(&triple.subject).unwrap_or_default();
+                    owned.push(subject_triples);
+                }
+            }
+        }
+
+        // Collect agent-prefixed assertion triples.
+        let agent_prefix = format!("{}:agent:{}:", ns_prefix, agent_id);
+        let mut prefixed = Vec::new();
+        if let Ok(prefixed_subjects) = graph.subjects_with_prefix(&agent_prefix) {
+            for subj in &prefixed_subjects {
+                if let Ok(subj_triples) = graph.get_subject(subj) {
+                    let filtered: Vec<_> = subj_triples
+                        .into_iter()
+                        .filter(|t| {
+                            let p = t.predicate.as_str();
+                            !p.ends_with(":assertedBy") && !p.ends_with(":ownedBy")
+                        })
+                        .collect();
+                    prefixed.push(filtered);
+                }
+            }
+        }
+
+        (owned, prefixed)
+        // graph lock dropped here
+    };
+
+    // Phase 2: validate with the logic engine (separate lock).
+    let logic = state.logic.read().await;
+
     let mut total: usize = 0;
     let mut verified: usize = 0;
 
-    // Find all triples where the object references this agent node.
-    // Convention: `{ns}:assertedBy` or `{ns}:ownedBy` predicates point
-    // to agent nodes like `{ns}:agent:{id}` or `agent:{id}`.
-    let agent_node = Value::node(NodeId::named(format!("{}:agent:{}", ns_prefix, agent_id)));
+    for subject_triples in &owned_subject_triples {
+        total += 1;
+        let any_valid = subject_triples.iter().any(|t| logic.validate(t).is_valid);
+        if any_valid {
+            verified += 1;
+        }
+    }
 
-    if let Ok(triples) = graph.get_object(&agent_node) {
-        for triple in &triples {
-            let pred_str = triple.predicate.as_str();
-            if pred_str.ends_with(":assertedBy") || pred_str.ends_with(":ownedBy") {
-                total += 1;
-
-                // For each owned triple, find the actual assertion triples
-                // under that subject and validate them with the logic engine.
-                if let Ok(subject_triples) = graph.get_subject(&triple.subject) {
-                    let any_valid = subject_triples.iter().any(|t| {
-                        let result = logic.validate(t);
-                        result.is_valid
-                    });
-                    if any_valid {
-                        verified += 1;
-                    }
-                }
+    for triples in &prefixed_triples {
+        for t in triples {
+            total += 1;
+            if logic.validate(t).is_valid {
+                verified += 1;
             }
         }
     }
 
-    // Secondary pass: catch assertions stored under agent-prefixed subjects
-    // (e.g. "{ns}:agent:{id}:assertion:xyz")
-    let agent_prefix = format!("{}:agent:{}:", ns_prefix, agent_id);
-    if let Ok(prefixed_subjects) = graph.subjects_with_prefix(&agent_prefix) {
-        for subj in &prefixed_subjects {
-            if let Ok(subj_triples) = graph.get_subject(subj) {
-                for t in &subj_triples {
-                    let pred_str = t.predicate.as_str();
-                    // Skip ownership predicates already counted above
-                    if pred_str.ends_with(":assertedBy") || pred_str.ends_with(":ownedBy") {
-                        continue;
-                    }
-                    total += 1;
-                    if logic.validate(t).is_valid {
-                        verified += 1;
-                    }
-                }
-            }
-        }
-    }
+    drop(logic);
 
     let score = if total > 0 {
         verified as f64 / total as f64
@@ -156,50 +168,52 @@ pub async fn batch_verify_assertions(
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(req): Json<BatchVerifyAssertionsRequest>,
 ) -> impl IntoResponse {
-    let graph = state.graph.read().await;
-    let logic = state.logic.read().await;
-
     // Extract namespace for filtering
     let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
 
-    let mut results: Vec<AssertionVerifyResult> = Vec::new();
+    // Phase 1: collect matching triples from the graph, then drop the lock.
+    let assertion_triples: Vec<_> = {
+        let graph = state.graph.read().await;
 
-    for assertion in &req.assertions {
-        // Skip assertions whose subject is outside the namespace
-        if let Some(ref ns) = ns_filter {
-            if !is_in_namespace(&assertion.subject, ns) {
-                results.push(AssertionVerifyResult {
-                    subject: assertion.subject.clone(),
-                    predicate: assertion.predicate.clone(),
-                    verified: false,
-                });
-                continue;
-            }
-        }
-
-        let subj = NodeId::named(&assertion.subject);
-
-        // Find all triples for this subject
-        let triples = graph.get_subject(&subj).unwrap_or_default();
-
-        // Find the triple matching the declared predicate
-        let matching = triples
+        req.assertions
             .iter()
-            .find(|t| t.predicate.as_str() == assertion.predicate);
+            .map(|assertion| {
+                if let Some(ref ns) = ns_filter {
+                    if !is_in_namespace(&assertion.subject, ns) {
+                        return None;
+                    }
+                }
+                let subj = NodeId::named(&assertion.subject);
+                let triples = graph.get_subject(&subj).unwrap_or_default();
+                triples
+                    .into_iter()
+                    .find(|t| t.predicate.as_str() == assertion.predicate)
+            })
+            .collect()
+        // graph lock dropped here
+    };
 
-        let verified = if let Some(triple) = matching {
-            // Triple exists — validate it against the logic engine
-            logic.validate(triple).is_valid
-        } else {
-            false
-        };
+    // Phase 2: validate with the logic engine (separate lock).
+    let logic = state.logic.read().await;
 
-        results.push(AssertionVerifyResult {
-            subject: assertion.subject.clone(),
-            predicate: assertion.predicate.clone(),
-            verified,
-        });
-    }
+    let results: Vec<AssertionVerifyResult> = req
+        .assertions
+        .iter()
+        .zip(assertion_triples.iter())
+        .map(|(assertion, maybe_triple)| {
+            let verified = maybe_triple
+                .as_ref()
+                .map(|t| logic.validate(t).is_valid)
+                .unwrap_or(false);
+            AssertionVerifyResult {
+                subject: assertion.subject.clone(),
+                predicate: assertion.predicate.clone(),
+                verified,
+            }
+        })
+        .collect();
+
+    drop(logic);
 
     Json(BatchVerifyAssertionsResponse { results })
 }
@@ -208,7 +222,7 @@ pub async fn batch_verify_assertions(
 pub fn reputation_router() -> axum::Router<AppState> {
     axum::Router::new()
         .route(
-            "/api/v1/agents/:id/consistency",
+            "/api/v1/agents/{id}/consistency",
             axum::routing::get(get_agent_consistency),
         )
         .route(

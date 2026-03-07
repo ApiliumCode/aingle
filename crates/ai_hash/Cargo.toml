@@ -22,7 +22,7 @@ derive_more = { version = "0.99", optional = true }
 ai_fixt = { version = ">=0.0.1", path = "../ai_fixt", optional = true }
 aingle_middleware_bytes = {version = "=0.0.3", optional = true }
 rand = {version = "0.9", optional = true}
-rusqlite = { version = "0.25", optional = true }
+rusqlite = { version = "0.32", optional = true }
 tracing = { version = "0.1", optional = true}
 thiserror = "2.0"
 

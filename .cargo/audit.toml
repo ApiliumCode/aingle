@@ -1,0 +1,25 @@
+# Cargo audit configuration for AIngle
+# https://rustsec.org/
+
+[advisories]
+# Advisories to ignore in product crates
+ignore = [
+    # rsa 0.9.10 — Marvin Attack timing sidechannel (no upstream fix)
+    # Pulled in by jsonwebtoken 10.x; JWT auth uses HMAC/EdDSA, not RSA decryption
+    "RUSTSEC-2023-0071",
+
+    # bincode 2.0.1 — unmaintained advisory, still functional (aingle_graph)
+    "RUSTSEC-2025-0141",
+
+    # async-std — unmaintained (transitive via async-tungstenite in aingle_minimal)
+    "RUSTSEC-2025-0052",
+
+    # fxhash — unmaintained (transitive via sled in aingle_graph)
+    "RUSTSEC-2025-0057",
+
+    # instant — unmaintained (transitive via sled → parking_lot 0.11)
+    "RUSTSEC-2024-0384",
+
+    # paste — unmaintained (transitive via wasmer and candle-core/gemm)
+    "RUSTSEC-2024-0436",
+]

@@ -662,7 +662,12 @@ impl ApduCommand {
     }
 
     /// Serialize to bytes for transmission
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> std::result::Result<Vec<u8>, crate::error::Error> {
+        if self.data.len() > 255 {
+            return Err(crate::error::Error::network(
+                format!("APDU data too large: {} bytes (max 255)", self.data.len()),
+            ));
+        }
         let mut bytes = Vec::with_capacity(5 + self.data.len());
         bytes.push(self.cla);
         bytes.push(self.ins);
@@ -672,7 +677,7 @@ impl ApduCommand {
             bytes.push(self.data.len() as u8);
             bytes.extend_from_slice(&self.data);
         }
-        bytes
+        Ok(bytes)
     }
 }
 
@@ -832,7 +837,7 @@ mod tests {
     #[test]
     fn test_apdu_command_serialize() {
         let cmd = ApduCommand::new(0xE0, 0x01, 0x00, 0x00).with_data(vec![0x01, 0x02, 0x03]);
-        let bytes = cmd.serialize();
+        let bytes = cmd.serialize().unwrap();
         assert_eq!(bytes, vec![0xE0, 0x01, 0x00, 0x00, 0x03, 0x01, 0x02, 0x03]);
     }
 

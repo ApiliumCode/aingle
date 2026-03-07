@@ -36,7 +36,7 @@ impl SemanticIndex {
         let decisions_tree = db.open_tree("decisions")?;
         for item in decisions_tree.iter() {
             let (_key, value) = item?;
-            let decision: ArchitecturalDecision = bincode::deserialize(&value)?;
+            let decision: ArchitecturalDecision = bincode::serde::decode_from_slice(&value, bincode::config::standard()).map(|(v, _)| v)?;
             graph.add_decision(decision);
         }
 
@@ -44,7 +44,7 @@ impl SemanticIndex {
         let contexts_tree = db.open_tree("code_contexts")?;
         for item in contexts_tree.iter() {
             let (_, value) = item?;
-            let context: CodeContext = bincode::deserialize(&value)?;
+            let context: CodeContext = bincode::serde::decode_from_slice(&value, bincode::config::standard()).map(|(v, _)| v)?;
             graph.add_code_context(context);
         }
 
@@ -52,7 +52,7 @@ impl SemanticIndex {
         let commits_tree = db.open_tree("commits")?;
         for item in commits_tree.iter() {
             let (_, value) = item?;
-            let commit: LinkedCommit = bincode::deserialize(&value)?;
+            let commit: LinkedCommit = bincode::serde::decode_from_slice(&value, bincode::config::standard()).map(|(v, _)| v)?;
             graph.add_commit(commit);
         }
 
@@ -63,7 +63,7 @@ impl SemanticIndex {
     pub fn store_decision(&mut self, decision: ArchitecturalDecision) -> Result<()> {
         let tree = self.db.open_tree("decisions")?;
         let key = decision.id.as_bytes();
-        let value = bincode::serialize(&decision)?;
+        let value = bincode::serde::encode_to_vec(&decision, bincode::config::standard())?;
         tree.insert(key, value)?;
 
         // Update in-memory graph
@@ -78,7 +78,7 @@ impl SemanticIndex {
         let key = id.as_bytes();
 
         if let Some(value) = tree.get(key)? {
-            let decision: ArchitecturalDecision = bincode::deserialize(&value)?;
+            let decision: ArchitecturalDecision = bincode::serde::decode_from_slice(&value, bincode::config::standard()).map(|(v, _)| v)?;
             Ok(Some(decision))
         } else {
             Ok(None)
@@ -89,7 +89,7 @@ impl SemanticIndex {
     pub fn store_code_context(&mut self, context: CodeContext) -> Result<()> {
         let tree = self.db.open_tree("code_contexts")?;
         let key = context.file_path.as_bytes();
-        let value = bincode::serialize(&context)?;
+        let value = bincode::serde::encode_to_vec(&context, bincode::config::standard())?;
         tree.insert(key, value)?;
 
         // Update in-memory graph
@@ -102,7 +102,7 @@ impl SemanticIndex {
     pub fn store_commit(&mut self, commit: LinkedCommit) -> Result<()> {
         let tree = self.db.open_tree("commits")?;
         let key = commit.commit_hash.as_bytes();
-        let value = bincode::serialize(&commit)?;
+        let value = bincode::serde::encode_to_vec(&commit, bincode::config::standard())?;
         tree.insert(key, value)?;
 
         // Update in-memory graph
@@ -118,7 +118,7 @@ impl SemanticIndex {
         let tree = self.db.open_tree("decisions")?;
         for item in tree.iter() {
             let (_, value) = item?;
-            let decision: ArchitecturalDecision = bincode::deserialize(&value)?;
+            let decision: ArchitecturalDecision = bincode::serde::decode_from_slice(&value, bincode::config::standard()).map(|(v, _)| v)?;
 
             if self.matches_query(&decision, query) {
                 results.push(decision);

@@ -36,6 +36,10 @@ pub enum ContractError {
     #[error("Invalid arguments: {0}")]
     InvalidArguments(String),
 
+    /// Invalid input data
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     /// Permission denied
     #[error("Permission denied: {0}")]
     PermissionDenied(String),

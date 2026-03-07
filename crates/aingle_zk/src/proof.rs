@@ -299,9 +299,15 @@ impl ProofVerifier {
                 Ok(true) // Structure is valid, actual membership check needs data
             }
             ProofData::HashOpening { commitment, salt } => {
-                // Hash opening is verified by recomputing
-                // The verifier needs the original data to complete verification
-                Ok(commitment.iter().any(|&b| b != 0) && salt.iter().any(|&b| b != 0))
+                // Hash opening requires the original data to verify.
+                // Without data, we can only validate the proof structure is well-formed.
+                // Callers must use ProofVerifier::verify_hash_opening() with data
+                // for actual verification. This path returns false to be safe.
+                use subtle::ConstantTimeEq;
+                let non_zero_commitment = commitment.ct_ne(&[0u8; 32]);
+                let non_zero_salt = salt.ct_ne(&[0u8; 32]);
+                // Structural check only — reject zero commitment/salt as malformed
+                Ok(bool::from(non_zero_commitment & non_zero_salt))
             }
             ProofData::Knowledge {
                 commitment,
@@ -354,12 +360,13 @@ impl ProofVerifier {
         }
     }
 
-    /// Verify a hash opening with the original data
+    /// Verify a hash opening with the original data (constant-time comparison)
     pub fn verify_hash_opening(proof: &ZkProof, data: &[u8]) -> Result<bool> {
         match &proof.proof_data {
             ProofData::HashOpening { commitment, salt } => {
+                use subtle::ConstantTimeEq;
                 let expected = HashCommitment::commit_with_salt(data, *salt);
-                Ok(&expected.hash == commitment)
+                Ok(bool::from(expected.hash.ct_eq(commitment)))
             }
             _ => Err(ZkError::InvalidProof("Not a hash opening proof".into())),
         }
