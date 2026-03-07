@@ -580,7 +580,7 @@ async fn handle_websocket(socket: WebSocket, state: ApiState) {
             "type": "initial_state",
             "data": dag.to_d3_json(),
         });
-        if let Err(e) = sender.send(Message::Text(initial.to_string())).await {
+        if let Err(e) = sender.send(Message::Text(initial.to_string().into())).await {
             log::error!("Failed to send initial state to {}: {}", client_id, e);
             return;
         }
@@ -592,7 +592,7 @@ async fn handle_websocket(socket: WebSocket, state: ApiState) {
     let send_task = tokio::spawn(async move {
         while let Ok(event) = event_rx.recv().await {
             let json = event.to_json();
-            if sender.send(Message::Text(json)).await.is_err() {
+            if sender.send(Message::Text(json.into())).await.is_err() {
                 // Client disconnected.
                 break;
             }
