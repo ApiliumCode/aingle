@@ -95,8 +95,10 @@ impl RocksStorage {
     }
 
     /// Get column family handle
-    fn cf(&self, name: &str) -> &ColumnFamily {
-        self.db.cf_handle(name).expect("Column family must exist")
+    fn cf(&self, name: &str) -> Result<&ColumnFamily> {
+        self.db
+            .cf_handle(name)
+            .ok_or_else(|| crate::error::Error::storage(format!("Column family '{}' not found", name)))
     }
 
     /// Serialize key for actions (hash-based)
@@ -119,7 +121,7 @@ impl RocksStorage {
     /// Get next link ID
     fn next_link_id(&self) -> Result<i64> {
         let key = b"link_counter";
-        let cf = self.cf(CF_SEQUENCES);
+        let cf = self.cf(CF_SEQUENCES)?;
 
         let current = self
             .db
@@ -159,13 +161,13 @@ impl StorageBackend for RocksStorage {
         let key = Self::action_key(&hash);
 
         self.db
-            .put_cf(self.cf(CF_ACTIONS), &key, &value)
+            .put_cf(self.cf(CF_ACTIONS)?, &key, &value)
             .map_err(|e| Error::storage(e.to_string()))?;
 
         // Update sequence counter
         let seq_key = b"latest_seq";
         self.db
-            .put_cf(self.cf(CF_SEQUENCES), seq_key, &action.seq.to_be_bytes())
+            .put_cf(self.cf(CF_SEQUENCES)?, seq_key, &action.seq.to_be_bytes())
             .map_err(|e| Error::storage(e.to_string()))?;
 
         self.maybe_prune()?;
@@ -178,7 +180,7 @@ impl StorageBackend for RocksStorage {
         let value = serde_json::to_vec(entry)?;
 
         self.db
-            .put_cf(self.cf(CF_ENTRIES), &key, &value)
+            .put_cf(self.cf(CF_ENTRIES)?, &key, &value)
             .map_err(|e| Error::storage(e.to_string()))?;
 
         self.maybe_prune()?;
@@ -197,7 +199,7 @@ impl StorageBackend for RocksStorage {
 
         match self
             .db
-            .get_cf(self.cf(CF_ACTIONS), &key)
+            .get_cf(self.cf(CF_ACTIONS)?, &key)
             .map_err(|e| Error::storage(e.to_string()))?
         {
             Some(value) => Ok(Some(serde_json::from_slice(&value)?)),
@@ -210,7 +212,7 @@ impl StorageBackend for RocksStorage {
 
         match self
             .db
-            .get_cf(self.cf(CF_ENTRIES), &key)
+            .get_cf(self.cf(CF_ENTRIES)?, &key)
             .map_err(|e| Error::storage(e.to_string()))?
         {
             Some(value) => Ok(Some(serde_json::from_slice(&value)?)),
@@ -223,7 +225,7 @@ impl StorageBackend for RocksStorage {
 
         match self
             .db
-            .get_cf(self.cf(CF_SEQUENCES), seq_key)
+            .get_cf(self.cf(CF_SEQUENCES)?, seq_key)
             .map_err(|e| Error::storage(e.to_string()))?
         {
             Some(value) => {
@@ -248,7 +250,7 @@ impl StorageBackend for RocksStorage {
         // Note: In production, would want a secondary index for efficiency
         let iter = self
             .db
-            .iterator_cf(self.cf(CF_ACTIONS), rocksdb::IteratorMode::Start);
+            .iterator_cf(self.cf(CF_ACTIONS)?, rocksdb::IteratorMode::Start);
 
         let mut collected: Vec<Action> = Vec::new();
 
@@ -289,7 +291,7 @@ impl StorageBackend for RocksStorage {
         // Count actions
         let iter = self
             .db
-            .iterator_cf(self.cf(CF_ACTIONS), rocksdb::IteratorMode::Start);
+            .iterator_cf(self.cf(CF_ACTIONS)?, rocksdb::IteratorMode::Start);
         for _ in iter {
             action_count += 1;
         }
@@ -297,7 +299,7 @@ impl StorageBackend for RocksStorage {
         // Count entries
         let iter = self
             .db
-            .iterator_cf(self.cf(CF_ENTRIES), rocksdb::IteratorMode::Start);
+            .iterator_cf(self.cf(CF_ENTRIES)?, rocksdb::IteratorMode::Start);
         for _ in iter {
             entry_count += 1;
         }
@@ -305,7 +307,7 @@ impl StorageBackend for RocksStorage {
         // Count links (non-deleted)
         let iter = self
             .db
-            .iterator_cf(self.cf(CF_LINKS), rocksdb::IteratorMode::Start);
+            .iterator_cf(self.cf(CF_LINKS)?, rocksdb::IteratorMode::Start);
         for item in iter {
             if let Ok((_, value)) = item {
                 // Check if link is not deleted
@@ -346,7 +348,7 @@ impl StorageBackend for RocksStorage {
 
         let value = serde_json::to_vec(&link_data)?;
         self.db
-            .put_cf(self.cf(CF_LINKS), &key, &value)
+            .put_cf(self.cf(CF_LINKS)?, &key, &value)
             .map_err(|e| Error::storage(e.to_string()))?;
 
         Ok(link_id)
@@ -356,7 +358,7 @@ impl StorageBackend for RocksStorage {
         // Scan for the link with this ID and mark as deleted
         let iter = self
             .db
-            .iterator_cf(self.cf(CF_LINKS), rocksdb::IteratorMode::Start);
+            .iterator_cf(self.cf(CF_LINKS)?, rocksdb::IteratorMode::Start);
 
         for item in iter {
             if let Ok((key, value)) = item {
@@ -365,7 +367,7 @@ impl StorageBackend for RocksStorage {
                         link_data.deleted = true;
                         let new_value = serde_json::to_vec(&link_data)?;
                         self.db
-                            .put_cf(self.cf(CF_LINKS), &key, &new_value)
+                            .put_cf(self.cf(CF_LINKS)?, &key, &new_value)
                             .map_err(|e| Error::storage(e.to_string()))?;
                         break;
                     }
@@ -380,7 +382,7 @@ impl StorageBackend for RocksStorage {
         let mut links = Vec::new();
         let prefix = base.as_bytes();
 
-        let iter = self.db.prefix_iterator_cf(self.cf(CF_LINKS), prefix);
+        let iter = self.db.prefix_iterator_cf(self.cf(CF_LINKS)?, prefix);
 
         for item in iter {
             if let Ok((key, value)) = item {
@@ -416,7 +418,7 @@ impl StorageBackend for RocksStorage {
 
     fn set_metadata(&self, key: &str, value: &str) -> Result<()> {
         self.db
-            .put_cf(self.cf(CF_METADATA), key.as_bytes(), value.as_bytes())
+            .put_cf(self.cf(CF_METADATA)?, key.as_bytes(), value.as_bytes())
             .map_err(|e| Error::storage(e.to_string()))?;
         Ok(())
     }
@@ -424,7 +426,7 @@ impl StorageBackend for RocksStorage {
     fn get_metadata(&self, key: &str) -> Result<Option<String>> {
         match self
             .db
-            .get_cf(self.cf(CF_METADATA), key.as_bytes())
+            .get_cf(self.cf(CF_METADATA)?, key.as_bytes())
             .map_err(|e| Error::storage(e.to_string()))?
         {
             Some(value) => Ok(Some(String::from_utf8_lossy(&value).to_string())),
@@ -436,11 +438,11 @@ impl StorageBackend for RocksStorage {
         // RocksDB handles compaction automatically
         // Manual compaction can be triggered if needed
         self.db
-            .compact_range_cf(self.cf(CF_ACTIONS), None::<&[u8]>, None::<&[u8]>);
+            .compact_range_cf(self.cf(CF_ACTIONS)?, None::<&[u8]>, None::<&[u8]>);
         self.db
-            .compact_range_cf(self.cf(CF_ENTRIES), None::<&[u8]>, None::<&[u8]>);
+            .compact_range_cf(self.cf(CF_ENTRIES)?, None::<&[u8]>, None::<&[u8]>);
         self.db
-            .compact_range_cf(self.cf(CF_LINKS), None::<&[u8]>, None::<&[u8]>);
+            .compact_range_cf(self.cf(CF_LINKS)?, None::<&[u8]>, None::<&[u8]>);
         Ok(())
     }
 

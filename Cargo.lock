@@ -905,7 +905,6 @@ dependencies = [
 name = "aingle_zk"
 version = "0.3.6"
 dependencies = [
- "bincode",
  "blake3",
  "bulletproofs",
  "criterion",
