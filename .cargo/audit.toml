@@ -1,0 +1,99 @@
+# Cargo audit configuration for AIngle
+# https://rustsec.org/
+
+[advisories]
+# Advisories to ignore (legacy holochain crates, no upstream fix, or unmaintained warnings)
+ignore = [
+    # === Legacy holochain infrastructure (crates v0.0.x, not actively maintained) ===
+
+    # curve25519-dalek 3.2.0 — timing variability (via lair_keystore_api legacy)
+    "RUSTSEC-2024-0344",
+
+    # idna 0.1.5 — punycode parsing (via url 1.7 in legacy aingle 0.0.101)
+    "RUSTSEC-2024-0421",
+
+    # lru 0.6.6 — use-after-free (via kitsune_p2p_types legacy)
+    "RUSTSEC-2021-0130",
+
+    # mio 0.7.14 — token delivery after deregistration (legacy async runtime)
+    "RUSTSEC-2024-0019",
+
+    # remove_dir_all 0.5.3 — TOCTOU race condition (legacy test utils)
+    "RUSTSEC-2023-0018",
+
+    # ring 0.16.20 — AES panic + unmaintained (legacy TLS stack)
+    "RUSTSEC-2025-0009",
+    "RUSTSEC-2025-0010",
+
+    # failure 0.1.8 — deprecated (aingle_sqlite legacy)
+    "RUSTSEC-2020-0036",
+    "RUSTSEC-2019-0036",
+    "RUSTSEC-2021-0145",
+
+    # === No upstream fix available ===
+
+    # owning_ref 0.3.3 — soundness issues (no fix published)
+    "RUSTSEC-2022-0040",
+
+    # rsa 0.9.10 — Marvin Attack timing sidechannel (no fix published)
+    "RUSTSEC-2023-0071",
+
+    # === Unmaintained warnings (low risk, no security impact) ===
+
+    # ansi_term — legacy CLI only
+    "RUSTSEC-2021-0139",
+
+    # async-std — legacy kitsune_p2p_mdns only
+    "RUSTSEC-2025-0052",
+
+    # atty — legacy CLI logging
+    "RUSTSEC-2024-0375",
+
+    # bincode 2.0.1 — unmaintained advisory, still functional
+    "RUSTSEC-2025-0141",
+
+    # cpuid-bool — renamed to cpufeatures, transitive dep
+    "RUSTSEC-2021-0013",
+    "RUSTSEC-2021-0064",
+
+    # difference — legacy test utils
+    "RUSTSEC-2020-0095",
+
+    # fxhash — legacy holochain internals
+    "RUSTSEC-2024-0402",
+    "RUSTSEC-2025-0057",
+
+    # instant — deprecated, legacy transitive dep
+    "RUSTSEC-2024-0384",
+
+    # net2 — deprecated, legacy networking
+    "RUSTSEC-2020-0016",
+
+    # paste — unmaintained warning, still functional (aingle_zome_types)
+    "RUSTSEC-2024-0436",
+
+    # proc-macro-error — unmaintained, legacy derives
+    "RUSTSEC-2024-0370",
+
+    # rand_os — unmaintained, legacy RNG
+    "RUSTSEC-2022-0061",
+    "RUSTSEC-2025-0124",
+
+    # tempdir — deprecated, legacy aingle_sqlite
+    "RUSTSEC-2018-0017",
+
+    # xsalsa20poly1305 — renamed, legacy lair_keystore
+    "RUSTSEC-2023-0076",
+    "RUSTSEC-2023-0037",
+
+    # serde_yml — unsound, legacy aingle 0.0.101 only
+    "RUSTSEC-2025-0068",
+
+    # libyml — unsound, transitive via serde_yml
+    "RUSTSEC-2024-0395",
+    "RUSTSEC-2025-0067",
+
+    # rmp-serde 0.14.4 — unsound Raw/RawRef (via aingle_middleware_bytes external crate)
+    # Product crates use rmp-serde 1.x; 0.14.4 only used by legacy middleware_bytes
+    "RUSTSEC-2022-0092",
+]
