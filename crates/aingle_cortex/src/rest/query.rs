@@ -30,6 +30,9 @@ fn default_limit() -> usize {
     100
 }
 
+/// Hard maximum for any query to prevent OOM on large graphs
+const MAX_QUERY_LIMIT: usize = 10_000;
+
 /// Pattern query response
 #[derive(Debug, Serialize)]
 pub struct PatternQueryResponse {
@@ -75,6 +78,9 @@ pub async fn query_pattern(
 
     let triples = graph.find(pattern)?;
 
+    // Enforce hard query limit to prevent OOM
+    let effective_limit = req.limit.min(MAX_QUERY_LIMIT);
+
     // Filter by namespace if present
     let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
     let triples: Vec<Triple> = if let Some(ref ns) = ns_filter {
@@ -86,7 +92,7 @@ pub async fn query_pattern(
     let total = triples.len();
     let matches: Vec<TripleDto> = triples
         .into_iter()
-        .take(req.limit)
+        .take(effective_limit)
         .map(|t| t.into())
         .collect();
 

@@ -129,8 +129,7 @@ pub async fn verify_proofs_batch(
     let results = state.proof_store.batch_verify(&request.proof_ids).await;
 
     let mut verifications = Vec::new();
-    for (idx, result) in results.into_iter().enumerate() {
-        let proof_id = &request.proof_ids[idx];
+    for (proof_id, result) in request.proof_ids.iter().zip(results.into_iter()) {
         match result {
             Ok(verification) => {
                 verifications.push(VerifyProofResponse {

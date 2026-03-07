@@ -180,7 +180,7 @@ pub fn skill_verification_router() -> axum::Router<AppState> {
             axum::routing::post(create_sandbox),
         )
         .route(
-            "/api/v1/skills/sandbox/:id",
+            "/api/v1/skills/sandbox/{id}",
             axum::routing::delete(delete_sandbox),
         )
 }

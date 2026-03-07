@@ -4,7 +4,7 @@
 //! memory system, used by WASM host functions to bridge zome code with
 //! the knowledge layer.
 
-use aingle_zome_types::graph::{
+use crate::wasm_types::{
     GraphQueryInput, GraphQueryOutput, GraphStoreInput, GraphStoreOutput,
     MemoryRecallInput, MemoryRecallOutput, MemoryRememberInput, MemoryRememberOutput,
     Triple, ObjectValue,
@@ -276,7 +276,7 @@ impl CortexInternalClient {
 
         Ok(MemoryRecallOutput {
             results: result.results.iter().map(|r| {
-                aingle_zome_types::graph::MemoryResult {
+                crate::wasm_types::MemoryResult {
                     id: r.id.clone(),
                     data: r.data.clone(),
                     entry_type: r.entry_type.clone(),

@@ -438,7 +438,7 @@ pub fn observability_router() -> axum::Router<AppState> {
         .route("/api/v1/events", axum::routing::post(batch_store_events))
         .route("/api/v1/events", axum::routing::get(query_events))
         .route(
-            "/api/v1/events/:id/chain",
+            "/api/v1/events/{id}/chain",
             axum::routing::get(get_causal_chain),
         )
 }

@@ -211,7 +211,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// # Examples
 ///
 /// ```
-/// use hope_agents::create_agent;
+/// use hope_agents::{create_agent, Agent};
 ///
 /// let agent = create_agent("my_agent");
 /// assert_eq!(agent.name(), "my_agent");
@@ -239,7 +239,7 @@ pub fn create_agent(name: &str) -> SimpleAgent {
 /// # Examples
 ///
 /// ```
-/// use hope_agents::create_iot_agent;
+/// use hope_agents::{create_iot_agent, Agent};
 ///
 /// let agent = create_iot_agent("sensor_agent");
 /// assert!(agent.config().max_memory_bytes <= 128 * 1024);

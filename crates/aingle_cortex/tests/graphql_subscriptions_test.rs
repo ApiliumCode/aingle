@@ -9,7 +9,7 @@
 #[cfg(feature = "graphql")]
 mod tests {
     use aingle_cortex::{AppState, CortexConfig, CortexServer};
-    use aingle_graph::{GraphDB, NodeId, Triple, Value};
+    use aingle_graph::{GraphDB, NodeId, Predicate, Triple, Value};
     use futures::StreamExt;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -26,10 +26,10 @@ mod tests {
         let mut graph = state.graph.write().await;
         let triple = Triple::new(
             NodeId::named(subject),
-            NodeId::named(predicate),
+            Predicate::named(predicate),
             Value::String(object.to_string()),
         );
-        graph.add_triple(triple).expect("Failed to add triple");
+        graph.insert(triple).expect("Failed to add triple");
     }
 
     /// Helper to broadcast an event
