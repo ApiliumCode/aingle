@@ -369,8 +369,8 @@ pub fn memory_router() -> axum::Router<AppState> {
         .route("/api/v1/memory/recall", post(recall))
         .route("/api/v1/memory/consolidate", post(consolidate))
         .route("/api/v1/memory/stats", get(stats))
-        .route("/api/v1/memory/:id", delete(forget))
+        .route("/api/v1/memory/{id}", delete(forget))
         .route("/api/v1/memory/checkpoint", post(checkpoint))
         .route("/api/v1/memory/checkpoints", get(list_checkpoints))
-        .route("/api/v1/memory/restore/:id", post(restore_checkpoint))
+        .route("/api/v1/memory/restore/{id}", post(restore_checkpoint))
 }

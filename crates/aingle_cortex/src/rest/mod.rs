@@ -67,8 +67,8 @@ pub fn router() -> Router<AppState> {
         // Triple CRUD
         .route("/api/v1/triples", post(triples::create_triple))
         .route("/api/v1/triples", get(triples::list_triples))
-        .route("/api/v1/triples/:id", get(triples::get_triple))
-        .route("/api/v1/triples/:id", delete(triples::delete_triple))
+        .route("/api/v1/triples/{id}", get(triples::get_triple))
+        .route("/api/v1/triples/{id}", delete(triples::delete_triple))
         // Query endpoints
         .route("/api/v1/query", post(query::query_pattern))
         .route("/api/v1/query/subjects", get(query::list_subjects))
@@ -78,7 +78,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/health", get(stats::health_check))
         // Validation/Proofs (legacy)
         .route("/api/v1/validate", post(proof::validate_triples))
-        .route("/api/v1/proof/:hash", get(proof::get_proof))
+        .route("/api/v1/proof/{hash}", get(proof::get_proof))
         .route("/api/v1/verify", post(proof::verify_proof))
         // ZK Proof API (new proof storage system)
         .route("/api/v1/proofs", post(proof_api::submit_proof))
@@ -89,10 +89,10 @@ pub fn router() -> Router<AppState> {
             "/api/v1/proofs/verify/batch",
             post(proof_api::verify_proofs_batch),
         )
-        .route("/api/v1/proofs/:id", get(proof_api::get_proof))
-        .route("/api/v1/proofs/:id", delete(proof_api::delete_proof))
+        .route("/api/v1/proofs/{id}", get(proof_api::get_proof))
+        .route("/api/v1/proofs/{id}", delete(proof_api::delete_proof))
         .route(
-            "/api/v1/proofs/:id/verify",
+            "/api/v1/proofs/{id}/verify",
             get(proof_api::verify_proof_by_id),
         )
         // Titans Memory endpoints
