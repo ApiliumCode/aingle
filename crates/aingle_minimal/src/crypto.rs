@@ -1,20 +1,15 @@
-//! Minimal cryptography for IoT nodes
+//! Cryptography for IoT nodes
 //!
-//! Uses Blake3 for hashing and placeholder signatures.
-//! In production, integrate with lair keystore for proper Ed25519.
+//! Uses Ed25519 for signing/verification and Blake3 for hashing.
 
 use crate::error::{Error, Result};
 use crate::types::{AgentPubKey, Hash, Signature};
+use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use rand::RngCore;
 
-/// Keypair for signing operations
-/// Note: This is a simplified implementation for testing.
-/// Production should use lair keystore integration.
+/// Keypair for signing operations using Ed25519
 pub struct Keypair {
-    /// Private key seed (32 bytes)
-    seed: [u8; 32],
-    /// Public key (derived from seed)
-    public: [u8; 32],
+    signing_key: SigningKey,
 }
 
 impl Keypair {
@@ -23,61 +18,45 @@ impl Keypair {
         let mut rng = rand::rng();
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
-
-        // Derive public key (simplified - just hash the seed)
-        let public = *blake3::hash(&seed).as_bytes();
-
-        Self { seed, public }
+        let signing_key = SigningKey::from_bytes(&seed);
+        Self { signing_key }
     }
 
     /// Create from seed bytes (deterministic)
     pub fn from_seed(seed: &[u8; 32]) -> Self {
-        let public = *blake3::hash(seed).as_bytes();
-        Self {
-            seed: *seed,
-            public,
-        }
+        let signing_key = SigningKey::from_bytes(seed);
+        Self { signing_key }
     }
 
     /// Get public key as AgentPubKey
     pub fn public_key(&self) -> AgentPubKey {
-        AgentPubKey(self.public)
+        let vk = self.signing_key.verifying_key();
+        AgentPubKey(vk.to_bytes())
     }
 
-    /// Sign data
-    /// Note: Simplified signature for testing. Uses HMAC-like construction.
+    /// Sign data with Ed25519
     pub fn sign(&self, data: &[u8]) -> Signature {
-        let mut to_sign = Vec::with_capacity(32 + data.len());
-        to_sign.extend_from_slice(&self.seed);
-        to_sign.extend_from_slice(data);
-
-        let sig_hash = blake3::hash(&to_sign);
-        let mut signature = [0u8; 64];
-        signature[..32].copy_from_slice(sig_hash.as_bytes());
-        signature[32..].copy_from_slice(&self.public);
-
-        Signature(signature)
+        let sig = self.signing_key.sign(data);
+        Signature(sig.to_bytes())
     }
 
     /// Export seed bytes
     pub fn seed(&self) -> [u8; 32] {
-        self.seed
+        self.signing_key.to_bytes()
     }
 }
 
-/// Verify a signature
-/// Note: Simplified verification for testing.
-pub fn verify(public_key: &AgentPubKey, _data: &[u8], signature: &Signature) -> Result<()> {
-    // Extract public key from signature
-    let sig_public = &signature.0[32..64];
+/// Verify an Ed25519 signature
+pub fn verify(public_key: &AgentPubKey, data: &[u8], signature: &Signature) -> Result<()> {
+    let verifying_key = VerifyingKey::from_bytes(public_key.as_bytes())
+        .map_err(|e| Error::crypto(format!("Invalid public key: {}", e)))?;
 
-    // Check public key matches
-    if sig_public != public_key.as_bytes() {
-        return Err(Error::crypto("Public key mismatch".to_string()));
-    }
+    let sig = ed25519_dalek::Signature::from_bytes(&signature.0);
 
-    // Note: In production, this would verify the actual Ed25519 signature
-    // For now, we just check the public key matches
+    verifying_key
+        .verify(data, &sig)
+        .map_err(|e| Error::crypto(format!("Signature verification failed: {}", e)))?;
+
     Ok(())
 }
 
@@ -112,6 +91,26 @@ mod tests {
         let sig = kp.sign(data);
 
         assert!(verify(&kp.public_key(), data, &sig).is_ok());
+    }
+
+    #[test]
+    fn test_verify_rejects_tampered_data() {
+        let kp = Keypair::generate();
+        let data = b"Hello, AIngle!";
+        let sig = kp.sign(data);
+
+        let tampered = b"Tampered data!";
+        assert!(verify(&kp.public_key(), tampered, &sig).is_err());
+    }
+
+    #[test]
+    fn test_verify_rejects_wrong_key() {
+        let kp1 = Keypair::generate();
+        let kp2 = Keypair::generate();
+        let data = b"Hello, AIngle!";
+        let sig = kp1.sign(data);
+
+        assert!(verify(&kp2.public_key(), data, &sig).is_err());
     }
 
     #[test]

@@ -127,10 +127,15 @@ impl RocksStorage {
             .db
             .get_cf(cf, key)
             .map_err(|e| Error::storage(e.to_string()))?
-            .map(|v| {
-                let mut arr = [0u8; 8];
-                arr.copy_from_slice(&v[..8]);
-                i64::from_be_bytes(arr)
+            .and_then(|v| {
+                if v.len() >= 8 {
+                    let mut arr = [0u8; 8];
+                    arr.copy_from_slice(&v[..8]);
+                    Some(i64::from_be_bytes(arr))
+                } else {
+                    log::warn!("Corrupt sequence counter: expected 8 bytes, got {}", v.len());
+                    None
+                }
             })
             .unwrap_or(0);
 
