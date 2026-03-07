@@ -73,8 +73,14 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<bincode::Error> for Error {
-    fn from(err: bincode::Error) -> Self {
+impl From<bincode::error::EncodeError> for Error {
+    fn from(err: bincode::error::EncodeError) -> Self {
+        Self::Serialization(err.to_string())
+    }
+}
+
+impl From<bincode::error::DecodeError> for Error {
+    fn from(err: bincode::error::DecodeError) -> Self {
         Self::Serialization(err.to_string())
     }
 }

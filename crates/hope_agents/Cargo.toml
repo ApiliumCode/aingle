@@ -1,6 +1,6 @@
 [package]
 name = "hope_agents"
-version = "0.2.1"
+version = "0.3.6"
 description = "HOPE Agents: Hierarchical Optimizing Policy Engine for AIngle AI agents"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -31,7 +31,7 @@ serde_json = "1.0"
 log = "0.4"
 
 # AI Memory integration
-titans_memory = { version = "0.2", path = "../titans_memory", optional = true }
+titans_memory = { version = "0.3", path = "../titans_memory", optional = true }
 
 # Random for exploration (updated from 0.7)
 rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }

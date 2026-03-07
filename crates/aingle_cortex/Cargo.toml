@@ -1,6 +1,6 @@
 [package]
 name = "aingle_cortex"
-version = "0.2.6"
+version = "0.3.6"
 description = "Córtex API - REST/GraphQL/SPARQL interface for AIngle semantic graphs"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -26,25 +26,25 @@ path = "src/main.rs"
 
 [dependencies]
 # Core AIngle crates
-aingle_graph = { version = "0.2", path = "../aingle_graph" }
-aingle_logic = { version = "0.2", path = "../aingle_logic" }
-aingle_zk = { version = "0.2", path = "../aingle_zk" }
-titans_memory = { version = "0.2", path = "../titans_memory" }
+aingle_graph = { version = "0.3", path = "../aingle_graph" }
+aingle_logic = { version = "0.3", path = "../aingle_logic" }
+aingle_zk = { version = "0.3", path = "../aingle_zk" }
+titans_memory = { version = "0.3", path = "../titans_memory" }
 
-# Web framework (use 0.7 for async-graphql-axum compatibility)
-axum = { version = "0.7", features = ["ws", "macros"] }
+# Web framework
+axum = { version = "0.8", features = ["ws", "macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
 
-# GraphQL (optional)
-async-graphql = { version = "7.2", features = ["chrono", "uuid"], optional = true }
-async-graphql-axum = { version = "7.2", optional = true }
+# GraphQL (optional) — 8.0.0-rc for axum 0.8 compatibility
+async-graphql = { version = "8.0.0-rc", features = ["chrono", "uuid"], optional = true }
+async-graphql-axum = { version = "8.0.0-rc", optional = true }
 
 # SPARQL (optional)
 spargebra = { version = "0.4", optional = true }
 
 # Authentication (optional)
-jsonwebtoken = { version = "9.0", optional = true }
+jsonwebtoken = { version = "10", optional = true }
 argon2 = { version = "0.5", optional = true }
 
 # Async runtime
@@ -81,12 +81,12 @@ regex = "1.12"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Zome types (for WASM boundary types in client.rs)
-aingle_zome_types = { version = ">=0.0.1", path = "../aingle_zome_types", default-features = false }
+aingle_zome_types = { version = ">=0.3", path = "../aingle_zome_types", default-features = false }
 
 # Rate limiting
 dashmap = "6.0"
 
 [dev-dependencies]
-tempfile = "3.25"
+tempfile = "3.26"
 reqwest = { version = "0.12", features = ["json"] }
 tokio-test = "0.4"
