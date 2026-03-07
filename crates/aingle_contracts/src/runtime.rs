@@ -244,6 +244,9 @@ impl ContractRuntime {
         Ok(result)
     }
 
+    /// Maximum size of a single storage value (64KB)
+    const MAX_STORAGE_VALUE_SIZE: usize = 64 * 1024;
+
     /// Execute contract function (simplified implementation)
     fn execute_function(
         &self,
@@ -254,6 +257,16 @@ impl ContractRuntime {
     ) -> Result<CallResult> {
         let mut result = CallResult::empty();
         let gas_start = ctx.gas_limit.remaining();
+
+        // Charge per-byte gas for input data
+        let input_size: usize = args.iter().map(|a| a.to_string().len()).sum();
+        let input_gas = input_size as u64 * self.gas_prices.per_byte;
+        ctx.gas_limit
+            .consume(input_gas)
+            .map_err(|_| ContractError::OutOfGas {
+                used: input_gas,
+                limit: ctx.gas_limit.0 + input_gas,
+            })?;
 
         // Simplified execution - in real impl, this would run WASM code
         match function {
@@ -277,8 +290,20 @@ impl ContractRuntime {
             "set" | "transfer" | "mint" => {
                 // Generic setter
                 if args.len() >= 2 {
-                    let key = args[0].as_str().unwrap_or("default");
+                    let key = args[0].as_str().ok_or_else(|| {
+                        ContractError::InvalidInput("First argument must be a string key".into())
+                    })?;
                     let value = &args[1];
+
+                    // Enforce max storage value size
+                    let value_size = value.to_string().len();
+                    if value_size > Self::MAX_STORAGE_VALUE_SIZE {
+                        return Err(ContractError::InvalidInput(format!(
+                            "Storage value too large: {} bytes (max {})",
+                            value_size,
+                            Self::MAX_STORAGE_VALUE_SIZE
+                        )));
+                    }
 
                     let storage_key = StorageKey::from_string(instance.address.clone(), key);
 
@@ -288,10 +313,13 @@ impl ContractRuntime {
                         .get(&storage_key)?
                         .and_then(|v| v.to_json().ok());
 
+                    // Charge storage write + per-byte cost for value size
+                    let write_gas = self.gas_prices.storage_write
+                        + (value_size as u64 * self.gas_prices.per_byte);
                     ctx.gas_limit
-                        .consume(self.gas_prices.storage_write)
+                        .consume(write_gas)
                         .map_err(|_| ContractError::OutOfGas {
-                            used: self.gas_prices.storage_write,
+                            used: write_gas,
                             limit: ctx.gas_limit.0,
                         })?;
 
