@@ -190,8 +190,12 @@ impl EventBroadcaster {
 
     /// Decrements the client count when a client unsubscribes.
     pub fn unsubscribe(&self) {
-        self.client_count
-            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        // Use fetch_update to prevent underflow wrapping to usize::MAX.
+        let _ = self.client_count.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| current.checked_sub(1),
+        );
     }
 
     /// Broadcasts an `Event` to all active subscribers.

@@ -122,9 +122,15 @@ impl UserStore {
         }
     }
 
-    /// Initialize with default admin user
+    /// Initialize admin user from AINGLE_ADMIN_PASSWORD environment variable.
+    /// Returns an error if the variable is not set or the password is too short.
     pub fn init_default_admin(&self) -> Result<User, String> {
-        self.create_user("admin", "admin123", vec!["admin".into(), "user".into()])
+        let password = std::env::var("AINGLE_ADMIN_PASSWORD")
+            .map_err(|_| "AINGLE_ADMIN_PASSWORD environment variable must be set".to_string())?;
+        if password.len() < 12 {
+            return Err("Admin password must be at least 12 characters".to_string());
+        }
+        self.create_user("admin", &password, vec!["admin".into(), "user".into()])
     }
 }
 
