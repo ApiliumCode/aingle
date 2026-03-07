@@ -463,15 +463,31 @@ fn evaluate_function_call(
     }
 }
 
-/// Evaluate a regex match
+/// Maximum allowed regex pattern length to prevent ReDoS attacks
+const MAX_REGEX_PATTERN_LEN: usize = 256;
+
+/// Maximum compiled regex size (bytes) to limit backtracking complexity
+const MAX_REGEX_SIZE: usize = 10 * 1024; // 10KB
+
+/// Evaluate a regex match with ReDoS protection
 fn evaluate_regex(text: &str, pattern: &str, flags: Option<&str>) -> Result<bool> {
+    if pattern.len() > MAX_REGEX_PATTERN_LEN {
+        return Err(Error::InvalidRegex(format!(
+            "Regex pattern exceeds maximum length of {} characters",
+            MAX_REGEX_PATTERN_LEN
+        )));
+    }
+
     let case_insensitive = flags.map(|f| f.contains('i')).unwrap_or(false);
     let regex = if case_insensitive {
         regex::RegexBuilder::new(pattern)
             .case_insensitive(true)
+            .size_limit(MAX_REGEX_SIZE)
             .build()
     } else {
-        regex::Regex::new(pattern)
+        regex::RegexBuilder::new(pattern)
+            .size_limit(MAX_REGEX_SIZE)
+            .build()
     }
     .map_err(|e| Error::InvalidRegex(e.to_string()))?;
 
