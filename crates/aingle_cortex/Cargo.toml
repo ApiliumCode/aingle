@@ -36,9 +36,9 @@ axum = { version = "0.8", features = ["ws", "macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
 
-# GraphQL (optional)
-async-graphql = { version = "7.2", features = ["chrono", "uuid"], optional = true }
-async-graphql-axum = { version = "7.2", optional = true }
+# GraphQL (optional) — 8.0.0-rc for axum 0.8 compatibility
+async-graphql = { version = "8.0.0-rc", features = ["chrono", "uuid"], optional = true }
+async-graphql-axum = { version = "8.0.0-rc", optional = true }
 
 # SPARQL (optional)
 spargebra = { version = "0.4", optional = true }

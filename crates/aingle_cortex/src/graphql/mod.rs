@@ -12,11 +12,10 @@ pub use schema::*;
 pub use subscriptions::*;
 
 use async_graphql::Schema;
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
     extract::State,
     response::{Html, IntoResponse},
-    routing::get,
     Router,
 };
 
@@ -34,10 +33,8 @@ pub fn create_schema(state: AppState) -> CortexSchema {
 
 /// Create GraphQL router
 ///
-/// Note: Currently disabled due to axum version compatibility issues
-/// The GraphQL functionality is complete but needs axum 0.8 or higher
+/// Note: Placeholder — GraphQL endpoints will be wired in a future release
 pub fn router(_state: AppState, _playground: bool) -> Router {
-    // Placeholder router until axum version compatibility is resolved
     Router::new()
 }
 
@@ -49,18 +46,10 @@ async fn graphql_handler(
     schema.execute(req.into_inner()).await.into()
 }
 
-/// GraphQL playground
+/// GraphiQL IDE
 async fn graphql_playground() -> impl IntoResponse {
-    Html(async_graphql::http::playground_source(
-        async_graphql::http::GraphQLPlaygroundConfig::new("/graphql")
-            .subscription_endpoint("/graphql/ws"),
-    ))
-}
-
-/// GraphQL subscription handler
-async fn graphql_subscription_handler(
-    State(schema): State<CortexSchema>,
-    ws: axum::extract::ws::WebSocketUpgrade,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| GraphQLSubscription::new(schema).serve(socket))
+    Html(async_graphql::http::GraphiQLSource::build()
+        .endpoint("/graphql")
+        .subscription_endpoint("/graphql/ws")
+        .finish())
 }
