@@ -110,13 +110,13 @@ jobs:
           7z a -tzip ${{ matrix.cortex_name }}.zip ${{ matrix.cortex_name }}
 
       - name: Upload aingle-minimal artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}.*
 
       - name: Upload aingle-cortex artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.cortex_name }}
           path: dist/${{ matrix.cortex_name }}.*
@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
