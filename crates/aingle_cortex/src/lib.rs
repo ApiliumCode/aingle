@@ -162,6 +162,7 @@
 pub mod auth;
 pub mod client;
 pub mod error;
+pub mod wasm_types;
 #[cfg(feature = "graphql")]
 pub mod graphql;
 pub mod middleware;

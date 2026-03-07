@@ -7,7 +7,8 @@ use crate::state::AppState;
 use axum::Router;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use tower_http::cors::{Any, CorsLayer};
+use axum::extract::DefaultBodyLimit;
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -18,9 +19,10 @@ pub struct CortexConfig {
     pub host: String,
     /// The port to listen on.
     pub port: u16,
-    /// If `true`, Cross-Origin Resource Sharing (CORS) headers will be enabled.
-    pub cors_enabled: bool,
+    /// Allowed CORS origins. Empty = CORS disabled. Use `["*"]` for development only.
+    pub cors_allowed_origins: Vec<String>,
     /// If `true`, the GraphQL playground interface will be served at `/graphql`.
+    /// **Must be false in production** (exposes schema to unauthenticated users).
     pub graphql_playground: bool,
     /// If `true`, HTTP request tracing will be enabled for debugging.
     pub tracing: bool,
@@ -30,6 +32,8 @@ pub struct CortexConfig {
     pub rate_limit_rpm: u32,
     /// Optional file path for JSONL audit log persistence.
     pub audit_log_path: Option<PathBuf>,
+    /// Maximum request body size in bytes (default: 1MB).
+    pub max_body_size: usize,
 }
 
 impl Default for CortexConfig {
@@ -38,12 +42,13 @@ impl Default for CortexConfig {
         Self {
             host: "127.0.0.1".to_string(),
             port: 8080,
-            cors_enabled: true,
-            graphql_playground: true,
+            cors_allowed_origins: vec![], // CORS disabled by default
+            graphql_playground: false,    // Disabled by default for security
             tracing: true,
             rate_limit_enabled: true,
-            rate_limit_rpm: 100, // 100 requests per minute
+            rate_limit_rpm: 100,
             audit_log_path: None,
+            max_body_size: 1024 * 1024, // 1MB
         }
     }
 }
@@ -143,14 +148,32 @@ impl CortexServer {
             app
         };
 
-        // CORS layer.
-        let app = if self.config.cors_enabled {
-            app.layer(
+        // Request body size limit (prevents DoS via huge payloads).
+        let app = app.layer(DefaultBodyLimit::max(self.config.max_body_size));
+
+        // CORS layer — only enabled with explicit origin whitelist.
+        let app = if !self.config.cors_allowed_origins.is_empty() {
+            use tower_http::cors::{Any, AllowOrigin};
+
+            let cors = if self.config.cors_allowed_origins == ["*"] {
+                // Development-only wildcard
                 CorsLayer::new()
                     .allow_origin(Any)
                     .allow_methods(Any)
-                    .allow_headers(Any),
-            )
+                    .allow_headers(Any)
+            } else {
+                let origins: Vec<_> = self
+                    .config
+                    .cors_allowed_origins
+                    .iter()
+                    .filter_map(|o| o.parse().ok())
+                    .collect();
+                CorsLayer::new()
+                    .allow_origin(AllowOrigin::list(origins))
+                    .allow_methods(Any)
+                    .allow_headers(Any)
+            };
+            app.layer(cors)
         } else {
             app
         };
@@ -226,7 +249,7 @@ mod tests {
         let config = CortexConfig::default();
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 8080);
-        assert!(config.cors_enabled);
+        assert!(config.cors_allowed_origins.is_empty());
     }
 
     #[test]

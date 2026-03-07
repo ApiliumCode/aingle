@@ -25,7 +25,6 @@
 use axum::{
     extract::{ConnectInfo, Request},
     http::{HeaderValue, StatusCode},
-    middleware::Next,
     response::{IntoResponse, Response},
 };
 use dashmap::DashMap;

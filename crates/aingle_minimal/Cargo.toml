@@ -1,6 +1,6 @@
 [package]
 name = "aingle_minimal"
-version = "0.3.6"
+version = "0.3.7"
 description = "Ultra-light AIngle node for IoT devices (<1MB RAM)"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -64,6 +64,8 @@ serde_json = "1.0"
 # Crypto - minimal set
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
 rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+hex = "0.4"
 
 # Networking - CoAP for IoT (lightweight UDP-based protocol)
 coap-lite = { version = "0.13", optional = true }
@@ -73,7 +75,7 @@ async-io = "2.3"
 
 # Database backends (choose via features)
 # SQLite - lightweight, good for IoT edge devices
-rusqlite = { version = "0.25", default-features = false, features = ["bundled"], optional = true }
+rusqlite = { version = "0.32", default-features = false, features = ["bundled"], optional = true }
 # RocksDB - high-performance LSM tree, production-ready
 rocksdb = { version = "0.24", optional = true }
 

@@ -8,8 +8,25 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::state::AppState;
 
-/// JWT secret (in production, use environment variable)
-const JWT_SECRET: &[u8] = b"aingle-cortex-secret-key-change-in-production";
+use dashmap::DashSet;
+use once_cell::sync::Lazy;
+
+/// JWT secret loaded from AINGLE_JWT_SECRET environment variable.
+/// Panics at startup if the variable is not set — this is intentional
+/// to prevent running with an insecure default.
+static JWT_SECRET: Lazy<Vec<u8>> = Lazy::new(|| {
+    std::env::var("AINGLE_JWT_SECRET")
+        .expect(
+            "AINGLE_JWT_SECRET environment variable must be set. \
+             Generate one with: openssl rand -base64 64",
+        )
+        .into_bytes()
+});
+
+/// Global set of revoked refresh token JTIs (JWT IDs).
+/// Tokens are added here upon use in a refresh operation,
+/// preventing replay of the same refresh token.
+static REVOKED_TOKENS: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
 
 /// Token expiration in hours
 const TOKEN_EXPIRATION_HOURS: i64 = 24;
@@ -36,6 +53,9 @@ pub struct Claims {
     /// Namespace scope (for scoped access control)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
+    /// Unique token ID for revocation (refresh tokens only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jti: Option<String>,
 }
 
 impl Claims {
@@ -50,6 +70,7 @@ impl Claims {
             roles,
             token_type: "access".to_string(),
             namespace: None,
+            jti: None,
         }
     }
 
@@ -64,6 +85,7 @@ impl Claims {
             roles,
             token_type: "access".to_string(),
             namespace: None,
+            jti: None,
         }
     }
 
@@ -83,10 +105,11 @@ impl Claims {
             roles,
             token_type: "access".to_string(),
             namespace: Some(namespace),
+            jti: None,
         }
     }
 
-    /// Create new refresh token claims
+    /// Create new refresh token claims with unique JTI for single-use enforcement
     pub fn new_refresh(user_id: &str) -> Self {
         let now = Utc::now();
         Self {
@@ -97,6 +120,7 @@ impl Claims {
             roles: vec![],
             token_type: "refresh".to_string(),
             namespace: None,
+            jti: Some(uuid::Uuid::new_v4().to_string()),
         }
     }
 
@@ -154,14 +178,14 @@ pub async fn create_token(
     let access_token = encode(
         &Header::default(),
         &access_claims,
-        &EncodingKey::from_secret(JWT_SECRET),
+        &EncodingKey::from_secret(&JWT_SECRET),
     )
     .map_err(|e| Error::Internal(format!("Failed to create access token: {}", e)))?;
 
     let refresh_token = encode(
         &Header::default(),
         &refresh_claims,
-        &EncodingKey::from_secret(JWT_SECRET),
+        &EncodingKey::from_secret(&JWT_SECRET),
     )
     .map_err(|e| Error::Internal(format!("Failed to create refresh token: {}", e)))?;
 
@@ -190,7 +214,7 @@ pub async fn refresh_token(
     // Decode and validate refresh token
     let claims = decode::<Claims>(
         &req.refresh_token,
-        &DecodingKey::from_secret(JWT_SECRET),
+        &DecodingKey::from_secret(&JWT_SECRET),
         &Validation::new(Algorithm::HS256),
     )
     .map_err(|e| Error::AuthError(format!("Invalid refresh token: {}", e)))?;
@@ -203,7 +227,17 @@ pub async fn refresh_token(
         return Err(Error::AuthError("Refresh token expired".to_string()));
     }
 
-    // Create new tokens
+    // Enforce single-use: check and revoke the JTI
+    if let Some(ref jti) = claims.claims.jti {
+        if !REVOKED_TOKENS.insert(jti.clone()) {
+            // JTI was already in the set — token has been used before
+            return Err(Error::AuthError("Refresh token already used".to_string()));
+        }
+    } else {
+        return Err(Error::AuthError("Refresh token missing JTI".to_string()));
+    }
+
+    // Create new tokens (preserve original roles from user store)
     let roles = vec!["user".to_string()];
     let access_claims = Claims::new_access(&claims.claims.sub, roles);
     let refresh_claims = Claims::new_refresh(&claims.claims.sub);
@@ -211,14 +245,14 @@ pub async fn refresh_token(
     let access_token = encode(
         &Header::default(),
         &access_claims,
-        &EncodingKey::from_secret(JWT_SECRET),
+        &EncodingKey::from_secret(&JWT_SECRET),
     )
     .map_err(|e| Error::Internal(format!("Failed to create access token: {}", e)))?;
 
     let refresh_token = encode(
         &Header::default(),
         &refresh_claims,
-        &EncodingKey::from_secret(JWT_SECRET),
+        &EncodingKey::from_secret(&JWT_SECRET),
     )
     .map_err(|e| Error::Internal(format!("Failed to create refresh token: {}", e)))?;
 
@@ -276,7 +310,7 @@ pub async fn verify_token_endpoint(
 pub fn verify_token(token: &str) -> Result<Claims> {
     let token_data = decode::<Claims>(
         token,
-        &DecodingKey::from_secret(JWT_SECRET),
+        &DecodingKey::from_secret(&JWT_SECRET),
         &Validation::new(Algorithm::HS256),
     )
     .map_err(|e| Error::AuthError(format!("Invalid token: {}", e)))?;
@@ -342,12 +376,13 @@ mod tests {
 
     #[test]
     fn test_token_roundtrip() {
+        std::env::set_var("AINGLE_JWT_SECRET", "test-secret-only-do-not-use-in-production-64bytes-pad");
         let claims = Claims::new_access("user123", vec!["user".to_string()]);
 
         let token = encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret(JWT_SECRET),
+            &EncodingKey::from_secret(&JWT_SECRET),
         )
         .unwrap();
 

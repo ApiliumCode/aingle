@@ -164,7 +164,7 @@ pub mod server;
 pub use api::ApiState;
 pub use dag::{DagEdge, DagNode, DagNodeBuilder, DagStats, DagView, EdgeType, NodeType};
 pub use error::{Error, Result};
-pub use events::EventBroadcaster;
+pub use events::{DagEvent, EventBroadcaster};
 pub use server::{VizConfig, VizServer};
 
 /// Version information from Cargo.toml.

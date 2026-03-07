@@ -99,11 +99,12 @@ impl PedersenCommitment {
         }
     }
 
-    /// Verify that this commitment opens to the given value
+    /// Verify that this commitment opens to the given value (constant-time)
     pub fn verify(&self, value: u64, opening: &CommitmentOpening) -> bool {
+        use subtle::ConstantTimeEq;
         let blinding = opening.to_scalar();
         let expected = Self::commit_with_blinding(value, &blinding);
-        self.point == expected.point
+        bool::from(self.point.ct_eq(&expected.point))
     }
 
     /// Get the commitment as a RistrettoPoint
@@ -192,13 +193,14 @@ impl HashCommitment {
         Self { hash, salt }
     }
 
-    /// Verify that this commitment opens to the given data
+    /// Verify that this commitment opens to the given data (constant-time)
     pub fn verify(&self, data: &[u8]) -> bool {
+        use subtle::ConstantTimeEq;
         let mut hasher = Sha256::new();
         hasher.update(self.salt);
         hasher.update(data);
         let computed: [u8; 32] = hasher.finalize().into();
-        self.hash == computed
+        bool::from(self.hash.ct_eq(&computed))
     }
 
     /// Get the commitment hash as hex string
