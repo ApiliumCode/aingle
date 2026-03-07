@@ -55,7 +55,7 @@ rand = "0.9"
 ring = "0.17"
 # Ensure rustls uses ring crypto provider for TLS
 rustls = { workspace = true }
-rusqlite = { version = "0.25" }
+rusqlite = { version = "0.32" }
 serde = { version = "1.0", features = [ "derive" ] }
 serde_json = { version = "1.0", features = [ "preserve_order" ] }
 serde_yml = "0.0.12"
