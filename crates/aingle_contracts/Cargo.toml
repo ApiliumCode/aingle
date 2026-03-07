@@ -1,6 +1,6 @@
 [package]
 name = "aingle_contracts"
-version = "0.3.6"
+version = "0.3.7"
 description = "Smart Contracts DSL and WASM Runtime for AIngle"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -30,6 +30,9 @@ serde_json = "1.0"
 # Hashing
 blake3 = "1.8"
 sha2 = "0.10"
+
+# Randomness (for contract address nonce)
+rand = "0.9"
 
 # Error handling
 thiserror = "2.0"

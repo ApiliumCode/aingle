@@ -25,11 +25,25 @@ impl Address {
         Ok(Self(arr))
     }
 
-    /// Derive from string (for testing)
+    /// Derive a deterministic address from a name.
+    /// Only for testing — production contracts should use `deploy_address()`.
+    #[cfg(test)]
     pub fn derive(name: &str) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(b"aingle_address:");
         hasher.update(name.as_bytes());
+        let hash: [u8; 32] = hasher.finalize().into();
+        Self(hash)
+    }
+
+    /// Generate a unique deployment address from deployer + code hash + random nonce.
+    pub fn deploy_address(deployer: &Address, code_hash: &[u8; 32]) -> Self {
+        let nonce: [u8; 16] = rand::random();
+        let mut hasher = Sha256::new();
+        hasher.update(b"aingle_deploy:");
+        hasher.update(deployer.as_bytes());
+        hasher.update(code_hash);
+        hasher.update(&nonce);
         let hash: [u8; 32] = hasher.finalize().into();
         Self(hash)
     }

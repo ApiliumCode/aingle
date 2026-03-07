@@ -29,7 +29,7 @@ strum = { version = "0.26", optional = true }
 rand = {version = "0.9", optional = true}
 
 # sqlite dependencies
-rusqlite = { version = "0.25", optional = true }
+rusqlite = { version = "0.32", optional = true }
 num_enum = { version = "0.7", optional = true }
 
 # full-saf-def dependencies

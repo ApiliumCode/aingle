@@ -240,13 +240,16 @@ impl ProofStore {
         let stored_proof = StoredProof::new(request.proof_type.clone(), proof_bytes, metadata);
         let proof_id = stored_proof.id.clone();
 
-        // Store proof
-        let mut proofs = self.proofs.write().await;
-        proofs.insert(proof_id.clone(), stored_proof);
+        // Store proof, then drop the lock before acquiring stats.
+        let proofs_len = {
+            let mut proofs = self.proofs.write().await;
+            proofs.insert(proof_id.clone(), stored_proof);
+            proofs.len()
+        };
 
-        // Update stats
+        // Update stats (separate lock scope)
         let mut stats = self.stats.write().await;
-        stats.total_proofs = proofs.len();
+        stats.total_proofs = proofs_len;
         *stats
             .proofs_by_type
             .entry(request.proof_type.to_string())
@@ -354,23 +357,31 @@ impl ProofStore {
 
     /// Delete a proof
     pub async fn delete(&self, proof_id: &ProofId) -> bool {
-        let mut proofs = self.proofs.write().await;
-        let removed = proofs.remove(proof_id);
+        // Remove from proofs, then drop the lock.
+        let removed = {
+            let mut proofs = self.proofs.write().await;
+            let removed = proofs.remove(proof_id);
+            removed.map(|p| (p, proofs.len()))
+        };
 
-        if let Some(proof) = removed {
-            // Update stats
-            let mut stats = self.stats.write().await;
-            stats.total_proofs = proofs.len();
-            let type_key = proof.proof_type.to_string();
-            if let Some(count) = stats.proofs_by_type.get_mut(&type_key) {
-                *count = count.saturating_sub(1);
+        if let Some((proof, proofs_len)) = removed {
+            // Update stats (separate lock scope)
+            {
+                let mut stats = self.stats.write().await;
+                stats.total_proofs = proofs_len;
+                let type_key = proof.proof_type.to_string();
+                if let Some(count) = stats.proofs_by_type.get_mut(&type_key) {
+                    *count = count.saturating_sub(1);
+                }
+                stats.total_size_bytes = stats.total_size_bytes.saturating_sub(proof.size_bytes());
             }
-            stats.total_size_bytes = stats.total_size_bytes.saturating_sub(proof.size_bytes());
 
-            // Remove from cache
-            let mut cache = self.verification_cache.write().await;
-            cache.map.remove(proof_id);
-            cache.order.retain(|id| id != proof_id);
+            // Remove from cache (separate lock scope)
+            {
+                let mut cache = self.verification_cache.write().await;
+                cache.map.remove(proof_id);
+                cache.order.retain(|id| id != proof_id);
+            }
 
             true
         } else {
@@ -386,15 +397,19 @@ impl ProofStore {
 
     /// Clear all proofs
     pub async fn clear(&self) {
-        let mut proofs = self.proofs.write().await;
-        proofs.clear();
-
-        let mut cache = self.verification_cache.write().await;
-        cache.map.clear();
-        cache.order.clear();
-
-        let mut stats = self.stats.write().await;
-        *stats = ProofStoreStats::default();
+        {
+            let mut proofs = self.proofs.write().await;
+            proofs.clear();
+        }
+        {
+            let mut cache = self.verification_cache.write().await;
+            cache.map.clear();
+            cache.order.clear();
+        }
+        {
+            let mut stats = self.stats.write().await;
+            *stats = ProofStoreStats::default();
+        }
     }
 
     /// Get count of proofs

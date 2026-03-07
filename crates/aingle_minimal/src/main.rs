@@ -306,7 +306,10 @@ fn run_node(
             // Run node in main loop with periodic checks
             loop {
                 {
-                    let node_guard = node_arc.lock().unwrap();
+                    let node_guard = match node_arc.lock() {
+                        Ok(g) => g,
+                        Err(poisoned) => poisoned.into_inner(),
+                    };
                     if !node_guard.is_running() {
                         break;
                     }

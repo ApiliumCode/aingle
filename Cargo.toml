@@ -1,45 +1,36 @@
 [workspace]
 resolver = "2"
 members = [
+  # ── Product crates ──────────────────────────────────────────────
+  "crates/aingle_graph",        # Native Semantic GraphDB
+  "crates/aingle_zk",           # Zero-Knowledge Proofs (Privacy)
+  "crates/titans_memory",       # Titans Memory System
+  "crates/aingle_ai",           # AI Integration Layer
+  "crates/aingle_logic",        # Proof-of-Logic Validation Engine
+  "crates/hope_agents",         # Hierarchical Optimistic Planning Engine
+  "crates/aingle_cortex",       # Córtex API (REST/GraphQL/SPARQL)
+  "crates/aingle_minimal",      # IoT-optimized minimal node
+  "crates/aingle_contracts",    # Smart Contracts (DSL + WASM Runtime)
+  "crates/aingle_viz",          # DAG Visualization Server
+
+  # ── Examples ────────────────────────────────────────────────────
+  "examples/iot_sensor_network",
+  "examples/ai_autonomous_agent",
+  "examples/dag_visualization",
+  "examples/semantic_queries",
+]
+
+exclude = [
+  # Legacy Holochain-derived crates (not part of the product build)
   "crates/ai_fixt",
   "crates/ai_fixt/test",
   "crates/adk",
   "crates/adk_derive",
   "crates/ai_hash",
   "crates/mr_bundle",
-
   "crates/ai",
   "crates/ai_bundle",
   "crates/ai_sandbox",
-
-  # IoT-optimized minimal node
-  "crates/aingle_minimal",
-
-  # AI Integration Layer (Titans Memory, Nested Learning, HOPE Agents)
-  "crates/aingle_ai",
-
-  # DAG Visualization Server
-  "crates/aingle_viz",
-
-  # Native Semantic GraphDB
-  "crates/aingle_graph",
-
-  # Proof-of-Logic Validation Engine
-  "crates/aingle_logic",
-
-  # Córtex API (REST/GraphQL/SPARQL)
-  "crates/aingle_cortex",
-
-  # Zero-Knowledge Proofs (Privacy)
-  "crates/aingle_zk",
-
-  # Smart Contracts (DSL + WASM Runtime)
-  "crates/aingle_contracts",
-
-  # AI Memory Systems
-  "crates/titans_memory",
-  "crates/hope_agents",
-
   "crates/aingle",
   "crates/aingle_cascade",
   "crates/aingle_conductor_api",
@@ -47,12 +38,10 @@ members = [
   "crates/aingle_keystore",
   "crates/aingle_sqlite",
   "crates/aingle_state",
-  "crates/aingle_sqlite",
   "crates/aingle_types",
   "crates/aingle_websocket",
   "crates/aingle_util",
   "crates/aingle_zome_types",
-
   "crates/kitsune_p2p/bootstrap",
   "crates/kitsune_p2p/direct",
   "crates/kitsune_p2p/direct_api",
@@ -62,18 +51,8 @@ members = [
   "crates/kitsune_p2p/proxy",
   "crates/kitsune_p2p/transport_quic",
   "crates/kitsune_p2p/types",
-
   "crates/test_utils/wasm",
   "crates/test_utils/wasm_common",
-
-  # Examples
-  "examples/iot_sensor_network",
-  "examples/ai_autonomous_agent",
-  "examples/dag_visualization",
-  "examples/semantic_queries",
-]
-
-exclude = [
   "crates/diagnostics",
   "examples/semantic_compliance",
   "examples/deep_context",
@@ -90,10 +69,6 @@ incremental = false
 codegen-units = 16
 
 # Workspace-wide lints configuration
-[workspace.lints.rust]
-# Allow ghost_actor's test_utils cfg
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("test_utils"))'] }
-
 [workspace.lints.rustdoc]
 bare_urls = "allow"
 invalid_html_tags = "allow"
@@ -104,13 +79,3 @@ redundant_explicit_links = "allow"
 # Workspace dependencies - ensure rustls uses ring crypto provider
 [workspace.dependencies]
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-
-[patch.crates-io]
-# Using Git refs until new versions are published with flexible serde version
-# Published v0.0.1 has serde = "=1.0.123" which conflicts with other deps
-aingle_wasmer_common = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
-aingle_wasmer_guest = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
-aingle_wasmer_host = { git = "https://github.com/ApiliumCode/aingle-wasmer.git", branch = "main" }
-# Local path overrides for renamed crates
-ai_fixt = { path = "crates/ai_fixt" }
-ai_hash = { path = "crates/ai_hash" }
