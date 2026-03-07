@@ -1,6 +1,6 @@
 [package]
 name = "aingle_zk"
-version = "0.2.1"
+version = "0.3.6"
 description = "Zero-Knowledge Proofs for AIngle - privacy-preserving cryptographic primitives"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -42,7 +42,7 @@ rayon = "1.8"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-bincode = "1.3"
+bincode = { version = "2.0.1", features = ["serde"] }
 
 # Error handling
 thiserror = "2.0"
