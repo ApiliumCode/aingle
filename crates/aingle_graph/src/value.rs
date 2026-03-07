@@ -282,12 +282,14 @@ impl Value {
 
     /// Serializes the `Value` to a byte vector for storage.
     pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serialize(self).unwrap_or_default()
+        bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap_or_default()
     }
 
     /// Deserializes a `Value` from a byte slice.
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        bincode::deserialize(bytes).ok()
+        bincode::serde::decode_from_slice(bytes, bincode::config::standard())
+            .map(|(v, _)| v)
+            .ok()
     }
 
     /// Returns a byte vector suitable for lexicographical sorting in the database indexes.
