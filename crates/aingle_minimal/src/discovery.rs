@@ -7,7 +7,7 @@
 //! - **mDNS**: Service type `_aingle._udp.local.` (feature: mdns)
 //! - **CoAP Multicast**: `/.well-known/core` to 224.0.1.187:5683 (feature: coap)
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
@@ -108,9 +108,7 @@ impl Discovery {
             .collect();
 
         if addresses.is_empty() {
-            return Err(Error::Network(
-                "No network interfaces available".to_string(),
-            ));
+            return Err(Error::network("No network interfaces available"));
         }
 
         // Create service instance name: node_id.service_type
@@ -199,7 +197,7 @@ impl Discovery {
                     return;
                 }
 
-                let addresses: Vec<IpAddr> = info.get_addresses().iter().copied().collect();
+                let addresses: Vec<IpAddr> = info.get_addresses().iter().map(|a| a.to_ip_addr()).collect();
 
                 let mut props = HashMap::new();
                 for prop in info.get_properties().iter() {
@@ -242,6 +240,9 @@ impl Discovery {
             }
             ServiceEvent::SearchStopped(_) => {
                 log::debug!("mDNS search stopped");
+            }
+            _ => {
+                log::trace!("Unhandled mDNS event");
             }
         }
     }

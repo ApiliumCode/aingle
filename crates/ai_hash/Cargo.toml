@@ -1,6 +1,6 @@
 [package]
 name = "ai_hash"
-version = "0.0.3"
+version = "0.3.6"
 authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = [ "aingle", "ai", "hash", "blake", "blake2b" ]
 categories = [ "cryptography" ]
