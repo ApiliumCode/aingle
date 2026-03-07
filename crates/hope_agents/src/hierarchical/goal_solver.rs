@@ -530,13 +530,9 @@ impl Default for GoalTree {
     }
 }
 
-impl Clone for DecompositionRule {
-    fn clone(&self) -> Self {
-        // Note: We can't actually clone the closures, so this is a limitation
-        // In practice, rules should be created fresh rather than cloned
-        panic!("DecompositionRule cannot be cloned due to closure fields")
-    }
-}
+// DecompositionRule intentionally does not implement Clone because its
+// closure fields (ConditionFn, DecomposeFn) are not cloneable.
+// Wrap in Arc if shared ownership is needed.
 
 /// Helper function to check if a goal's type matches a `GoalTypeFilter`.
 fn matches_goal_type(goal_type: &GoalType, filter: &GoalTypeFilter) -> bool {
