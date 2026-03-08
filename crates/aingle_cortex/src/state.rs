@@ -36,6 +36,9 @@ pub struct AppState {
     /// This field is only available if the `auth` feature is enabled.
     #[cfg(feature = "auth")]
     pub user_store: Arc<UserStore>,
+    /// P2P manager for multi-node triple synchronization.
+    #[cfg(feature = "p2p")]
+    pub p2p: Option<Arc<crate::p2p::manager::P2pManager>>,
 }
 
 impl AppState {
@@ -64,6 +67,8 @@ impl AppState {
             audit_log: Arc::new(RwLock::new(AuditLog::default())),
             #[cfg(feature = "auth")]
             user_store,
+            #[cfg(feature = "p2p")]
+            p2p: None,
         }
     }
 
@@ -90,6 +95,8 @@ impl AppState {
             audit_log: Arc::new(RwLock::new(AuditLog::default())),
             #[cfg(feature = "auth")]
             user_store,
+            #[cfg(feature = "p2p")]
+            p2p: None,
         }
     }
 
@@ -116,6 +123,8 @@ impl AppState {
             audit_log: Arc::new(RwLock::new(AuditLog::with_path(10_000, path))),
             #[cfg(feature = "auth")]
             user_store,
+            #[cfg(feature = "p2p")]
+            p2p: None,
         }
     }
 

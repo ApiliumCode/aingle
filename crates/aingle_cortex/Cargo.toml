@@ -18,6 +18,8 @@ rest = []
 graphql = ["dep:async-graphql", "dep:async-graphql-axum"]
 sparql = ["dep:spargebra"]
 auth = ["dep:jsonwebtoken", "dep:argon2"]
+p2p = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:ed25519-dalek", "dep:hex", "dep:dirs"]
+p2p-mdns = ["p2p", "dep:mdns-sd", "dep:if-addrs"]
 full = ["rest", "graphql", "sparql", "auth"]
 
 [[bin]]
@@ -83,6 +85,16 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Rate limiting & shared state
 dashmap = "6.0"
 once_cell = "1.4"
+
+# P2P networking (optional)
+quinn = { version = "0.11", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+rcgen = { version = "0.13", optional = true }
+ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
+hex = { version = "0.4", optional = true }
+dirs = { version = "6", optional = true }
+mdns-sd = { version = "0.18", optional = true }
+if-addrs = { version = "0.13", optional = true }
 
 [dev-dependencies]
 tempfile = "3.26"
