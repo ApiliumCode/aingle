@@ -105,6 +105,11 @@ impl CortexServer {
         &self.state
     }
 
+    /// Returns a mutable reference to the shared `AppState`.
+    pub fn state_mut(&mut self) -> &mut AppState {
+        &mut self.state
+    }
+
     /// Builds the `axum` router, combining all API routes and middleware.
     pub fn build_router(&self) -> Router {
         let mut app: Router<AppState> = Router::new();
