@@ -1,6 +1,6 @@
 [package]
 name = "hope_agents"
-version = "0.3.7"
+version = "0.3.8"
 description = "HOPE Agents: Hierarchical Optimizing Policy Engine for AIngle AI agents"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"
