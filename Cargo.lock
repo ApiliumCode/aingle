@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_ai"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "blake2",
  "candle-core 0.9.2",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_contracts"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "blake3",
  "dashmap 6.1.0",
@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "aingle_graph",
  "aingle_logic",
@@ -139,13 +139,21 @@ dependencies = [
  "blake3",
  "chrono",
  "dashmap 6.1.0",
+ "dirs",
+ "ed25519-dalek",
  "futures",
+ "hex",
+ "if-addrs 0.13.4",
  "jsonwebtoken",
  "log",
+ "mdns-sd",
  "once_cell",
+ "quinn",
  "rand 0.9.2",
+ "rcgen",
  "regex",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "spargebra",
@@ -165,7 +173,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_graph"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "bincode",
  "blake3",
@@ -186,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_logic"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "aingle_graph",
  "chrono",
@@ -202,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_minimal"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "async-io",
  "async-tungstenite",
@@ -244,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_viz"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "aingle_graph",
  "aingle_minimal",
@@ -266,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_zk"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "blake3",
  "bulletproofs",
@@ -2352,6 +2360,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
+dependencies = [
+ "libc",
+ "option-ext",
+ "redox_users",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3628,7 +3657,7 @@ dependencies = [
 
 [[package]]
 name = "hope_agents"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "chrono",
  "criterion",
@@ -5011,6 +5040,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "option-ext"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
 name = "oxilangtag"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5729,6 +5764,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce70a74e890531977d37e532c34d45e9055d2409ed08ddba14529471ed0be16"
 dependencies = [
  "bitflags 2.11.0",
+]
+
+[[package]]
+name = "redox_users"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
+dependencies = [
+ "getrandom 0.2.17",
+ "libredox",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -7010,7 +7056,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "titans_memory"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "blake3",
  "chrono",
