@@ -209,6 +209,36 @@ impl P2pTransport {
         self.connections.len()
     }
 
+    /// Clone the QUIC endpoint (cheap, Arc-based) for use outside the lock.
+    pub fn endpoint_clone(&self) -> Option<Endpoint> {
+        self.endpoint.clone()
+    }
+
+    /// Get the seed hash for handshake verification.
+    pub fn seed_hash(&self) -> &str {
+        &self.seed_hash
+    }
+
+    /// Get the node ID.
+    pub fn node_id_str(&self) -> &str {
+        &self.node_id
+    }
+
+    /// Store an externally-accepted connection.
+    pub fn store_connection(&mut self, addr: SocketAddr, conn: Connection) {
+        self.connections.insert(addr, conn);
+    }
+
+    /// Send a message on a raw connection (not stored in self.connections).
+    pub async fn send_on_conn(conn: &Connection, msg: &P2pMessage) -> Result<(), String> {
+        Self::send_on_connection(conn, msg).await
+    }
+
+    /// Receive a message from a raw connection.
+    pub async fn recv_from_conn(conn: &Connection) -> Result<P2pMessage, String> {
+        Self::recv_from_connection(conn).await
+    }
+
     /// Close all connections and the endpoint.
     pub fn stop(&mut self) {
         for (_, conn) in self.connections.drain() {
@@ -300,10 +330,12 @@ impl P2pTransport {
     }
 
     fn generate_client_config(&self) -> Result<ClientConfig, String> {
-        let crypto = rustls::ClientConfig::builder()
+        let mut crypto = rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(LoggingCertVerifier))
             .with_no_client_auth();
+
+        crypto.alpn_protocols = vec![b"cortex-p2p".to_vec()];
 
         let mut client_config = ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
