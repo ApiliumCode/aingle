@@ -1,6 +1,6 @@
 [package]
 name = "aingle_ai"
-version = "0.3.7"
+version = "0.3.8"
 description = "AI integration layer for AIngle - Titans Memory, Nested Learning, HOPE Agents"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"

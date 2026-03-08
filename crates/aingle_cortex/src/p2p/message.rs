@@ -257,7 +257,7 @@ mod tests {
         let msg = P2pMessage::Hello {
             node_id: "abc123".into(),
             seed_hash: "def456".into(),
-            version: "0.3.7".into(),
+            version: "0.3.8".into(),
             triple_count: 42,
         };
         let bytes = msg.to_bytes();
