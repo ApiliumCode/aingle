@@ -29,6 +29,8 @@
 pub mod audit;
 mod memory;
 mod observability;
+#[cfg(feature = "p2p")]
+mod p2p;
 mod proof;
 mod proof_api;
 mod query;
@@ -63,7 +65,7 @@ use axum::{
 
 /// Create REST API router
 pub fn router() -> Router<AppState> {
-    Router::new()
+    let router = Router::new()
         // Triple CRUD
         .route("/api/v1/triples", post(triples::create_triple))
         .route("/api/v1/triples", get(triples::list_triples))
@@ -104,5 +106,11 @@ pub fn router() -> Router<AppState> {
         // Reputation endpoints (Phase 3)
         .merge(reputation::reputation_router())
         // Audit log endpoints (Phase 6.5)
-        .merge(audit::audit_router())
+        .merge(audit::audit_router());
+
+    // P2P endpoints (feature-gated)
+    #[cfg(feature = "p2p")]
+    let router = router.merge(p2p::p2p_router());
+
+    router
 }
