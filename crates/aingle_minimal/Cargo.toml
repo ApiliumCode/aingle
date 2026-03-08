@@ -1,6 +1,6 @@
 [package]
 name = "aingle_minimal"
-version = "0.3.7"
+version = "0.3.8"
 description = "Ultra-light AIngle node for IoT devices (<1MB RAM)"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"

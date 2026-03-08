@@ -1,6 +1,6 @@
 [package]
 name = "aingle_contracts"
-version = "0.3.7"
+version = "0.3.8"
 description = "Smart Contracts DSL and WASM Runtime for AIngle"
 license = "Apache-2.0"
 repository = "https://github.com/ApiliumCode/aingle"

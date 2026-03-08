@@ -55,8 +55,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
 
+    // Parse P2P flags (feature-gated at compile time).
+    #[cfg(feature = "p2p")]
+    let p2p_config = {
+        let p2p = aingle_cortex::p2p::config::P2pConfig::from_args(&args);
+        if let Err(e) = p2p.validate() {
+            eprintln!("Invalid P2P config: {}", e);
+            std::process::exit(1);
+        }
+        p2p
+    };
+
     // Create and run server
-    let server = CortexServer::new(config)?;
+    #[allow(unused_mut)]
+    let mut server = CortexServer::new(config)?;
+
+    // Start P2P manager if enabled.
+    #[cfg(feature = "p2p")]
+    if p2p_config.enabled {
+        match aingle_cortex::p2p::manager::P2pManager::start(
+            p2p_config.clone(),
+            server.state().clone(),
+        )
+        .await
+        {
+            Ok(manager) => {
+                // SAFETY: we have exclusive access before serving.
+                server.state_mut().p2p = Some(manager);
+                tracing::info!("P2P manager started on port {}", p2p_config.port);
+            }
+            Err(e) => {
+                tracing::error!("P2P manager failed to start: {}", e);
+            }
+        }
+    }
 
     // Set up graceful shutdown
     let shutdown_signal = async {
@@ -84,9 +116,17 @@ fn print_help() {
     println!("    -V, --version        Print version and exit");
     println!("    --help               Print this help message");
     println!();
+    println!("P2P OPTIONS (requires --features p2p):");
+    println!("    --p2p                Enable P2P triple synchronization");
+    println!("    --p2p-port <PORT>    QUIC listen port (default: 19091)");
+    println!("    --p2p-seed <SEED>    Network isolation seed");
+    println!("    --p2p-peer <ADDR>    Manual peer address (repeatable)");
+    println!("    --p2p-mdns           Enable mDNS discovery");
+    println!();
     println!("ENDPOINTS:");
     println!("    REST API:    http://<host>:<port>/api/v1/");
     println!("    GraphQL:     http://<host>:<port>/graphql");
     println!("    SPARQL:      http://<host>:<port>/sparql");
     println!("    Health:      http://<host>:<port>/api/v1/health");
+    println!("    P2P Status:  http://<host>:<port>/api/v1/p2p/status");
 }
