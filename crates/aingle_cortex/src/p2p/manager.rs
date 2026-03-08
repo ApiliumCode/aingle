@@ -195,6 +195,8 @@ impl P2pManager {
             match transport_inner.connect(*peer_addr, triple_count).await {
                 Ok(()) => {
                     tracing::info!("P2P connected to manual peer {}", peer_addr);
+                    // Register in sync manager so gossip can reach this peer.
+                    sync.write().await.get_peer_state(peer_addr);
                     let now_ms = now_millis();
                     let mut ps = peer_store.write().await;
                     ps.add(StoredPeer {
@@ -219,6 +221,7 @@ impl P2pManager {
                     match transport_inner.connect(stored.addr, triple_count).await {
                         Ok(()) => {
                             tracing::info!("P2P reconnected to persisted peer {}", stored.addr);
+                            sync.write().await.get_peer_state(&stored.addr);
                         }
                         Err(e) => {
                             tracing::debug!("P2P persisted peer {} unreachable: {}", stored.addr, e);
@@ -250,6 +253,98 @@ impl P2pManager {
 
         // A4: Health event channel between Task 3 (sender) and Task 6 (receiver).
         let (health_tx, health_rx) = tokio::sync::mpsc::channel::<HealthEvent>(256);
+
+        // ── Task 0: Accept incoming connections ───────────────
+        //
+        // Accepts new QUIC connections without holding the transport lock.
+        // Clones the endpoint (Arc-based, cheap), accepts + handshakes
+        // outside the lock, then briefly write-locks to store the connection.
+        {
+            let transport = transport.clone();
+            let sync = sync.clone();
+            let running = running.clone();
+            let accept_seed_hash = seed_hash.clone();
+            let peer_store = peer_store.clone();
+
+            // Get endpoint clone and node_id once.
+            let (accept_endpoint, accept_node_id) = {
+                let t = transport.read().await;
+                (t.endpoint_clone(), t.node_id_str().to_string())
+            };
+
+            if let Some(endpoint) = accept_endpoint {
+                tasks.push(tokio::spawn(async move {
+                    loop {
+                        if !running.load(Ordering::Relaxed) {
+                            break;
+                        }
+
+                        // Wait for incoming connection WITHOUT holding any lock.
+                        let incoming = match endpoint.accept().await {
+                            Some(inc) => inc,
+                            None => break, // endpoint closed
+                        };
+
+                        let connection = match incoming.await {
+                            Ok(conn) => conn,
+                            Err(e) => {
+                                tracing::debug!("P2P accept handshake error: {}", e);
+                                continue;
+                            }
+                        };
+
+                        let remote = connection.remote_address();
+
+                        // Read Hello from the new connection.
+                        let hello = match P2pTransport::recv_from_conn(&connection).await {
+                            Ok(msg) => msg,
+                            Err(e) => {
+                                tracing::debug!("P2P accept recv error from {}: {}", remote, e);
+                                connection.close(1u32.into(), b"read_error");
+                                continue;
+                            }
+                        };
+
+                        match hello {
+                            P2pMessage::Hello { seed_hash: peer_seed, node_id: peer_nid, .. } => {
+                                let accepted = peer_seed == accept_seed_hash;
+                                let ack = P2pMessage::HelloAck {
+                                    node_id: accept_node_id.clone(),
+                                    accepted,
+                                    reason: if accepted { None } else { Some("seed_mismatch".into()) },
+                                };
+                                if P2pTransport::send_on_conn(&connection, &ack).await.is_err() {
+                                    continue;
+                                }
+
+                                if accepted {
+                                    tracing::info!("P2P accepted connection from {} ({})", remote, &peer_nid[..8.min(peer_nid.len())]);
+                                    // Store connection (brief write lock).
+                                    transport.write().await.store_connection(remote, connection);
+                                    // Register in sync manager for gossip.
+                                    sync.write().await.get_peer_state(&remote);
+                                    // Record in peer store.
+                                    let mut ps = peer_store.write().await;
+                                    ps.add(StoredPeer {
+                                        addr: remote,
+                                        node_id: Some(peer_nid),
+                                        last_connected_ms: now_millis(),
+                                        source: PeerSource::RestApi,
+                                    });
+                                    let _ = ps.save();
+                                } else {
+                                    tracing::warn!("P2P rejected connection from {}: seed mismatch", remote);
+                                    connection.close(1u32.into(), b"seed_mismatch");
+                                }
+                            }
+                            _ => {
+                                connection.close(1u32.into(), b"expected_hello");
+                            }
+                        }
+                    }
+                }));
+            }
+        }
 
         // ── Task 1: Event listener ───────────────────────────
         {
@@ -609,6 +704,7 @@ impl P2pManager {
                                     "P2P discovered and connected to {}",
                                     peer.node_id
                                 );
+                                sync.write().await.get_peer_state(&peer.addr);
                                 // A3: Record mDNS peer
                                 let mut ps = peer_store.write().await;
                                 ps.add(StoredPeer {
@@ -667,6 +763,7 @@ impl P2pManager {
                         match result {
                             Ok(()) => {
                                 tracing::info!("P2P reconnected to manual peer {}", tracker.addr);
+                                sync.write().await.get_peer_state(&tracker.addr);
                                 tracker.record_success();
                             }
                             Err(e) => {
