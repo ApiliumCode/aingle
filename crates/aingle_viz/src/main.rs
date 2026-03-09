@@ -12,8 +12,13 @@ use clap::Parser;
 /// AIngle DAG Visualization Server
 #[derive(Parser, Debug)]
 #[command(name = "aingle-viz")]
-#[command(author = "AIngle Core Dev Team")]
-#[command(version)]
+#[command(author = "Apilium Technologies OÜ <hello@apilium.com>")]
+#[command(version, long_version = concat!(
+    env!("CARGO_PKG_VERSION"), "\n",
+    "Copyright 2019-2026 Apilium Technologies OÜ\n",
+    "License: Apache-2.0 OR Commercial\n",
+    "https://github.com/ApiliumCode/aingle"
+))]
 #[command(about = "Web-based DAG visualization for AIngle", long_about = None)]
 struct Args {
     /// Host to bind to
