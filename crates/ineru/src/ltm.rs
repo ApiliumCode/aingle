@@ -341,6 +341,11 @@ impl LongTermMemory {
         self.memories.len()
     }
 
+    /// Returns all memory entries stored in the LTM.
+    pub fn all_entries(&self) -> Vec<MemoryEntry> {
+        self.memories.values().cloned().collect()
+    }
+
     /// Returns the number of entities in the knowledge graph.
     pub fn entity_count(&self) -> usize {
         self.entities.len()
