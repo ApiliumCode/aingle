@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Fixturator definitions for kitsune_p2p.
 
 use crate::agent_store::AgentInfoSigned;

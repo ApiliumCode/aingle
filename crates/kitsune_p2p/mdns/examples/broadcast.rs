@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use kitsune_p2p_mdns::*;
 
 #[tokio::main(flavor = "multi_thread")]

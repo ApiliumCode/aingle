@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Middleware for Córtex API
 //!
 //! This module provides middleware components for the Córtex API server:

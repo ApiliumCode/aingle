@@ -195,7 +195,7 @@ jobs:
       - name: Test aingle_minimal with all transports
         run: cargo test -p aingle_minimal --features "sqlite,coap,quic,webrtc,rest"
 
-      # Note: Other crates (aingle_graph, hope_agents, titans_memory, etc.)
+      # Note: Other crates (aingle_graph, kaneru, ineru, etc.)
       # will be added to CI once they pass all checks independently
 
   # Security audit for dependencies

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![allow(rustdoc::bare_urls)]
 #![allow(rustdoc::invalid_html_tags)]
 #![allow(rustdoc::invalid_rust_codeblocks)]

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Predicates for semantic relationships.
 //!
 //! A `Predicate` represents the relationship between a subject and an object in a triple.

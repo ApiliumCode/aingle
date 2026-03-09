@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Data structures representing the operations that can be performed within a AIngle SGD.
 //!
 //! See the [item-level documentation for `SgdOp`][SgdOp] for more details.

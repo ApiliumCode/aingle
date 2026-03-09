@@ -1,4 +1,7 @@
-//! REST endpoints for the Titans Memory subsystem.
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
+//! REST endpoints for the Ineru memory subsystem.
 //!
 //! These endpoints expose the STM/LTM dual-memory architecture through
 //! the Cortex REST API, allowing agents to store, recall, consolidate,
@@ -21,7 +24,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use titans_memory::{MemoryEntry, MemoryId, MemoryQuery};
+use ineru::{MemoryEntry, MemoryId, MemoryQuery};
 
 use crate::error::{Error, Result};
 use crate::state::AppState;
@@ -127,7 +130,7 @@ pub async fn remember(
     entry = entry.with_importance(req.importance);
 
     if let Some(emb) = req.embedding {
-        entry = entry.with_embedding(titans_memory::Embedding::new(emb));
+        entry = entry.with_embedding(ineru::Embedding::new(emb));
     }
 
     let mut memory = state.memory.write().await;
@@ -164,8 +167,8 @@ pub async fn recall(
             importance: r.entry.metadata.importance,
             relevance: r.relevance,
             source: match r.source {
-                titans_memory::types::MemorySource::ShortTerm => "ShortTerm".to_string(),
-                titans_memory::types::MemorySource::LongTerm => "LongTerm".to_string(),
+                ineru::types::MemorySource::ShortTerm => "ShortTerm".to_string(),
+                ineru::types::MemorySource::LongTerm => "LongTerm".to_string(),
             },
             created_at: r.entry.metadata.created_at.0.to_string(),
             last_accessed: r.entry.metadata.last_accessed.0.to_string(),

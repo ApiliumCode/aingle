@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! REST and WebSocket API endpoints for the visualization server.
 //!
 //! This module provides the HTTP API layer built on [axum](https://docs.rs/axum).

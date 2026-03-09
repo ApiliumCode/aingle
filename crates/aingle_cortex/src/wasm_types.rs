@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! WASM boundary types for semantic graph and memory operations.
 //!
 //! These types define the interface between zome code and the Cortex

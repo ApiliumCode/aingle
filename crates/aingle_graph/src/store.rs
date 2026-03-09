@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! The core graph storage engine.
 //!
 //! `GraphStore` orchestrates operations between the storage backend and the in-memory triple indexes.

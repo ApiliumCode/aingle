@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Persistent peer storage backed by a JSON file.
 //!
 //! Stores known peers in `{data_dir}/known_peers.json` so they survive restarts.

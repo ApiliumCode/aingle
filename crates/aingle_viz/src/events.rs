@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Real-time event system for broadcasting DAG updates to WebSocket clients.
 //!
 //! This module provides the [`EventBroadcaster`] which manages WebSocket connections

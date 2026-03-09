@@ -1,7 +1,7 @@
 //! AI Agent Zome Template
 //!
 //! A template for AI-integrated agents on the AIngle Semantic DAG.
-//! Supports the Titans Memory Layer for persistent learning.
+//! Supports the Ineru Memory Layer for persistent learning.
 //!
 //! ## Architecture
 //! - Memory: Compressed knowledge graphs in DAG
@@ -13,15 +13,15 @@
 //! # Copy template
 //! cp -r templates/ai-agent my-agent-zome
 //!
-//! # Build with Titans support
-//! cargo build --target wasm32-unknown-unknown --features titans
+//! # Build with Ineru support
+//! cargo build --target wasm32-unknown-unknown --features ineru
 //! ```
 
 use adk::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
-// Memory Types (Titans-inspired)
+// Memory Types (Ineru-inspired)
 // ============================================================================
 
 /// Short-term memory for recent context

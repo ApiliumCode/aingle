@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! A UTC timestamp for use in AIngle's headers.
 //!
 //! Includes a struct that gives a uniform well-ordered byte representation

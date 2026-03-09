@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::{source_chain::SourceChainResult, test_utils::test_cell_env};
 use ai_hash::HeaderHash;
 use aingle_sqlite::prelude::*;

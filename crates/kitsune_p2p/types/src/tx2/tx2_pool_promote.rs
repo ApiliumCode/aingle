@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![allow(clippy::new_ret_no_self)]
 #![allow(clippy::manual_async_fn)]
 #![allow(clippy::too_many_arguments)]

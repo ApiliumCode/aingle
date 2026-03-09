@@ -1,7 +1,10 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! AI Service for the AIngle Conductor
 //!
 //! This module provides AI-powered validation and consensus features
-//! using the aingle_ai crate (Titans Memory, Nested Learning, HOPE Agents).
+//! using the aingle_ai crate (Ineru, Nested Learning, Kaneru).
 
 #[cfg(feature = "ai-integration")]
 use aingle_ai::{emergent::AiLayer, AiConfig, AiTransaction, ConsensusLevel, ValidationPrediction};
@@ -47,7 +50,7 @@ use tracing::{debug, info, trace, warn};
 /// AI Service for intelligent validation and consensus
 #[cfg(feature = "ai-integration")]
 pub struct AiService {
-    /// Unified AI layer (Titans + Nested Learning + Emergent)
+    /// Unified AI layer (Ineru + Nested Learning + Emergent)
     ai_layer: Arc<RwLock<AiLayer>>,
 
     /// Configuration
@@ -225,8 +228,8 @@ impl AiService {
         let ai_layer = self.ai_layer.read();
         let stats = ai_layer.stats();
         AiLayerStatsSnapshot {
-            titans_short_term_size: stats.titans_short_term_size,
-            titans_long_term_size: stats.titans_long_term_size,
+            ineru_short_term_size: stats.ineru_short_term_size,
+            ineru_long_term_size: stats.ineru_long_term_size,
             nested_tx_count: stats.nested_tx_count,
             nested_block_count: stats.nested_block_count,
         }
@@ -284,10 +287,10 @@ impl AiService {
 /// Snapshot of AI layer statistics
 #[derive(Debug, Clone)]
 pub struct AiLayerStatsSnapshot {
-    /// Titans short-term memory size
-    pub titans_short_term_size: usize,
-    /// Titans long-term memory size
-    pub titans_long_term_size: usize,
+    /// Ineru short-term memory size
+    pub ineru_short_term_size: usize,
+    /// Ineru long-term memory size
+    pub ineru_long_term_size: usize,
     /// Nested learning transaction count
     pub nested_tx_count: u64,
     /// Nested learning block count

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-09
+
+### Changed
+- Rename `titans_memory` crate to `ineru` — Ineru neural-inspired memory system
+- Rename `hope_agents` crate to `kaneru` — Kaneru multi-agent execution system
+- Rename `TitansMemory` → `IneruMemory`, `TitansConfig` → `IneruConfig`
+- Rename `HopeAgent` → `KaneruAgent`, `HopeConfig` → `KaneruConfig`
+- Move `crate::titans` module to `crate::ineru` in `aingle_ai`
+- Move `crate::hope` module to `crate::kaneru` in `aingle_ai`
+- Bump all main crate versions to 0.4.0 (unified version scheme)
+- Update all internal dependency version specs to match
+- Standardize copyright headers and license metadata across all crates
+
 ## [0.1.0] - 2024-12-17
 
 ### Technical Requirements
@@ -43,9 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Anonymous credentials
 
 #### AI & Machine Learning
-- `aingle_ai` - AI integration layer (Titans Memory architecture)
-- `titans_memory` - Neural-inspired memory system (STM/LTM)
-- `hope_agents` - HOPE Agent framework
+- `aingle_ai` - AI integration layer (Ineru architecture)
+- `ineru` - Ineru neural-inspired memory system (STM/LTM)
+- `kaneru` - Kaneru agent framework
   - Q-Learning
   - DQN (Deep Q-Network)
   - PPO (Proximal Policy Optimization)

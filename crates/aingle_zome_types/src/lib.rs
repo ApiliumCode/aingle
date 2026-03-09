@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! AIngle Zome Types: only the types needed by AIngle application
 //! developers to use in their Zome code, and nothing more.
 //!

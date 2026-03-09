@@ -34,11 +34,11 @@ Build an IoT sensor network:
 
 ---
 
-### 3. [AI-Powered App with HOPE Agents](./ai-powered-app.md)
+### 3. [AI-Powered App with Kaneru](./ai-powered-app.md)
 **Time:** 90-120 minutes | **Level:** Advanced
 
 Add artificial intelligence to your applications:
-- Configure and train HOPE Agents
+- Configure and train Kaneru agents
 - Q-Learning and reinforcement learning
 - Hierarchical goals and planning
 - Automatic anomaly detection
@@ -137,7 +137,7 @@ Smart contracts in AIngle
 |----------|---------------|
 | Getting Started | Nodes, DAG, Entries, Hash, mDNS, Gossip |
 | IoT Sensor Network | CoAP, Minimal node, Power modes, Batch readings |
-| AI-Powered App | HOPE Agents, Q-Learning, Hierarchical goals, Anomaly detection |
+| AI-Powered App | Kaneru, Q-Learning, Hierarchical goals, Anomaly detection |
 | Semantic Queries | REST API, GraphQL, SPARQL, WebSocket, Filtering |
 | Privacy with ZK | Commitments, Range proofs, Schnorr proofs, Batch verification |
 | DAG Visualization | D3.js, Force-directed layout, Graph export, Real-time updates |
@@ -224,7 +224,7 @@ Found an error in a tutorial or want to add a new one?
 - Bilingual structure: English (main) + Spanish (es/)
 - Updated Getting Started tutorial
 - Created complete IoT Sensor Network tutorial
-- Created complete AI with HOPE Agents tutorial
+- Created complete AI with Kaneru tutorial
 - Created complete Semantic Queries tutorial
 - Created complete Privacy with ZK tutorial
 - Updated DAG Visualization tutorial

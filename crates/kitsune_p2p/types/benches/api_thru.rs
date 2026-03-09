@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![allow(irrefutable_let_patterns)]
 use criterion::{/*black_box,*/ criterion_group, criterion_main, Criterion};
 

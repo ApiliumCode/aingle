@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 /// Error type for AIngle P2p.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

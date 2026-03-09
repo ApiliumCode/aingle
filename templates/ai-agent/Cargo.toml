@@ -16,4 +16,4 @@ serde_json = "1"
 [features]
 default = []
 mock = ["adk/mock"]
-titans = []  # Enable Titans Memory Layer
+ineru = []  # Enable Ineru Memory Layer

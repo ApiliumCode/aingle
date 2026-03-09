@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Module containing the AIngleP2p actor definition.
 #![allow(clippy::too_many_arguments)]
 

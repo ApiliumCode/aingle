@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use aingle_p2p::AIngleP2pCell;
 use aingle_state::host_fn_workspace::HostFnWorkspace;
 use aingle_types::prelude::*;

@@ -1,8 +1,8 @@
 [package]
 name = "aingle_zk"
-version = "0.3.8"
+version = "0.4.0"
 description = "Zero-Knowledge Proofs for AIngle - privacy-preserving cryptographic primitives"
-license = "Apache-2.0"
+license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
 homepage = "https://apilium.com"
 documentation = "https://docs.rs/aingle_zk"
@@ -32,9 +32,8 @@ sha2 = "0.10"
 blake3 = "1.8"
 
 # Randomness
-# Note: Keeping rand 0.8 for compatibility with curve25519-dalek's rand_core 0.6
+# Pinned to rand 0.8 — curve25519-dalek 4.x requires rand_core 0.6
 rand = "0.8"
-rand_core = "0.6"
 
 # Parallelization for batch verification
 rayon = "1.8"

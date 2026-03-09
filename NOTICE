@@ -1,7 +1,71 @@
-AIngle
-Copyright 2019-2025 Apilium Technologies
+AIngle (TM)
+Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
 
 This product includes software developed at
 Apilium Technologies (https://apilium.com/).
 
 Licensed under the Apache License, Version 2.0.
+
+================================================================================
+TRADEMARKS
+================================================================================
+
+"AIngle", "AIngle Cortex", "Ineru", "Kaneru", and the AIngle logo
+are trademarks of Apilium Technologies OÜ. These trademarks may not be used
+in connection with any product or service that is not provided by Apilium
+Technologies, in any manner that is likely to cause confusion, or in any
+manner that disparages or discredits Apilium Technologies.
+
+Use of these trademarks to describe the origin of this software, as required
+by the Apache License, is permitted. Any other use requires prior written
+permission from Apilium Technologies OÜ.
+
+================================================================================
+PROPRIETARY TECHNOLOGIES
+================================================================================
+
+The following technologies, architectures, and methodologies embodied in this
+software are original works of Apilium Technologies OÜ and are protected under
+applicable copyright and intellectual property laws:
+
+  - Semantic DAG Architecture: Content-addressed directed acyclic graph with
+    integrated RDF triple store and provenance tracking
+
+  - AIngle Cortex: Cryptographic semantic layer combining knowledge graphs,
+    reasoning engines, and zero-knowledge proof systems
+
+  - Kaneru: Unified Multi-Agent Execution System for autonomous
+    goal decomposition and multi-step reasoning
+
+  - Ineru: Neural-inspired persistence system with attention-weighted
+    short-term memory and semantic long-term consolidation
+
+  - Proof-of-Logic Engine: Forward and backward chaining inference engine
+    with ontological consistency validation
+
+  - Zero-Knowledge Integration: Pedersen commitments, Schnorr signatures,
+    and Bulletproofs range proofs for verifiable computation
+
+  - Nested Learning: Meta-optimization framework for adaptive model behavior
+
+  - AIngle Minimal: Lightweight edge runtime for IoT and embedded devices
+
+While the source code is licensed under Apache License 2.0, the architectural
+designs, algorithms, and integration patterns constitute trade secrets and
+proprietary know-how of Apilium Technologies OÜ.
+
+================================================================================
+CONTACT
+================================================================================
+
+Apilium Technologies OÜ
+Tallinn, Estonia
+Registration: 17409213
+
+Legal inquiries: legal@apilium.com
+Licensing inquiries: partners@apilium.com
+Security reports: security@apilium.com
+General: hello@apilium.com
+
+https://apilium.com
+https://github.com/ApiliumCode/aingle

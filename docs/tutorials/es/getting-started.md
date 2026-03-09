@@ -393,7 +393,7 @@ let bootstrap_nodes = vec!["quic://192.168.1.100:8443"];
 Ahora que tienes un nodo funcionando, puedes explorar:
 
 1. **[Tutorial de Red de Sensores IoT](./iot-sensor-network.md)**: Configura dispositivos IoT que publican datos al DAG
-2. **[Tutorial de IA con HOPE Agents](./ai-powered-app.md)**: Añade capacidades de aprendizaje automático
+2. **[Tutorial de IA con Kaneru](./ai-powered-app.md)**: Añade capacidades de aprendizaje automático
 3. **[Tutorial de Consultas Semánticas](./semantic-queries.md)**: Consulta datos con GraphQL y SPARQL
 4. **[Tutorial de Visualización](./dag-visualization.md)**: Visualiza el DAG en tiempo real
 

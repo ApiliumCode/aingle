@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! # Nested Learning Layer
 //!
 //! Multi-level optimization system based on Nested Learning paper (OpenReview nbMeRvNb7A).

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! AIngle Graph - Native Semantic GraphDB
 //!
 //! A high-performance triple store designed for the AIngle distributed ledger.

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::prelude::*;
 
 /// Sign something that is serializable using the private key for the passed public key.

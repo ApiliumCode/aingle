@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::test_utils::host_fn_caller::*;
 use crate::test_utils::setup_app;
 use crate::test_utils::wait_for_integration;

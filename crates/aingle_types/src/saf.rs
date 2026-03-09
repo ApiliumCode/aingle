@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! saf is a library for working with aingle saf files/entries.
 //!
 //! It includes utilities for representing saf structures in memory,

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! # Persisted State building blocks
 //!
 //! This crate provides a few types for working with databases. The types build upon those found in [aingle_sqlite::buffer].

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 /// A shrinkwrapped type with a Drop impl provided as a simple closure
 #[derive(shrinkwraprs::Shrinkwrap)]
 #[shrinkwrap(mutable, unsafe_ignore_visibility)]

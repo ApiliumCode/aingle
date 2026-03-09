@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use aingle::conductor::ConductorHandle;
 use aingle_websocket::WebsocketReceiver;
 use aingle_websocket::WebsocketSender;

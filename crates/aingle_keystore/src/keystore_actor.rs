@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! This module contains all the types needed to implement a keystore actor.
 //! We will re-export the main KeystoreSender usable by clients at the lib.
 

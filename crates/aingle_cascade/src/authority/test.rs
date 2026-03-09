@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use super::*;
 use crate::authority::handle_get_agent_activity;
 use crate::test_utils::*;

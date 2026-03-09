@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Rule definitions for the Proof-of-Logic engine
 //!
 //! Rules are the fundamental building blocks of logical validation.

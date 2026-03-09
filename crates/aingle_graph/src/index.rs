@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Triple indexes for efficient querying
 //!
 //! Implements SPO, POS, and OSP indexes for O(1) lookups:

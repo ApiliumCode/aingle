@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Types related to the genesis process whereby a user commits their initial
 //! elements and validates them to the best of their ability. Full validation
 //! may not be possible if network access is required, so they perform a

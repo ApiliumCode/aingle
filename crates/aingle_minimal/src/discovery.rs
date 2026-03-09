@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Multi-protocol peer discovery for AIngle nodes
 //!
 //! Supports both mDNS/DNS-SD and CoAP multicast discovery for automatic
@@ -7,7 +10,9 @@
 //! - **mDNS**: Service type `_aingle._udp.local.` (feature: mdns)
 //! - **CoAP Multicast**: `/.well-known/core` to 224.0.1.187:5683 (feature: coap)
 
-use crate::error::{Error, Result};
+use crate::error::Result;
+#[cfg(feature = "mdns")]
+use crate::error::Error;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};

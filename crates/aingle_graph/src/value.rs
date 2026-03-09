@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Defines the `Value` type for the object of a semantic triple.
 //!
 //! A `Value` can be either a literal (like a string, number, or boolean) or a

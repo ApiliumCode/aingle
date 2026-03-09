@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Sled storage backend
 //!
 //! Provides persistent, transactional storage using the Sled embedded database.

@@ -42,7 +42,7 @@ Ultra-lightweight AIngle node for IoT devices with **< 1MB RAM** footprint. Supp
 | `ble-esp32` | Bluetooth LE (ESP32) | Embedded IoT |
 | `webrtc` | WebRTC transport | Browser nodes |
 | `hw_wallet` | Ledger/Trezor support | Secure signing |
-| `smart_agents` | HOPE AI agents | Edge intelligence |
+| `smart_agents` | Kaneru AI agents | Edge intelligence |
 
 ## Quick Start
 

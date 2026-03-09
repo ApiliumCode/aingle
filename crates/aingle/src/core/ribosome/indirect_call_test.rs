@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Minimal test to debug indirect call type mismatch
 //!
 //! This test creates a minimal WASM module to verify if the issue

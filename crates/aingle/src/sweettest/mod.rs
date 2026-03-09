@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! sweettest = Streamlined AIngle test utils with lots of added sugar
 //!
 //! Features:

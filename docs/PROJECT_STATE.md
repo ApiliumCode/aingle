@@ -72,12 +72,12 @@
 
 | Componente | Ubicación | Estado | LOC | Tests | Notas |
 |------------|-----------|--------|-----|-------|-------|
-| HOPE Agents | `hope_agents/` | ✅ 100% | 8,440 | 133 | Learning Engine, Hierarchical Goals, Predictive Model |
-| Titans Memory | `aingle_ai/titans/` | ✅ 100% | 1,200+ | 45+ | STM+LTM completo |
+| Kaneru | `kaneru/` | ✅ 100% | 8,440 | 133 | Learning Engine, Hierarchical Goals, Predictive Model |
+| Ineru | `aingle_ai/ineru/` | ✅ 100% | 1,200+ | 45+ | STM+LTM completo |
 | Nested Learning | `aingle_ai/nested_learning/` | ✅ 100% | 900+ | 32+ | Meta-optimization completa |
 | Emergent | `aingle_ai/emergent/` | ✅ 100% | 650+ | 28+ | Redes neuronales emergentes funcionales |
 
-#### HOPE Agents - Detalle (100% Complete - 133 Tests, 8,440 LOC)
+#### Kaneru - Detalle (100% Complete - 133 Tests, 8,440 LOC)
 - ✅ Learning Engine (2,100 LOC): Q-Learning, SARSA, TD(λ), Experience Replay, Deep Q-Networks
 - ✅ Hierarchical Goal Solver (2,200 LOC): Goal decomposition, conflict detection, priority management
 - ✅ Predictive Model (1,800 LOC): Anomaly detection, state prediction, pattern recognition
@@ -156,8 +156,8 @@ aingle/crates/
 │
 ├── AI/ML
 │   ├── aingle_ai/           # AI integration layer
-│   ├── hope_agents/         # HOPE Agents framework
-│   └── titans_memory/       # Dual memory system
+│   ├── kaneru/         # Kaneru framework
+│   └── ineru/       # Dual memory system
 │
 ├── Advanced
 │   ├── aingle_cortex/       # REST/GraphQL/SPARQL API
@@ -240,7 +240,7 @@ aingle/crates/
 
 ### Diciembre 17, 2025 - Proyecto Completado al 100%
 
-#### 1. HOPE Agents Framework (100% - 133 Tests, 8,440 LOC)
+#### 1. Kaneru Framework (100% - 133 Tests, 8,440 LOC)
 - ✅ Learning Engine (2,100 LOC): Q-Learning, SARSA, TD(λ), Experience Replay, Deep Q-Networks
 - ✅ Hierarchical Goal Solver (2,200 LOC): Descomposición jerárquica, detección de conflictos, priority management
 - ✅ Predictive Model (1,800 LOC): Detección de anomalías, predicción de estados, pattern recognition
@@ -304,7 +304,7 @@ aingle/crates/
 
 ### Completado al 100%
 
-- ✅ HOPE Agents Framework: 100% (8,440 LOC, 133 tests)
+- ✅ Kaneru Framework: 100% (8,440 LOC, 133 tests)
 - ✅ Cortex API: 100% (6,087 LOC, 74 tests)
 - ✅ ZK Proofs: 100% (3,908 LOC, 81 tests)
 - ✅ DAG Visualization: 100% (4,540 LOC, 15 tests)

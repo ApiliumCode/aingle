@@ -112,6 +112,7 @@ llm-instructions.md
 # ===========================================
 *.profraw
 *.profdata
+aingle_iot.db
 
 # Logs
 *.log

@@ -1,10 +1,13 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! # AIngle AI Integration Layer
 //!
 //! This crate provides AI capabilities for AIngle nodes, implementing:
 //!
-//! - **Titans Memory**: Dual memory system (short-term + long-term) for pattern learning
+//! - **Ineru**: Dual memory system (short-term + long-term) for pattern learning
 //! - **Nested Learning**: Multi-level optimization for consensus and validation
-//! - **HOPE Agents**: Self-modifying nodes with continual learning
+//! - **Kaneru**: Self-modifying nodes with continual learning
 //! - **Emergent Capabilities**: Predictive validation, adaptive consensus
 //!
 //! ## Architecture
@@ -17,7 +20,7 @@
 //!                              │
 //!                              ▼
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │                    TITANS MEMORY LAYER                      │
+//! │                     INERU MEMORY LAYER                      │
 //! │               (Dual memory per node)                        │
 //! │  ┌──────────────────┐    ┌──────────────────┐              │
 //! │  │ SHORT-TERM       │◄──►│ LONG-TERM        │              │
@@ -27,7 +30,7 @@
 //!                              │
 //!                              ▼
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │                    HOPE AGENT LAYER                         │
+//! │                    KANERU AGENT LAYER                        │
 //! │            (Self-modifying nodes)                           │
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
@@ -41,11 +44,11 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use aingle_ai::titans::{TitansMemory, TitansConfig};
+//! use aingle_ai::ineru::{IneruMemory, IneruConfig};
 //!
-//! // Create Titans memory system
-//! let config = TitansConfig::default();
-//! let mut memory = TitansMemory::new(config);
+//! // Create Ineru memory system
+//! let config = IneruConfig::default();
+//! let mut memory = IneruMemory::new(config);
 //!
 //! // Process transactions
 //! // let result = memory.process(&transaction);
@@ -55,9 +58,9 @@
 #![warn(clippy::all)]
 
 pub mod emergent;
-pub mod hope;
+pub mod kaneru;
 pub mod nested_learning;
-pub mod titans;
+pub mod ineru;
 
 mod config;
 mod error;
@@ -72,7 +75,7 @@ pub mod prelude {
     pub use crate::config::AiConfig;
     pub use crate::emergent::{AdaptiveConsensus, PredictiveValidator};
     pub use crate::error::{AiError, AiResult};
-    pub use crate::hope::{HopeAgent, HopeConfig};
+    pub use crate::kaneru::{KaneruAgent, KaneruConfig};
     pub use crate::nested_learning::{NestedConfig, NestedLearning};
-    pub use crate::titans::{LongTermMemory, ShortTermMemory, TitansConfig, TitansMemory};
+    pub use crate::ineru::{LongTermMemory, ShortTermMemory, IneruConfig, IneruMemory};
 }

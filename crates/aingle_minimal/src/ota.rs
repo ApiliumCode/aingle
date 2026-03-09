@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Over-The-Air (OTA) Update Manager for IoT Devices
 //!
 //! Provides secure firmware updates over the network with integrity verification,

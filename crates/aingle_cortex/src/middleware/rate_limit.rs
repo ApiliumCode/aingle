@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Rate limiting middleware using Token Bucket algorithm
 //!
 //! This module implements a token bucket rate limiter that tracks requests per IP address.
