@@ -100,7 +100,7 @@ btleplug = { version = "0.11", optional = true }
 uuid = { version = "1.21", optional = true }
 
 # ESP32 NimBLE for embedded BLE (requires ESP-IDF)
-esp32-nimble = { version = "0.8", optional = true }
+esp32-nimble = { version = "0.11", optional = true }
 
 # Hardware wallet support (Ledger)
 ledger-transport = { version = "0.11", optional = true }
