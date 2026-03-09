@@ -91,6 +91,26 @@ pub struct ComponentStatus {
     pub message: Option<String>,
 }
 
+/// Flush response
+#[derive(Debug, Serialize)]
+pub struct FlushResponse {
+    /// Whether the flush was successful
+    pub ok: bool,
+}
+
+/// Flush graph database and Ineru memory to disk.
+///
+/// POST /api/v1/flush
+pub async fn flush_data(State(state): State<AppState>) -> Result<Json<FlushResponse>> {
+    // Flush graph
+    {
+        let graph = state.graph.read().await;
+        graph.flush()?;
+    }
+
+    Ok(Json(FlushResponse { ok: true }))
+}
+
 /// Health check endpoint
 ///
 /// GET /api/v1/health

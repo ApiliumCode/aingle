@@ -1,6 +1,6 @@
 [package]
 name = "aingle_cortex"
-version = "0.4.0"
+version = "0.4.1"
 description = "Córtex API - REST/GraphQL/SPARQL interface for AIngle semantic graphs"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -18,7 +18,7 @@ rest = []
 graphql = ["dep:async-graphql", "dep:async-graphql-axum"]
 sparql = ["dep:spargebra"]
 auth = ["dep:jsonwebtoken", "dep:argon2"]
-p2p = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:ed25519-dalek", "dep:hex", "dep:dirs"]
+p2p = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:ed25519-dalek", "dep:hex"]
 p2p-mdns = ["p2p", "dep:mdns-sd", "dep:if-addrs"]
 full = ["rest", "graphql", "sparql", "auth"]
 
@@ -28,7 +28,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Core AIngle crates
-aingle_graph = { version = "0.4", path = "../aingle_graph" }
+aingle_graph = { version = "0.4", path = "../aingle_graph", features = ["sled-backend"] }
 aingle_logic = { version = "0.4", path = "../aingle_logic" }
 aingle_zk = { version = "0.4", path = "../aingle_zk" }
 ineru = { version = "0.4", path = "../ineru" }
@@ -92,7 +92,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rcgen = { version = "0.13", optional = true }
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
 hex = { version = "0.4", optional = true }
-dirs = { version = "6", optional = true }
+dirs = "6"
 mdns-sd = { version = "0.18", optional = true }
 if-addrs = { version = "0.13", optional = true }
 

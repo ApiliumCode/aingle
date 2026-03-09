@@ -5,6 +5,7 @@
 
 use aingle_graph::GraphDB;
 use aingle_logic::RuleEngine;
+use std::path::Path;
 use std::sync::Arc;
 use ineru::IneruMemory;
 use tokio::sync::RwLock;
@@ -129,6 +130,103 @@ impl AppState {
             #[cfg(feature = "p2p")]
             p2p: None,
         }
+    }
+
+    /// Creates a new `AppState` with a configurable database path and optional audit log.
+    ///
+    /// - `":memory:"` — volatile in-memory storage.
+    /// - Any other path — Sled-backed persistent storage.
+    pub fn with_db_path(
+        db_path: &str,
+        audit_log_path: Option<std::path::PathBuf>,
+    ) -> crate::error::Result<Self> {
+        let graph = if db_path == ":memory:" {
+            GraphDB::memory()?
+        } else {
+            // Ensure the parent directory exists
+            if let Some(parent) = Path::new(db_path).parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            GraphDB::sled(db_path)?
+        };
+
+        let logic = RuleEngine::new();
+
+        // Load Ineru snapshot if available next to the graph database
+        let memory = if db_path != ":memory:" {
+            let snapshot_path = Path::new(db_path)
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join("ineru.snapshot");
+            if snapshot_path.exists() {
+                match IneruMemory::load_from_file(&snapshot_path) {
+                    Ok(mem) => {
+                        log::info!("Loaded Ineru snapshot from {}", snapshot_path.display());
+                        mem
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load Ineru snapshot: {}. Starting fresh.", e);
+                        IneruMemory::agent_mode()
+                    }
+                }
+            } else {
+                IneruMemory::agent_mode()
+            }
+        } else {
+            IneruMemory::agent_mode()
+        };
+
+        let audit_log = if let Some(path) = audit_log_path {
+            AuditLog::with_path(10_000, path)
+        } else {
+            AuditLog::default()
+        };
+
+        #[cfg(feature = "auth")]
+        let user_store = {
+            let store = Arc::new(UserStore::new());
+            let _ = store.init_default_admin();
+            store
+        };
+
+        Ok(Self {
+            graph: Arc::new(RwLock::new(graph)),
+            logic: Arc::new(RwLock::new(logic)),
+            memory: Arc::new(RwLock::new(memory)),
+            broadcaster: Arc::new(EventBroadcaster::new()),
+            proof_store: Arc::new(ProofStore::new()),
+            sandbox_manager: Arc::new(SandboxManager::new()),
+            audit_log: Arc::new(RwLock::new(audit_log)),
+            #[cfg(feature = "auth")]
+            user_store,
+            #[cfg(feature = "p2p")]
+            p2p: None,
+        })
+    }
+
+    /// Flushes the graph database and saves the Ineru memory snapshot to disk.
+    ///
+    /// This should be called before shutdown or binary updates to ensure
+    /// no data is lost.
+    pub async fn flush(&self, snapshot_dir: Option<&Path>) -> crate::error::Result<()> {
+        // Flush graph database
+        {
+            let graph = self.graph.read().await;
+            graph.flush()?;
+        }
+
+        // Save Ineru memory snapshot
+        if let Some(dir) = snapshot_dir {
+            let snapshot_path = dir.join("ineru.snapshot");
+            let memory = self.memory.read().await;
+            if let Err(e) = memory.save_to_file(&snapshot_path) {
+                log::warn!("Failed to save Ineru snapshot: {}", e);
+            } else {
+                log::info!("Ineru snapshot saved to {}", snapshot_path.display());
+            }
+        }
+
+        Ok(())
     }
 
     /// Returns an internal Cortex client configured for same-process access.

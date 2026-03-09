@@ -78,9 +78,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/query", post(query::query_pattern))
         .route("/api/v1/query/subjects", get(query::list_subjects))
         .route("/api/v1/query/predicates", get(query::list_predicates))
-        // Stats
+        // Stats & Management
         .route("/api/v1/stats", get(stats::get_stats))
         .route("/api/v1/health", get(stats::health_check))
+        .route("/api/v1/flush", post(stats::flush_data))
         // Validation/Proofs (legacy)
         .route("/api/v1/validate", post(proof::validate_triples))
         .route("/api/v1/proof/{hash}", get(proof::get_proof))

@@ -554,6 +554,28 @@ impl GraphDB {
         self.store.stats()
     }
 
+    /// Flushes any buffered writes to the underlying storage backend.
+    ///
+    /// For persistent backends (e.g., Sled), this ensures all data is
+    /// durably written to disk. For in-memory backends, this is a no-op.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "sled-backend")]
+    /// # fn example() -> Result<(), aingle_graph::Error> {
+    /// use aingle_graph::GraphDB;
+    ///
+    /// let db = GraphDB::sled("./my_graph.db")?;
+    /// // ... insert some triples ...
+    /// db.flush()?; // Ensure data is persisted
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn flush(&self) -> Result<()> {
+        self.store.flush()
+    }
+
     /// Returns the total number of triples in the graph.
     ///
     /// # Examples

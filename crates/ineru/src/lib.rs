@@ -337,6 +337,70 @@ pub struct MemoryStats {
     pub total_memory_bytes: usize,
 }
 
+// ---------------------------------------------------------------------------
+// Snapshot persistence
+// ---------------------------------------------------------------------------
+
+/// A serializable snapshot of the Ineru memory state.
+///
+/// Used to persist STM + LTM contents across process restarts.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct IneruSnapshot {
+    stm_entries: Vec<MemoryEntry>,
+    ltm_entries: Vec<MemoryEntry>,
+    config: MemoryConfig,
+}
+
+impl IneruMemory {
+    /// Exports the current memory state as a JSON byte vector.
+    pub fn export_snapshot(&self) -> Result<Vec<u8>> {
+        let stm_entries = self.stm.all_entries();
+        let ltm_entries = self.ltm.all_entries();
+
+        let snapshot = IneruSnapshot {
+            stm_entries,
+            ltm_entries,
+            config: self.config.clone(),
+        };
+
+        serde_json::to_vec(&snapshot).map_err(|e| Error::internal(format!("snapshot export: {}", e)))
+    }
+
+    /// Imports a memory state from a JSON byte slice.
+    pub fn import_snapshot(data: &[u8]) -> Result<Self> {
+        let snapshot: IneruSnapshot = serde_json::from_slice(data)
+            .map_err(|e| Error::internal(format!("snapshot import: {}", e)))?;
+
+        let mut memory = Self::new(snapshot.config);
+
+        // Restore STM entries
+        for entry in snapshot.stm_entries {
+            let _ = memory.stm.store(entry);
+        }
+
+        // Restore LTM entries
+        for entry in snapshot.ltm_entries {
+            let _ = memory.ltm.store(entry);
+        }
+
+        Ok(memory)
+    }
+
+    /// Saves the current memory state to a file.
+    pub fn save_to_file(&self, path: &std::path::Path) -> Result<()> {
+        let data = self.export_snapshot()?;
+        std::fs::write(path, data)
+            .map_err(|e| Error::internal(format!("snapshot write: {}", e)))
+    }
+
+    /// Loads a memory state from a file.
+    pub fn load_from_file(path: &std::path::Path) -> Result<Self> {
+        let data = std::fs::read(path)
+            .map_err(|e| Error::internal(format!("snapshot read: {}", e)))?;
+        Self::import_snapshot(&data)
+    }
+}
+
 impl Default for IneruMemory {
     fn default() -> Self {
         Self::new(MemoryConfig::default())

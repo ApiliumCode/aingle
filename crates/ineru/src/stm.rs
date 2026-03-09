@@ -255,6 +255,11 @@ impl ShortTermMemory {
         Ok(())
     }
 
+    /// Returns all entries currently in the STM.
+    pub fn all_entries(&self) -> Vec<MemoryEntry> {
+        self.entries.values().cloned().collect()
+    }
+
     /// Returns the number of entries currently in the STM.
     pub fn len(&self) -> usize {
         self.entries.len()
