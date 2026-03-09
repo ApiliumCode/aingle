@@ -4,7 +4,7 @@
 //! SPARQL query parser
 
 use crate::error::{Error, Result};
-use spargebra::Query;
+use spargebra::{Query, SparqlParser};
 
 /// Parsed SPARQL query
 #[derive(Debug)]
@@ -28,7 +28,8 @@ pub enum QueryType {
 
 /// Parse a SPARQL query string
 pub fn parse_sparql(query: &str) -> Result<ParsedQuery> {
-    let parsed = Query::parse(query, None)
+    let parsed = SparqlParser::new()
+        .parse_query(query)
         .map_err(|e| Error::SparqlParseError(format!("Failed to parse SPARQL: {}", e)))?;
 
     let query_type = match &parsed {
