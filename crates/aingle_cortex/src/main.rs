@@ -119,12 +119,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Set up graceful shutdown with data flush
+    // Set up graceful shutdown with data flush (handles both SIGINT and SIGTERM)
     let shutdown_signal = async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to install CTRL+C handler");
-        tracing::info!("Shutdown signal received — flushing data...");
+        let ctrl_c = tokio::signal::ctrl_c();
+
+        #[cfg(unix)]
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("Failed to install SIGTERM handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {
+                tracing::info!("SIGINT received — flushing data...");
+            }
+            _ = terminate => {
+                tracing::info!("SIGTERM received — flushing data...");
+            }
+        }
 
         // Flush graph database and save Ineru snapshot
         if let Err(e) = state_for_shutdown
