@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! All the components you need to build a AIngle Conductor
 
 // Toggle this to see what needs to be eventually refactored (as warnings).

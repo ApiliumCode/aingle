@@ -1,9 +1,12 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! The shared application state for the Córtex API server.
 
 use aingle_graph::GraphDB;
 use aingle_logic::RuleEngine;
 use std::sync::Arc;
-use titans_memory::TitansMemory;
+use ineru::IneruMemory;
 use tokio::sync::RwLock;
 
 #[cfg(feature = "auth")]
@@ -21,8 +24,8 @@ pub struct AppState {
     pub graph: Arc<RwLock<GraphDB>>,
     /// A thread-safe reference to the logic and validation engine.
     pub logic: Arc<RwLock<RuleEngine>>,
-    /// The Titans dual-memory system (STM + LTM with consolidation).
-    pub memory: Arc<RwLock<TitansMemory>>,
+    /// The Ineru dual-memory system (STM + LTM with consolidation).
+    pub memory: Arc<RwLock<IneruMemory>>,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
@@ -47,7 +50,7 @@ impl AppState {
     pub fn new() -> Self {
         let graph = GraphDB::memory().expect("Failed to create in-memory graph");
         let logic = RuleEngine::new();
-        let memory = TitansMemory::agent_mode();
+        let memory = IneruMemory::agent_mode();
 
         #[cfg(feature = "auth")]
         let user_store = {
@@ -75,7 +78,7 @@ impl AppState {
     /// Creates a new `AppState` with a pre-configured `GraphDB` instance.
     pub fn with_graph(graph: GraphDB) -> Self {
         let logic = RuleEngine::new();
-        let memory = TitansMemory::agent_mode();
+        let memory = IneruMemory::agent_mode();
 
         #[cfg(feature = "auth")]
         let user_store = {
@@ -104,7 +107,7 @@ impl AppState {
     pub fn with_audit_path(path: std::path::PathBuf) -> Self {
         let graph = GraphDB::memory().expect("Failed to create in-memory graph");
         let logic = RuleEngine::new();
-        let memory = TitansMemory::agent_mode();
+        let memory = IneruMemory::agent_mode();
 
         #[cfg(feature = "auth")]
         let user_store = {

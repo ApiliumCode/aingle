@@ -1,15 +1,18 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Integration tests for SmartNode pipeline
 //!
 //! Tests the complete flow: Sensor → Observation → Agent → Action → DAG
-//! These tests verify the integration between MinimalNode and HOPE Agents.
+//! These tests verify the integration between MinimalNode and Kaneru.
 //!
 //! Requires the `smart_agents` feature to be enabled.
 
 #![cfg(feature = "smart_agents")]
 
 use aingle_minimal::*;
-use hope_agents::policy::Condition;
-use hope_agents::{
+use kaneru::policy::Condition;
+use kaneru::{
     Action, ActionType, AgentConfig, Goal, Observation, ObservationType, Policy, Rule,
 };
 
@@ -71,7 +74,7 @@ fn test_smart_node_creation_low_power() {
 
 #[test]
 fn test_smart_node_with_custom_agent() {
-    use hope_agents::SimpleAgent;
+    use kaneru::SimpleAgent;
 
     let mut agent = SimpleAgent::new("custom_agent");
     agent.add_rule(Rule::new(
@@ -502,7 +505,7 @@ fn test_add_goal_to_smart_node() {
 
 #[test]
 fn test_smart_node_pause_resume() {
-    use hope_agents::AgentState;
+    use kaneru::AgentState;
 
     let config = test_smart_config();
     let mut node = SmartNode::new(config).unwrap();

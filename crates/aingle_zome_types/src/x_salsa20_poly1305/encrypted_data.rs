@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::x_salsa20_poly1305::nonce::XSalsa20Poly1305Nonce;
 
 #[derive(PartialEq, serde::Serialize, serde::Deserialize, Debug, Clone)]

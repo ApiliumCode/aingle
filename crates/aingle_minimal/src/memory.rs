@@ -1,13 +1,16 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! AI Memory integration for IoT nodes
 //!
-//! This module provides Titans Memory integration for IoT applications,
+//! This module provides Ineru memory integration for IoT applications,
 //! enabling AI agents to maintain short-term and long-term memory.
 
 #[cfg(feature = "ai_memory")]
-pub use titans_memory::{
+pub use ineru::{
     ConsolidationConfig, Embedding, Entity, EntityId, KnowledgeGraph, Link, LinkType,
     LongTermMemory, LtmConfig, MemoryConfig, MemoryEntry, MemoryId, MemoryMetadata, MemoryQuery,
-    MemoryResult, MemoryStats, Relation, SemanticTag, ShortTermMemory, StmConfig, TitansMemory,
+    MemoryResult, MemoryStats, Relation, SemanticTag, ShortTermMemory, StmConfig, IneruMemory,
 };
 
 #[cfg(feature = "ai_memory")]
@@ -15,11 +18,11 @@ use crate::error::{Error, Result};
 
 /// IoT-optimized memory system
 ///
-/// Wraps TitansMemory with IoT-specific defaults and integration points.
+/// Wraps IneruMemory with IoT-specific defaults and integration points.
 #[cfg(feature = "ai_memory")]
 pub struct IoTMemory {
-    /// Inner Titans Memory system
-    inner: TitansMemory,
+    /// Inner Ineru memory system
+    inner: IneruMemory,
     /// Auto-consolidation enabled
     auto_consolidate: bool,
     /// Last consolidation check
@@ -31,7 +34,7 @@ impl IoTMemory {
     /// Create new IoT memory with default configuration
     pub fn new() -> Self {
         Self {
-            inner: TitansMemory::iot_mode(),
+            inner: IneruMemory::iot_mode(),
             auto_consolidate: true,
             last_check: 0,
         }
@@ -40,7 +43,7 @@ impl IoTMemory {
     /// Create with custom configuration
     pub fn with_config(config: MemoryConfig) -> Self {
         Self {
-            inner: TitansMemory::new(config),
+            inner: IneruMemory::new(config),
             auto_consolidate: true,
             last_check: 0,
         }
@@ -154,13 +157,13 @@ impl IoTMemory {
             .map_err(|e| Error::Internal(e.to_string()))
     }
 
-    /// Access the underlying TitansMemory
-    pub fn inner(&self) -> &TitansMemory {
+    /// Access the underlying IneruMemory
+    pub fn inner(&self) -> &IneruMemory {
         &self.inner
     }
 
-    /// Access the underlying TitansMemory mutably
-    pub fn inner_mut(&mut self) -> &mut TitansMemory {
+    /// Access the underlying IneruMemory mutably
+    pub fn inner_mut(&mut self) -> &mut IneruMemory {
         &mut self.inner
     }
 }

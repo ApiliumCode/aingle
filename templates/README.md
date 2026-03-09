@@ -7,7 +7,7 @@ Pre-built templates for common AIngle use cases, optimized for IoT and AI applic
 | Template | Description | Use Case |
 |----------|-------------|----------|
 | **iot-sensor** | IoT sensor data collection | Smart devices, environmental monitoring |
-| **ai-agent** | AI agents with Titans Memory | Machine learning, autonomous systems |
+| **ai-agent** | AI agents with Ineru | Machine learning, autonomous systems |
 | **supply-chain** | Product tracking & provenance | Logistics, authenticity verification |
 
 ## Quick Start
@@ -24,9 +24,9 @@ cargo build --target wasm32-unknown-unknown --release
 cargo test
 ```
 
-## Integration with Titans Memory
+## Integration with Ineru
 
-All templates can leverage the Titans Memory system for AI-native memory management:
+All templates can leverage the Ineru system for AI-native memory management:
 
 ```rust
 use aingle_minimal::{IoTMemory, Config};
@@ -48,7 +48,7 @@ memory.maintenance()?;
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Titans Memory System                      │
+│                    Ineru Memory System                      │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌──────────────────┐     ┌──────────────────────────────┐ │
 │  │  Short-Term      │     │  Long-Term Memory (LTM)      │ │
@@ -60,12 +60,12 @@ memory.maintenance()?;
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Integration with HOPE Agents
+## Integration with Kaneru
 
-Templates can use the HOPE (Hierarchical Optimizing Policy Engine) framework:
+Templates can use the Kaneru (Unified Multi-Agent Execution System) framework:
 
 ```rust
-use hope_agents::{Agent, SimpleAgent, Goal, Observation, Rule, Condition, Action};
+use kaneru::{Agent, SimpleAgent, Goal, Observation, Rule, Condition, Action};
 
 // Create an IoT-optimized agent
 let mut agent = SimpleAgent::with_config("sensor_monitor", AgentConfig::iot_mode());
@@ -90,7 +90,7 @@ agent.execute(action);
 ### Memory-Enabled Agents
 
 ```rust
-use hope_agents::memory::MemoryAgent;
+use kaneru::memory::MemoryAgent;
 
 // Create memory-enabled agent
 let mut agent = MemoryAgent::new("smart_controller");
@@ -130,7 +130,7 @@ export AINGLE_IOT_MODE=1
 
 ## AI Agent Template
 
-For AI agents using the Titans Memory architecture.
+For AI agents using the Ineru memory architecture.
 
 **Features:**
 - Short-term memory (sliding window)
@@ -143,9 +143,9 @@ For AI agents using the Titans Memory architecture.
 - `LongTermMemory` - Knowledge checkpoints
 - `LearningEvent` - Training events
 
-**Build with HOPE Agents:**
+**Build with Kaneru:**
 ```bash
-cargo build --features hope --target wasm32-unknown-unknown
+cargo build --features kaneru --target wasm32-unknown-unknown
 ```
 
 ---
@@ -191,7 +191,7 @@ Full product provenance tracking.
 1. **Keep entries small** - Under 1KB for IoT
 2. **Use batch uploads** - Reduce network overhead
 3. **Index with links** - Enable efficient queries
-4. **Use Titans Memory** - For AI-enabled applications
+4. **Use Ineru** - For AI-enabled applications
 5. **Configure for IoT** - Set `AINGLE_PUBLISH_INTERVAL_MS=0`
 
 ## Support

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Normalized, validated representation of the App Manifest.
 //!
 //! The versioned manifest structs are designed to be deserialized from YAML,

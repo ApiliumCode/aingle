@@ -2,7 +2,7 @@
 name = "aingle_test_wasm_common"
 version = "0.0.1"
 description = "Common utilities for AIngle WASM testing"
-license = "Apache-2.0"
+license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
 authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "wasm", "testing"]

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![allow(clippy::field_reassign_with_default)]
 use futures::future::FutureExt;
 use kitsune_p2p_direct::dependencies::*;

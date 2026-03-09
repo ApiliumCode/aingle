@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Implements base-64 serialization for AiHashes
 //!
 //! It's already the case that AiHash can be deserialized from either a byte

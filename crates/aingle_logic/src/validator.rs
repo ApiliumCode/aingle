@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Logic Validator - Validates logical consistency of semantic graphs
 //!
 //! The validator checks for:

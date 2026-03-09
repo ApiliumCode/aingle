@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Audit log for tracking API actions
 //!
 //! Provides an append-only, file-backed audit log with REST endpoints

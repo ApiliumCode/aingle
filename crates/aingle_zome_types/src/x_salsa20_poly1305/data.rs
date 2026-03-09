@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 /// Data that can be encrypted with secretbox.
 #[derive(PartialEq, serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct XSalsa20Poly1305Data(#[serde(with = "serde_bytes")] Vec<u8>);

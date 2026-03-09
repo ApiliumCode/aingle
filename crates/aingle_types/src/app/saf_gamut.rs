@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! A SAF gamut is a representation of all SAFs available in a given context.
 
 use super::SafVersionSpec;

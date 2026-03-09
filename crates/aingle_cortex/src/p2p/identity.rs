@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Node identity backed by Ed25519 keypair with persistent storage.
 
 use aingle_graph::{Triple, TripleId};

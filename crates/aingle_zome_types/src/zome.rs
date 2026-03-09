@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! A `Zome` is a module of app-defined code which can be run by AIngle.
 //! A group of Zomes are composed to form a `SafDef`.
 //!

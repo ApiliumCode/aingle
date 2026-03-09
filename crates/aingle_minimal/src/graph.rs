@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Semantic Graph integration for AIngle Minimal
 //!
 //! This module provides a semantic graph view of the AIngle data,

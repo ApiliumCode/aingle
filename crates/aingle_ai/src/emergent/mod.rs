@@ -1,7 +1,10 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! # Emergent Capabilities
 //!
-//! Higher-level AI capabilities that emerge from combining Titans Memory,
-//! Nested Learning, and HOPE Agents.
+//! Higher-level AI capabilities that emerge from combining Ineru,
+//! Nested Learning, and Kaneru.
 //!
 //! ## Components
 //!
@@ -15,13 +18,13 @@ pub use adaptive_consensus::AdaptiveConsensus;
 pub use predictive_validator::PredictiveValidator;
 
 use crate::nested_learning::NestedLearning;
-use crate::titans::TitansMemory;
+use crate::ineru::IneruMemory;
 use crate::types::{AiTransaction, ConsensusLevel, ValidationPrediction};
 
 /// Unified AI layer combining all capabilities
 pub struct AiLayer {
-    /// Titans Memory for pattern learning
-    titans: TitansMemory,
+    /// Ineru memory for pattern learning
+    ineru: IneruMemory,
 
     /// Nested Learning for optimization
     nested: NestedLearning,
@@ -37,10 +40,10 @@ impl AiLayer {
     /// Create a new AI layer with default configuration
     pub fn new() -> Self {
         use crate::nested_learning::NestedConfig;
-        use crate::titans::TitansConfig;
+        use crate::ineru::IneruConfig;
 
         Self {
-            titans: TitansMemory::new(TitansConfig::default()),
+            ineru: IneruMemory::new(IneruConfig::default()),
             nested: NestedLearning::new(NestedConfig::default()),
             predictor: PredictiveValidator::new(),
             consensus: AdaptiveConsensus::new(),
@@ -49,14 +52,14 @@ impl AiLayer {
 
     /// Process a transaction through the full AI pipeline
     pub fn process(&mut self, tx: &AiTransaction) -> AiProcessResult {
-        // 1. Process through Titans memory
-        let titans_result = self.titans.process(tx).ok();
+        // 1. Process through Ineru memory
+        let ineru_result = self.ineru.process(tx).ok();
 
         // 2. Process through Nested Learning
         let nested_result = self.nested.process(tx).ok();
 
         // 3. Get validation prediction
-        let prediction = self.predictor.predict(tx, &self.titans, &self.nested);
+        let prediction = self.predictor.predict(tx, &self.ineru, &self.nested);
 
         // 4. Determine consensus level
         let consensus_level = self.consensus.determine_level(tx, &prediction);
@@ -64,7 +67,7 @@ impl AiLayer {
         AiProcessResult {
             prediction,
             consensus_level,
-            stored_pattern: titans_result.map(|r| r.stored_long_term).unwrap_or(false),
+            stored_pattern: ineru_result.map(|r| r.stored_long_term).unwrap_or(false),
             validation_strategy: nested_result.map(|r| r.strategy),
         }
     }
@@ -72,7 +75,7 @@ impl AiLayer {
     /// Query for similar patterns
     pub fn query_similar(&self, tx: &AiTransaction, limit: usize) -> Vec<PatternMatch> {
         let pattern = tx.to_pattern();
-        self.titans
+        self.ineru
             .query(&pattern, limit)
             .into_iter()
             .map(|m| PatternMatch {
@@ -84,12 +87,12 @@ impl AiLayer {
 
     /// Get AI layer statistics
     pub fn stats(&self) -> AiLayerStats {
-        let titans_stats = self.titans.stats();
+        let ineru_stats = self.ineru.stats();
         let nested_stats = self.nested.stats();
 
         AiLayerStats {
-            titans_short_term_size: titans_stats.short_term_size,
-            titans_long_term_size: titans_stats.long_term_size,
+            ineru_short_term_size: ineru_stats.short_term_size,
+            ineru_long_term_size: ineru_stats.long_term_size,
             nested_tx_count: nested_stats.tx_count,
             nested_block_count: nested_stats.block_count,
         }
@@ -127,10 +130,10 @@ pub struct PatternMatch {
 /// AI layer statistics
 #[derive(Debug, Clone)]
 pub struct AiLayerStats {
-    /// Titans short-term memory size
-    pub titans_short_term_size: usize,
-    /// Titans long-term memory size
-    pub titans_long_term_size: usize,
+    /// Ineru short-term memory size
+    pub ineru_short_term_size: usize,
+    /// Ineru long-term memory size
+    pub ineru_long_term_size: usize,
     /// Nested learning transaction count
     pub nested_tx_count: u64,
     /// Nested learning block count

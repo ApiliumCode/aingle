@@ -844,7 +844,7 @@ async function fetchDag() {
 ## Próximos pasos
 
 1. **Dashboard personalizado**: Crea métricas específicas de tu app
-2. **[Integración con IA](./ai-powered-app.md)**: Visualiza decisiones de HOPE Agents
+2. **[Integración con IA](./ai-powered-app.md)**: Visualiza decisiones de Kaneru
 3. **Análisis de red**: Detecta patrones y anomalías en el grafo
 4. **Colaboración**: Múltiples usuarios viendo el mismo DAG en tiempo real
 

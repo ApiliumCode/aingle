@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Rule Engine with Forward and Backward Chaining
 //!
 //! The rule engine evaluates rules against triples and can:

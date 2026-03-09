@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Proof storage and management
 //!
 //! Provides in-memory storage of zero-knowledge proofs with LRU caching

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! WebRTC Transport for Browser Support
 //!
 //! This module enables AIngle nodes to run in web browsers and communicate

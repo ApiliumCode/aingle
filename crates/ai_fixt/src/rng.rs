@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Seedable random number generator to be used in all fixturator randomness
 //!
 //! In tests, when an unpredictable value causes a test failure, it's important to

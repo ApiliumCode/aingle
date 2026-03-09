@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Ingress rate limiter for P2P triple reception.
 //!
 //! Per-peer and global token-bucket rate limiting to prevent DoS

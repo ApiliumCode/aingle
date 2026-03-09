@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Namespace scoping middleware
 //!
 //! Extracts the `namespace` from JWT claims and injects it into Axum request

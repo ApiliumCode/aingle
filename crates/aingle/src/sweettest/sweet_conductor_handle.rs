@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use super::SweetZome;
 use crate::conductor::{api::error::ConductorApiResult, ConductorHandle};
 use aingle_conductor_api::ZomeCall;

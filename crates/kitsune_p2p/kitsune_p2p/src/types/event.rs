@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Definitions for events emited from the KitsuneP2p actor.
 
 use crate::types::agent_store::AgentInfoSigned;

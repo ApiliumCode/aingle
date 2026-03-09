@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! A variant of Zome which is defined entirely by native, inline Rust code
 //!
 //! This type of Zome is only meant to be used for testing. It's designed to

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Queries for the P2pMetrics store
 // TODO [ B-04249 ] move this to the combined aingle_sqlite crate once
 // consolidated with aingle_state

@@ -22,7 +22,7 @@ Add dependencies to `Cargo.toml`:
 ```toml
 [dependencies]
 aingle_minimal = { version = "0.1", features = ["coap", "smart_agents"] }
-hope_agents = "0.1"
+kaneru = "0.1"
 smol = "2.0"
 log = "0.4"
 env_logger = "0.11"
@@ -68,7 +68,7 @@ Upgrade to a SmartNode for intelligent decision-making:
 
 ```rust
 use aingle_minimal::{SmartNode, SmartNodeConfig, SensorAdapter, IoTPolicyBuilder};
-use hope_agents::{Observation, Action, Goal};
+use kaneru::{Observation, Action, Goal};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -176,7 +176,7 @@ Monitor multiple sensors with policies:
 
 ```rust
 use aingle_minimal::{SmartNode, SmartNodeConfig, SensorAdapter, IoTPolicyBuilder};
-use hope_agents::{Action, Policy, Rule, Condition};
+use kaneru::{Action, Policy, Rule, Condition};
 
 fn setup_sensors() -> Vec<SensorAdapter> {
     vec![
@@ -274,7 +274,7 @@ Here's a full working example combining all concepts:
 use aingle_minimal::{
     SmartNode, SmartNodeConfig, SensorAdapter, IoTPolicyBuilder, Result
 };
-use hope_agents::{Observation, Goal};
+use kaneru::{Observation, Goal};
 use std::time::Duration;
 
 #[smol::main]
@@ -336,5 +336,5 @@ async fn main() -> Result<()> {
 ## Resources
 
 - [RFC 7252 - CoAP](https://tools.ietf.org/html/rfc7252)
-- [HOPE Agents Documentation](../api/hope_agents.md)
+- [Kaneru Documentation](../api/kaneru.md)
 - [AIngle GitHub Repository](https://github.com/ApiliumCode/aingle)

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Semantic triples, the core data structure of the graph.
 //!
 //! A `Triple` represents a single fact in the form of a `(Subject, Predicate, Object)`

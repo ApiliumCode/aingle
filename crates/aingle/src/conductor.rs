@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! A Conductor manages interactions between its contained [Cell]s, as well as
 //! interactions with the outside world. It is primarily a mediator of messages.
 //!

@@ -1,6 +1,6 @@
 //! Autonomous AI Agent Example
 //!
-//! Demonstrates how to use HOPE Agents for autonomous decision-making.
+//! Demonstrates how to use Kaneru for autonomous decision-making.
 //!
 //! # Features Demonstrated
 //! - Creating simple and advanced agents
@@ -13,14 +13,14 @@
 //! cargo run --release -p ai_autonomous_agent
 //! ```
 
-use hope_agents::{
+use kaneru::{
     create_iot_agent, Action, ActionType, Agent, Condition, Goal, Observation, Rule, SimpleAgent,
     ValueRange,
 };
 use rand::Rng;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== HOPE Agents - Autonomous AI Example ===\n");
+    println!("=== Kaneru - Autonomous AI Example ===\n");
 
     // Example 1: Simple Reactive Agent
     simple_reactive_agent_demo()?;

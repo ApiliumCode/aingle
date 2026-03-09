@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![allow(enum_intrinsics_non_enums)] // these actually *are* enums...
 //! Usability api for tx2 kitsune transports.
 

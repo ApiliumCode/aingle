@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Signals which can be emitted from within AIngle, out across an interface.
 //! There are two main kinds of Signal: system-defined, and app-defined:
 //! - App-defined signals are produced via the `emit_signal` host function.

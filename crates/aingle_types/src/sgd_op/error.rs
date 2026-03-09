@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use aingle_middleware_bytes::SerializedBytesError;
 use aingle_zome_types::header::conversions::WrongHeaderError;
 use aingle_zome_types::Header;
