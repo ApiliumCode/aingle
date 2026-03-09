@@ -96,7 +96,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rcgen = { version = "0.13", optional = true }
 
 # Bluetooth LE for IoT mesh
-btleplug = { version = "0.11", optional = true }
+btleplug = { version = "0.12", optional = true }
 uuid = { version = "1.21", optional = true }
 
 # ESP32 NimBLE for embedded BLE (requires ESP-IDF)
