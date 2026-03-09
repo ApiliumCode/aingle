@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Error types for AIngle Graph.
 //!
 //! This module provides a unified `Error` type for all graph database operations.

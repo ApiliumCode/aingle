@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! We want to have control over certain long running
 //! tasks that we care about.
 //! If a task that is added to the task manager ends

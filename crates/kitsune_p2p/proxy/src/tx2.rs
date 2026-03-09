@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![allow(clippy::new_ret_no_self)]
 #![allow(clippy::blocks_in_conditions)]
 //! Next-gen performance kitsune transport proxy

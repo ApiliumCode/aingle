@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! An in-memory implementation of a metric store.
 //! A real implementation would use a database.
 // NB: this is a copy of `KdMetricStore` from `kitsune_p2p_direct`, which

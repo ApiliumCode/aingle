@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use aingle::conductor::config::ConductorConfig;
 use aingle::conductor::interactive;
 use aingle::conductor::manager::handle_shutdown;
@@ -17,7 +20,17 @@ const ERROR_CODE: i32 = 42;
 const MAGIC_CONDUCTOR_READY_STRING: &str = "Conductor ready.";
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "aingle", about = "The AIngle Conductor.")]
+#[structopt(
+    name = "aingle",
+    about = "The AIngle Conductor.",
+    version = env!("CARGO_PKG_VERSION"),
+    long_version = concat!(
+        env!("CARGO_PKG_VERSION"), "\n",
+        "Copyright 2019-2026 Apilium Technologies OÜ\n",
+        "License: Apache-2.0 OR Commercial\n",
+        "https://github.com/ApiliumCode/aingle"
+    )
+)]
 struct Opt {
     #[structopt(
         long,

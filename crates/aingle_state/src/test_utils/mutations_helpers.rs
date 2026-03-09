@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::mutations::*;
 use ai_hash::HasHash;
 use aingle_sqlite::rusqlite::Transaction;

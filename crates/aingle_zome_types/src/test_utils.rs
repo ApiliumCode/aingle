@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Common helpers for writing tests against zome types
 //!
 //! We don't use fixturators for these, because this crate defines no fixturators

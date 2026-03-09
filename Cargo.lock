@@ -77,16 +77,16 @@ dependencies = [
 name = "ai_autonomous_agent"
 version = "0.1.0"
 dependencies = [
- "hope_agents",
+ "ineru",
+ "kaneru",
  "rand 0.9.2",
  "serde",
  "serde_json",
- "titans_memory",
 ]
 
 [[package]]
 name = "aingle_ai"
-version = "0.3.8"
+version = "0.4.0"
 dependencies = [
  "blake2",
  "candle-core 0.9.2",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_contracts"
-version = "0.3.8"
+version = "0.4.0"
 dependencies = [
  "blake3",
  "dashmap 6.1.0",
@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.3.8"
+version = "0.4.0"
 dependencies = [
  "aingle_graph",
  "aingle_logic",
@@ -144,6 +144,7 @@ dependencies = [
  "futures",
  "hex",
  "if-addrs 0.13.4",
+ "ineru",
  "jsonwebtoken",
  "log",
  "mdns-sd",
@@ -159,7 +160,6 @@ dependencies = [
  "spargebra",
  "tempfile",
  "thiserror 2.0.18",
- "titans_memory",
  "tokio",
  "tokio-stream",
  "tokio-test",
@@ -173,7 +173,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_graph"
-version = "0.3.8"
+version = "0.4.0"
 dependencies = [
  "bincode",
  "blake3",
@@ -194,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_logic"
-version = "0.3.8"
+version = "0.4.0"
 dependencies = [
  "aingle_graph",
  "chrono",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_minimal"
-version = "0.3.8"
+version = "0.4.0"
 dependencies = [
  "async-io",
  "async-tungstenite",
@@ -228,8 +228,9 @@ dependencies = [
  "esp32-nimble",
  "futures-util",
  "hex",
- "hope_agents",
  "if-addrs 0.13.4",
+ "ineru",
+ "kaneru",
  "ledger-transport",
  "ledger-transport-hid",
  "log",
@@ -245,14 +246,13 @@ dependencies = [
  "serde_json",
  "smol",
  "tiny_http",
- "titans_memory",
  "uuid",
  "webrtc",
 ]
 
 [[package]]
 name = "aingle_viz"
-version = "0.3.8"
+version = "0.4.0"
 dependencies = [
  "aingle_graph",
  "aingle_minimal",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_zk"
-version = "0.3.8"
+version = "0.4.0"
 dependencies = [
  "blake3",
  "bulletproofs",
@@ -284,7 +284,6 @@ dependencies = [
  "hex",
  "merlin",
  "rand 0.8.5",
- "rand_core 0.6.4",
  "rayon",
  "serde",
  "serde_json",
@@ -596,9 +595,9 @@ dependencies = [
 
 [[package]]
 name = "async-graphql"
-version = "8.0.0-rc.3"
+version = "8.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42a0665c286cedf580804229492c4f7666d0ea48ddb7432ccc07c1903fc6542a"
+checksum = "992eec3a71c482790dc346a311a3cdcb1e9006b652a0b87e154b42adb0918b4c"
 dependencies = [
  "askama",
  "async-graphql-derive",
@@ -631,9 +630,9 @@ dependencies = [
 
 [[package]]
 name = "async-graphql-axum"
-version = "8.0.0-rc.3"
+version = "8.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71520312fec282d5c584890fa09890ece18e853fedff98eff6670bb6f1778789"
+checksum = "908f39c915dfdb310d87db08aac6ffc9704ddd210a7f7e0af8348822cff61744"
 dependencies = [
  "async-graphql",
  "axum",
@@ -648,9 +647,9 @@ dependencies = [
 
 [[package]]
 name = "async-graphql-derive"
-version = "8.0.0-rc.3"
+version = "8.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a1cb5c969613b3c108500a0fe15737157341ba5af198692b08b436aeae3c940"
+checksum = "0739ca16bca33d4071c1b45f19d902d6894696f997b9b4c9c0b316c509b4f83f"
 dependencies = [
  "async-graphql-parser",
  "darling 0.23.0",
@@ -658,16 +657,16 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "strum 0.27.2",
+ "strum 0.28.0",
  "syn 2.0.117",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "async-graphql-parser"
-version = "8.0.0-rc.3"
+version = "8.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53d4f97b38939abe44e879e806f858261b8701fa43757d08d310f76750ee60aa"
+checksum = "d85b5e90b08d72410b40c71a1878d78308a190f3bbb45a82ea000d0dbc4133a8"
 dependencies = [
  "async-graphql-value",
  "pest",
@@ -677,9 +676,9 @@ dependencies = [
 
 [[package]]
 name = "async-graphql-value"
-version = "8.0.0-rc.3"
+version = "8.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e3722caa711b9b669527259679764eff1a1dfddb5f0b7b9818d59bfe8275b74"
+checksum = "fa3b3ae38aad471922da0c5be8318b58dcf0b9e0cf570aa5b57d7df4ef5e6c9e"
 dependencies = [
  "bytes",
  "indexmap",
@@ -2712,12 +2711,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_home"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
-
-[[package]]
 name = "env_logger"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3656,19 +3649,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hope_agents"
-version = "0.3.8"
-dependencies = [
- "chrono",
- "criterion",
- "log",
- "rand 0.9.2",
- "serde",
- "serde_json",
- "titans_memory",
-]
-
-[[package]]
 name = "http"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3721,9 +3701,9 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hybrid-array"
-version = "0.4.7"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1b229d73f5803b562cc26e4da0396c8610a4ee209f4fac8fa4f8d709166dc45"
+checksum = "8655f91cd07f2b9d0c24137bd650fe69617773435ee5ec83022377777ce65ef1"
 dependencies = [
  "typenum",
 ]
@@ -3996,6 +3976,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ineru"
+version = "0.4.0"
+dependencies = [
+ "blake3",
+ "chrono",
+ "criterion",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4241,6 +4234,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaneru"
+version = "0.4.0"
+dependencies = [
+ "chrono",
+ "criterion",
+ "ineru",
+ "log",
+ "rand 0.9.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "keccak"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4324,9 +4330,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.182"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libdbus-sys"
@@ -5525,9 +5531,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.13"
+version = "0.11.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1906b49b0c3bc04b5fe5d86a77925ae6524a19b816ae38ce1e426255f1d8a31"
+checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
 dependencies = [
  "bytes",
  "fastbloom",
@@ -6721,11 +6727,11 @@ dependencies = [
 
 [[package]]
 name = "strum"
-version = "0.27.2"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
 dependencies = [
- "strum_macros 0.27.2",
+ "strum_macros 0.28.0",
 ]
 
 [[package]]
@@ -6756,9 +6762,9 @@ dependencies = [
 
 [[package]]
 name = "strum_macros"
-version = "0.27.2"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -7053,19 +7059,6 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
-
-[[package]]
-name = "titans_memory"
-version = "0.3.8"
-dependencies = [
- "blake3",
- "chrono",
- "criterion",
- "log",
- "rusqlite",
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "tokio"
@@ -7787,7 +7780,7 @@ dependencies = [
  "wasmer-types",
  "wasmer-vm",
  "wasmparser",
- "which 8.0.1",
+ "which 8.0.2",
  "windows-sys 0.61.2",
 ]
 
@@ -8116,13 +8109,11 @@ dependencies = [
 
 [[package]]
 name = "which"
-version = "8.0.1"
+version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a824aeba0fbb27264f815ada4cff43d65b1741b7a4ed7629ff9089148c4a4e0"
+checksum = "81995fafaaaf6ae47a7d0cc83c67caf92aeb7e5331650ae6ff856f7c0c60c459"
 dependencies = [
- "env_home",
- "rustix 1.1.4",
- "winsafe",
+ "libc",
 ]
 
 [[package]]
@@ -8556,12 +8547,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "winsafe"
-version = "0.0.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
-
-[[package]]
 name = "wit-bindgen"
 version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8759,18 +8744,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.40"
+version = "0.8.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a789c6e490b576db9f7e6b6d661bcc9799f7c0ac8352f56ea20193b2681532e5"
+checksum = "96e13bc581734df6250836c59a5f44f3c57db9f9acb9dc8e3eaabdaf6170254d"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.40"
+version = "0.8.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f65c489a7071a749c849713807783f70672b28094011623e200cb86dcb835953"
+checksum = "3545ea9e86d12ab9bba9fcd99b54c1556fd3199007def5a03c375623d05fac1c"
 dependencies = [
  "proc-macro2",
  "quote",

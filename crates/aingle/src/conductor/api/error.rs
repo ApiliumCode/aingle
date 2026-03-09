@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Errors occurring during a [CellConductorApi] or [InterfaceApi] call
 
 use crate::conductor::error::ConductorError;

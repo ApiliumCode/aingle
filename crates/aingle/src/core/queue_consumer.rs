@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Manages the spawning of tasks which process the various work queues in
 //! the system, as well as notifying subsequent queue processors to pick up the
 //! work that was left off.

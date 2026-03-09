@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![deny(missing_docs)]
 #![allow(clippy::needless_doctest_main)]
 //! A Keystore is a secure repository of private keys. KeystoreSender is a

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! # Entry Defs Store
 //! Stores all the entry definitions across zomes
 use crate::core::ribosome::guest_callback::entry_defs::EntryDefsHostAccess;

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Bloom filter gossip adapted for triple synchronization.
 //!
 //! Ported from `aingle_minimal::gossip` with `Hash` replaced by `[u8; 32]`

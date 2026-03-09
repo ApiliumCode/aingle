@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! A Ribosome is a structure which knows how to execute hApp code.
 //!
 //! We have only one instance of this: [RealRibosome]. The abstract trait exists

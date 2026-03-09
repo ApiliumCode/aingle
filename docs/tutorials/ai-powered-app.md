@@ -1,8 +1,8 @@
-# Tutorial: AI-Powered Application using HOPE Agents
+# Tutorial: AI-Powered Application using Kaneru
 
 ## Objective
 
-Build an intelligent application that automatically learns and makes decisions using HOPE Agents (Hierarchical Optimized Policy Engine). Agents can learn from experience, handle hierarchical goals, detect anomalies, and execute autonomous actions.
+Build an intelligent application that automatically learns and makes decisions using Kaneru (Unified Multi-Agent Execution System). Agents can learn from experience, handle hierarchical goals, detect anomalies, and execute autonomous actions.
 
 ## Prerequisites
 
@@ -16,9 +16,9 @@ Build an intelligent application that automatically learns and makes decisions u
 
 ---
 
-## Step 1: Understanding HOPE Agents
+## Step 1: Understanding Kaneru
 
-HOPE (Hierarchical Optimized Policy Engine) combines:
+Kaneru (Unified Multi-Agent Execution System) combines:
 
 - **Q-Learning**: Learns state-action values
 - **SARSA**: Learns on-policy policies
@@ -31,7 +31,7 @@ HOPE (Hierarchical Optimized Policy Engine) combines:
 
 ```
 ┌─────────────────────────────────────────┐
-│           HOPE Agent                     │
+│           Kaneru Agent                    │
 ├─────────────────────────────────────────┤
 │  ┌──────────┐  ┌──────────────────┐     │
 │  │ Learning │  │ Goal Solver      │     │
@@ -47,7 +47,7 @@ HOPE (Hierarchical Optimized Policy Engine) combines:
 
 ---
 
-## Step 2: Set up basic HOPE Agent
+## Step 2: Set up basic Kaneru Agent
 
 Create a new project:
 
@@ -66,7 +66,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hope_agents = { path = "../../crates/hope_agents" }
+kaneru = { path = "../../crates/kaneru" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -78,7 +78,7 @@ Create your first agent:
 
 ```rust
 // src/main.rs
-use hope_agents::{HopeAgent, AgentConfig, Observation, ActionResult};
+use kaneru::{KaneruAgent, AgentConfig, Observation, ActionResult};
 use std::time::Duration;
 
 #[tokio::main]
@@ -99,13 +99,13 @@ async fn main() -> anyhow::Result<()> {
         action_timeout: Duration::from_secs(10),
     };
 
-    println!("🤖 Creating HOPE Agent: {}", config.name);
+    println!("🤖 Creating Kaneru Agent: {}", config.name);
     println!("   Learning: {}", config.learning_enabled);
     println!("   Learning rate: {}", config.learning_rate);
     println!("   Exploration: {}%\n", config.exploration_rate * 100.0);
 
     // Create agent
-    let mut agent = HopeAgent::new(config)?;
+    let mut agent = KaneruAgent::new(config)?;
 
     println!("✓ Agent created and ready to learn\n");
 
@@ -129,7 +129,7 @@ Agents learn through environment observations and executing actions:
 ```rust
 // src/thermostat.rs
 use serde::{Deserialize, Serialize};
-use hope_agents::{Observation, Action, ActionResult};
+use kaneru::{Observation, Action, ActionResult};
 
 /// Thermostat state
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -279,11 +279,11 @@ impl ThermostatAction {
 
 ## Step 4: Hierarchical goals
 
-HOPE Agents support hierarchical goals that decompose into subgoals:
+Kaneru supports hierarchical goals that decompose into subgoals:
 
 ```rust
 // src/goals.rs
-use hope_agents::{Goal, GoalPriority};
+use kaneru::{Goal, GoalPriority};
 
 /// Define thermostat objectives
 pub fn create_comfort_goals() -> Vec<Goal> {
@@ -368,11 +368,11 @@ Train the agent with learning episodes:
 
 ```rust
 // src/training.rs
-use hope_agents::HopeAgent;
+use kaneru::KaneruAgent;
 use crate::thermostat::{ThermostatState, ThermostatAction};
 use crate::goals::create_comfort_goals;
 
-pub async fn train_agent(agent: &mut HopeAgent, episodes: usize) -> anyhow::Result<()> {
+pub async fn train_agent(agent: &mut KaneruAgent, episodes: usize) -> anyhow::Result<()> {
     println!("🎓 Starting training ({} episodes)...\n", episodes);
 
     // Load objectives
@@ -465,11 +465,11 @@ The predictive model detects abnormal behaviors:
 
 ```rust
 // src/anomaly.rs
-use hope_agents::HopeAgent;
+use kaneru::KaneruAgent;
 use crate::thermostat::ThermostatState;
 
 pub async fn detect_anomalies(
-    agent: &HopeAgent,
+    agent: &KaneruAgent,
     state: &ThermostatState,
 ) -> anyhow::Result<bool> {
     let observation = state.to_observation();
@@ -498,7 +498,7 @@ pub async fn detect_anomalies(
 
 /// Continuously monitor and alert anomalies
 pub async fn monitor_anomalies(
-    agent: &HopeAgent,
+    agent: &KaneruAgent,
     states: Vec<ThermostatState>,
 ) -> anyhow::Result<()> {
     println!("🔍 Monitoring anomalies...\n");
@@ -544,12 +544,12 @@ The agent executes decisions automatically:
 
 ```rust
 // src/autonomous.rs
-use hope_agents::HopeAgent;
+use kaneru::KaneruAgent;
 use crate::thermostat::{ThermostatState, ThermostatAction};
 use tokio::time::{interval, Duration};
 
 pub async fn run_autonomous_mode(
-    agent: &mut HopeAgent,
+    agent: &mut KaneruAgent,
     initial_state: ThermostatState,
     duration_secs: u64,
 ) -> anyhow::Result<()> {
@@ -631,7 +631,7 @@ mod training;
 mod anomaly;
 mod autonomous;
 
-use hope_agents::{HopeAgent, AgentConfig};
+use kaneru::{KaneruAgent, AgentConfig};
 use thermostat::ThermostatState;
 use std::time::Duration;
 
@@ -641,8 +641,8 @@ async fn main() -> anyhow::Result<()> {
 
     // 1. Create agent
     let config = AgentConfig::ai_mode();
-    let mut agent = HopeAgent::new(config)?;
-    println!("✓ HOPE Agent created\n");
+    let mut agent = KaneruAgent::new(config)?;
+    println!("✓ Kaneru Agent created\n");
 
     // 2. Train
     training::train_agent(&mut agent, 100).await?;
@@ -691,7 +691,7 @@ async fn main() -> anyhow::Result<()> {
 ## Expected output
 
 ```
-✓ HOPE Agent created
+✓ Kaneru Agent created
 
 🎓 Starting training (100 episodes)...
 
@@ -792,7 +792,7 @@ agent.set_anomaly_threshold(2.5); // More sensitive (default: 3.0)
 
 ## Key concepts learned
 
-- **HOPE Agent**: Hierarchical learning agent
+- **Kaneru Agent**: Hierarchical learning agent
 - **Q-Learning**: Learns state-action values
 - **Exploration vs Exploitation**: Balance between exploring and using learned knowledge
 - **Hierarchical Goals**: Decompose complex objectives
@@ -803,7 +803,7 @@ agent.set_anomaly_threshold(2.5); // More sensitive (default: 3.0)
 
 ## References
 
-- [HOPE Agents Implementation](../../crates/hope_agents/IMPLEMENTATION_SUMMARY.md)
+- [Kaneru Implementation](../../crates/kaneru/IMPLEMENTATION_SUMMARY.md)
 - [Reinforcement Learning: An Introduction](http://incompleteideas.net/book/the-book-2nd.html)
 - [Q-Learning Tutorial](https://en.wikipedia.org/wiki/Q-learning)
 - [Hierarchical Reinforcement Learning](https://people.cs.umass.edu/~mahadeva/papers/hrl.pdf)

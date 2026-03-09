@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Crate for discovering AIngle peers over MDNS
 //! Works by broadcasting a service named `AI_SERVICE_NAME`
 //! and adding base64 encoded data in a TXT record

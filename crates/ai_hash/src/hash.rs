@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Defines the AiHash type, used for all hashes in AIngle.
 //!
 //! AiHashes come in a variety of types. See the `hash_type::primitive`

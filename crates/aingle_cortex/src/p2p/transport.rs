@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! QUIC transport layer for P2P communication.
 //!
 //! Ported from `aingle_minimal::quic` with cortex-specific ALPN and

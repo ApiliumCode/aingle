@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/aingle.svg" alt="AIngle" width="280"/>
+  <img src="assets/aingle.svg" alt="AIngle(TM)" width="280"/>
 </p>
 
 <p align="center">
@@ -127,8 +127,8 @@ Prove facts without revealing data. Schnorr signatures, Pedersen commitments, an
 <tr>
 <td width="50%">
 
-### ⚡ HOPE Agents
-Hierarchical Optimistic Policy Engine. Reinforcement learning (Q-Learning, SARSA, TD) for autonomous decision-making. From anomaly detection to resource optimization.
+### ⚡ Kaneru
+Unified Multi-Agent Execution System. Reinforcement learning (Q-Learning, SARSA, TD) for autonomous decision-making. From anomaly detection to resource optimization.
 
 </td>
 <td width="50%">
@@ -162,7 +162,7 @@ Interactive D3.js dashboard. Watch your DAG evolve in real-time. Filter, search,
 ┌────────────────────────────────────────────────────────────────────────┐
 │                         APPLICATION LAYER                               │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
-│   │    Zomes     │  │   Contracts  │  │ HOPE Agents  │  │  DAG Viz  │ │
+│   │    Zomes     │  │   Contracts  │  │   Kaneru     │  │  DAG Viz  │ │
 │   │   (WASM)     │  │  (Rust DSL)  │  │    (RL)      │  │  (D3.js)  │ │
 │   └──────────────┘  └──────────────┘  └──────────────┘  └───────────┘ │
 ├────────────────────────────────────────────────────────────────────────┤
@@ -233,7 +233,7 @@ cargo run --release -- --help
 |-------|-------------|
 | [Getting Started](docs/tutorials/getting-started.md) | Build your first AIngle application |
 | [IoT Networks](docs/tutorials/iot-sensor-network.md) | Deploy sensors with edge intelligence |
-| [HOPE Agents](docs/tutorials/ai-powered-app.md) | Add autonomous decision-making |
+| [Kaneru](docs/tutorials/ai-powered-app.md) | Add autonomous decision-making |
 | [Semantic Queries](docs/tutorials/semantic-queries.md) | Master GraphQL and SPARQL |
 | [Privacy (ZK)](docs/tutorials/privacy-with-zk.md) | Implement zero-knowledge proofs |
 | [Visualization](docs/tutorials/dag-visualization.md) | Monitor your system in real-time |
@@ -260,7 +260,7 @@ cargo doc --workspace --no-deps --open
 
 | Component | Purpose |
 |-----------|---------|
-| `hope_agents` | Reinforcement learning framework |
+| `kaneru` | Kaneru multi-agent execution framework |
 | `aingle_logic` | Prolog-style reasoning engine |
 | `aingle_graph` | Semantic graph database |
 
@@ -328,11 +328,17 @@ See our [contribution guidelines](CONTRIBUTING.md) for details.
 
 ## License
 
-**Apache License 2.0**
+**Dual License: Apache-2.0 + Commercial**
 
-Copyright © 2019-2025 Apilium Technologies
+Copyright © 2019-2026 Apilium Technologies OÜ
 
-See [LICENSE](LICENSE) for the full license text.
+AIngle is available under two licenses:
+
+- **Apache License 2.0** — Free for personal use, education, research, evaluation, and organizations with annual revenue below USD $1M. See [LICENSE-APACHE](LICENSE-APACHE).
+
+- **Commercial License** — Required for commercial integration, SaaS offerings, and organizations with annual revenue above USD $1M. See [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
+
+For commercial licensing: [partners@apilium.com](mailto:partners@apilium.com)
 
 ---
 
@@ -349,5 +355,15 @@ See [LICENSE](LICENSE) for the full license text.
 </p>
 
 <p align="center">
-  <sub>Apilium Technologies • Tallinn, Estonia</sub>
+  <sub>Apilium Technologies OÜ • Tallinn, Estonia</sub>
 </p>
+
+---
+
+<sub>
+
+**Trademarks**: AIngle, AIngle Cortex, Ineru, and Kaneru are trademarks of Apilium Technologies OÜ. See [NOTICE](./NOTICE) for details.
+
+**License**: Dual licensed under [Apache-2.0](./LICENSE-APACHE) and [Commercial](./LICENSE-COMMERCIAL). See [PATENTS](./PATENTS) for protected technologies.
+
+</sub>

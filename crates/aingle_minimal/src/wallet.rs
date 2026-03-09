@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Hardware Wallet Integration for Secure Key Management
 //!
 //! This module provides integration with hardware wallets (Ledger, Trezor)

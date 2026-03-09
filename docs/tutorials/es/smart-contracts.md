@@ -326,4 +326,4 @@ let proxy = ContractBuilder::new("proxy")
 
 ---
 
-Copyright 2019-2025 Apilium Technologies
+Copyright 2019-2026 Apilium Technologies

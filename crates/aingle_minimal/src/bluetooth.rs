@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Bluetooth LE Mesh Transport for IoT Devices
 //!
 //! This module enables AIngle nodes to communicate via Bluetooth Low Energy (BLE),

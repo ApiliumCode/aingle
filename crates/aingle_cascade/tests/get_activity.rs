@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use aingle_cascade::test_utils::*;
 use aingle_cascade::Cascade;
 use aingle_state::prelude::test_cell_env;

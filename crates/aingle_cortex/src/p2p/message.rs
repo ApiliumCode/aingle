@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! P2P wire protocol messages adapted for triple synchronization.
 
 use aingle_graph::{NodeId, Predicate, Triple, TripleMeta, Value};

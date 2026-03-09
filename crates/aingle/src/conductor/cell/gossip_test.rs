@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::test_utils::conductor_setup::ConductorTestData;
 use crate::test_utils::new_zome_call;
 use crate::test_utils::wait_for_integration;

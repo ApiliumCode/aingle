@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use ghost_actor::dependencies::tracing;
 use kitsune_p2p_proxy::*;
 use kitsune_p2p_types::config::KitsuneP2pTuningParams;

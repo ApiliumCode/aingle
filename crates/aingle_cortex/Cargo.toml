@@ -1,8 +1,8 @@
 [package]
 name = "aingle_cortex"
-version = "0.3.8"
+version = "0.4.0"
 description = "Córtex API - REST/GraphQL/SPARQL interface for AIngle semantic graphs"
-license = "Apache-2.0"
+license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
 homepage = "https://apilium.com"
 documentation = "https://docs.rs/aingle_cortex"
@@ -28,10 +28,10 @@ path = "src/main.rs"
 
 [dependencies]
 # Core AIngle crates
-aingle_graph = { version = "0.3", path = "../aingle_graph" }
-aingle_logic = { version = "0.3", path = "../aingle_logic" }
-aingle_zk = { version = "0.3", path = "../aingle_zk" }
-titans_memory = { version = "0.3", path = "../titans_memory" }
+aingle_graph = { version = "0.4", path = "../aingle_graph" }
+aingle_logic = { version = "0.4", path = "../aingle_logic" }
+aingle_zk = { version = "0.4", path = "../aingle_zk" }
+ineru = { version = "0.4", path = "../ineru" }
 
 # Web framework
 axum = { version = "0.8", features = ["ws", "macros"] }

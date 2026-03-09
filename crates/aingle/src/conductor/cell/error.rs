@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::conductor::entry_def_store::error::EntryDefStoreError;
 use crate::conductor::{api::error::ConductorApiError, error::ConductorError};
 use crate::core::ribosome::error::RibosomeError;

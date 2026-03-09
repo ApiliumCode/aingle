@@ -1,17 +1,17 @@
 # SmartNode API Reference
 
-SmartNode combines MinimalNode with HOPE Agent capabilities for intelligent IoT devices.
+SmartNode combines MinimalNode with Kaneru capabilities for intelligent IoT devices.
 
 ## Overview
 
 ```rust
 use aingle_minimal::{SmartNode, SmartNodeConfig, SensorAdapter, IoTPolicyBuilder};
-use hope_agents::{Goal, Observation};
+use kaneru::{Goal, Observation};
 ```
 
 ## SmartNode
 
-The main struct that combines a MinimalNode with a HOPE Agent.
+The main struct that combines a MinimalNode with a Kaneru Agent.
 
 ### Creation
 
@@ -86,7 +86,7 @@ Configuration for SmartNode.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `node_config` | `Config` | `Config::default()` | MinimalNode configuration |
-| `agent_config` | `AgentConfig` | `AgentConfig::default()` | HOPE agent configuration |
+| `agent_config` | `AgentConfig` | `AgentConfig::default()` | Kaneru agent configuration |
 | `auto_publish_observations` | `bool` | `true` | Auto-publish observations to DAG |
 
 ### Constructors
@@ -191,7 +191,7 @@ pub struct SmartNodeStats {
 
 ```rust
 use aingle_minimal::{SmartNode, SmartNodeConfig, SensorAdapter, IoTPolicyBuilder, Result};
-use hope_agents::Goal;
+use kaneru::Goal;
 
 fn main() -> Result<()> {
     // Create smart node
@@ -234,5 +234,5 @@ fn main() -> Result<()> {
 ## See Also
 
 - [MinimalNode API](./minimal_node.md)
-- [HOPE Agents](./hope_agents.md)
+- [Kaneru](./kaneru.md)
 - [IoT Tutorial](../tutorials/iot-sensor-app.md)

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 // use crate::aingle::core::workflow::produce_sgd_ops_workflow::sgd_op_light::error::SgdOpConvertError;
 use ai_hash::EntryHash;
 use ai_hash::HeaderHash;

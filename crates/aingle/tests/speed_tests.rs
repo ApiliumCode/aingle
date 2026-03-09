@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! # Speed tests
 //! These are designed to diagnose performance issues from a macro level.
 //! They are not intended to detect performance regressions or to be run in CI.

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use super::{standard_config, SweetAgents, SweetAppBatch, SweetConductor};
 use crate::conductor::{config::ConductorConfig, error::ConductorResult};
 use adk::prelude::*;

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! crate::saf::wasm is a module for managing webassembly code
 //!  - within the in-memory saf struct
 //!  - and serialized to json

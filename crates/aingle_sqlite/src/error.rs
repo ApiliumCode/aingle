@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! All possible errors when working with SQLite databases
 
 // missing_docs allowed here since the errors already have self-descriptive strings

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![cfg(feature = "test_utils")]
 #![cfg(todo_redo_old_tests)]
 #![allow(unused_imports)]

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![doc = include_str!("../README.md")]
 #![allow(rustdoc::bare_urls)]
 #![allow(rustdoc::invalid_html_tags)]
@@ -140,8 +143,8 @@
 //! | `ble` | Bluetooth LE for Desktop (macOS/Linux/Windows) | btleplug, uuid |
 //! | `ble-esp32` | Bluetooth LE for ESP32 devices | esp32-nimble |
 //! | `hw_wallet` | Hardware wallet support (Ledger/Trezor) | ledger-transport-hid |
-//! | `ai_memory` | Titans memory system for agents | titans_memory |
-//! | `smart_agents` | HOPE agents integration | hope_agents |
+//! | `ai_memory` | Ineru memory system for agents | ineru |
+//! | `smart_agents` | Kaneru agents integration | kaneru |
 //! | `no_std` | Compile without standard library | - |
 //!
 //! ## Platform Support

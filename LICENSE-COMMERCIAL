@@ -1,0 +1,141 @@
+AINGLE COMMERCIAL LICENSE AGREEMENT
+Version 1.0, March 2026
+
+Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+
+================================================================================
+
+IMPORTANT: READ CAREFULLY BEFORE USING THIS SOFTWARE UNDER COMMERCIAL TERMS.
+
+This Commercial License Agreement ("Agreement") is between Apilium Technologies
+OÜ, a company registered in Tallinn, Estonia ("Licensor"), and the entity or
+individual obtaining a commercial license ("Licensee").
+
+================================================================================
+
+1. DEFINITIONS
+
+"Software" means the AIngle source code, binaries, documentation, and any
+associated materials available at https://github.com/ApiliumCode/aingle.
+
+"Commercial Use" means any use of the Software that meets one or more of the
+following criteria:
+  (a) Integration, embedding, or bundling of the Software (in whole or in part)
+      into a product or service that is sold, licensed, or otherwise
+      commercially distributed;
+  (b) Offering the Software, or a modified version thereof, as a hosted or
+      managed service (SaaS, PaaS, or similar) to third parties;
+  (c) Use of the Software by an organization with annual gross revenue
+      exceeding one million United States dollars (USD $1,000,000).
+
+"Non-Commercial Use" means any use that does not constitute Commercial Use,
+including personal projects, academic research, education, evaluation, and
+use by organizations with annual gross revenue below USD $1,000,000.
+
+2. DUAL LICENSING
+
+The Software is available under two licenses:
+
+  (a) Apache License, Version 2.0 ("Apache-2.0") — for Non-Commercial Use.
+      The full text is available in the file LICENSE-APACHE.
+
+  (b) This Commercial License — for Commercial Use. A separate commercial
+      license must be obtained from the Licensor before any Commercial Use.
+
+If your use qualifies as Non-Commercial Use, you may use the Software under
+the terms of Apache-2.0 without obtaining a commercial license.
+
+If your use qualifies as Commercial Use, you MUST obtain a commercial license
+from the Licensor. Using the Software for Commercial Use without a valid
+commercial license is a violation of the Licensor's intellectual property rights.
+
+3. COMMERCIAL LICENSE GRANT
+
+Upon execution of a Commercial License Agreement and payment of applicable
+fees, the Licensor grants the Licensee a non-exclusive, non-transferable,
+worldwide license to:
+
+  (a) Use, modify, and create derivative works of the Software;
+  (b) Integrate the Software into Licensee's commercial products and services;
+  (c) Distribute the Software as part of Licensee's commercial offerings;
+  (d) Use the Software internally without limitation.
+
+The specific terms, scope, duration, and fees of each commercial license are
+negotiated individually and documented in a separate Order Form or Statement
+of Work.
+
+4. RESTRICTIONS
+
+Under this Commercial License, the Licensee may NOT:
+
+  (a) Sublicense or resell the Software as a standalone product;
+  (b) Remove or alter copyright notices, trademark notices, or attribution
+      from the Software;
+  (c) Use the trademarks "AIngle", "AIngle Cortex", "Ineru",
+      or "Kaneru" except as permitted in writing by the Licensor;
+  (d) Represent that the Licensee's product IS AIngle or is endorsed by
+      Apilium Technologies;
+  (e) Use the Software to create a product that directly competes with the
+      Software itself (i.e., a semantic DAG database or knowledge graph
+      engine offered as a standalone product).
+
+5. INTELLECTUAL PROPERTY
+
+All intellectual property rights in the Software, including patents, copyrights,
+trademarks, and trade secrets, remain with the Licensor. This Agreement does
+not transfer any ownership rights to the Licensee.
+
+The protected technologies described in the PATENTS file are the proprietary
+innovations of the Licensor. The commercial license grants usage rights only;
+it does not grant patent rights beyond those necessary to use the Software as
+licensed.
+
+6. SUPPORT AND MAINTENANCE
+
+Commercial license holders are entitled to:
+
+  (a) Priority bug fixes and security patches;
+  (b) Direct communication with the engineering team;
+  (c) Service Level Agreements (SLAs) as negotiated in the Order Form;
+  (d) Early access to new releases and features.
+
+7. WARRANTY AND LIABILITY
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. THE LICENSOR
+SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR
+PUNITIVE DAMAGES ARISING FROM THE USE OF THE SOFTWARE.
+
+The Licensor's total liability under this Agreement shall not exceed the total
+fees paid by the Licensee in the twelve (12) months preceding the claim.
+
+8. TERM AND TERMINATION
+
+  (a) This Agreement is effective upon execution and continues for the term
+      specified in the Order Form.
+  (b) Either party may terminate this Agreement for material breach with
+      thirty (30) days written notice.
+  (c) Upon termination, the Licensee must cease all Commercial Use of the
+      Software within sixty (60) days.
+  (d) Sections 4, 5, 7, and 9 survive termination.
+
+9. GOVERNING LAW
+
+This Agreement is governed by the laws of the Republic of Estonia, without
+regard to conflict of law principles. Any disputes shall be resolved in the
+courts of Tallinn, Estonia, or by arbitration under the rules of the Estonian
+Chamber of Commerce and Industry.
+
+10. HOW TO OBTAIN A COMMERCIAL LICENSE
+
+Contact Apilium Technologies OÜ:
+
+  Email: partners@apilium.com
+  Web: https://apilium.com/en/contact
+  Legal: legal@apilium.com
+
+================================================================================
+
+Apilium Technologies OÜ
+Registration Number: 17409213
+Tallinn, Estonia
+https://apilium.com

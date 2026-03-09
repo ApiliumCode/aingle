@@ -12,7 +12,7 @@
 │  │   (Server)      │  │   (IoT Device)  │  │   (AI Agent)    │             │
 │  ├─────────────────┤  ├─────────────────┤  ├─────────────────┤             │
 │  │ • Full DAG      │  │ • Pruned DAG    │  │ • MinimalNode   │             │
-│  │ • Validation    │  │ • CoAP Transport│  │ • HOPE Agent    │             │
+│  │ • Validation    │  │ • CoAP Transport│  │ • Kaneru Agent  │             │
 │  │ • Websocket API │  │ • Gossip Sync   │  │ • Policy Engine │             │
 │  │ • App Hosting   │  │ • <1MB RAM      │  │ • Learning      │             │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘             │
@@ -86,9 +86,9 @@ aingle (main conductor)
 ├── aingle_minimal         # Lightweight IoT node
 │   ├── coap              # CoAP transport (RFC 7252)
 │   ├── gossip            # Optimized gossip protocol
-│   └── smart             # SmartNode (with HOPE agents)
-├── hope_agents            # HOPE agent framework
-└── titans_memory          # Neural memory system
+│   └── smart             # SmartNode (with Kaneru agents)
+├── kaneru            # Kaneru agent framework
+└── ineru                  # Neural memory system
 ```
 
 ## Data Flow

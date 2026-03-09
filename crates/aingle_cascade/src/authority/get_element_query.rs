@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use ai_hash::HeaderHash;
 use aingle_p2p::event::GetOptions;
 use aingle_sqlite::rusqlite::named_params;

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 /// Stubs for things that might break validation
 
 /// This test shows a way to create a delete with a rejected header

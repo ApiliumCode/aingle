@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! REST API server for SDK integration.
 //!
 //! This module provides a lightweight HTTP REST API that allows SDKs in various

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Query for `deterministic_get_agent_activity`, designed for use in
 //! validation callbacks.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use aingle_types::sgd_op::SgdOpType;
 use aingle_zome_types::HeaderType;
 use thiserror::Error;
