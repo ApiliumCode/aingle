@@ -37,6 +37,12 @@ pub struct CortexConfig {
     pub audit_log_path: Option<PathBuf>,
     /// Maximum request body size in bytes (default: 1MB).
     pub max_body_size: usize,
+    /// Path to the graph database directory.
+    ///
+    /// - `Some(":memory:")` — volatile in-memory storage (no persistence).
+    /// - `Some(path)` — persist to the given directory.
+    /// - `None` — persist to the default `~/.aingle/cortex/graph.sled`.
+    pub db_path: Option<String>,
 }
 
 impl Default for CortexConfig {
@@ -52,6 +58,7 @@ impl Default for CortexConfig {
             rate_limit_rpm: 100,
             audit_log_path: None,
             max_body_size: 1024 * 1024, // 1MB
+            db_path: None,
         }
     }
 }
@@ -88,13 +95,16 @@ pub struct CortexServer {
 }
 
 impl CortexServer {
-    /// Creates a new `CortexServer` with a given configuration and a default, in-memory `AppState`.
+    /// Creates a new `CortexServer` with a given configuration.
+    ///
+    /// The graph database backend is selected based on `config.db_path`:
+    /// - `Some(":memory:")` — volatile in-memory storage.
+    /// - `Some(path)` — Sled-backed persistent storage at the given path.
+    /// - `None` — Sled-backed persistent storage at `~/.aingle/cortex/graph.sled`.
     pub fn new(config: CortexConfig) -> Result<Self> {
-        let state = if let Some(ref path) = config.audit_log_path {
-            AppState::with_audit_path(path.clone())
-        } else {
-            AppState::new()
-        };
+        let db_path = resolve_db_path(&config.db_path);
+        let state = AppState::with_db_path(&db_path, config.audit_log_path.clone())?;
+        info!("Graph database: {}", db_path);
         Ok(Self { config, state })
     }
 
@@ -245,6 +255,24 @@ impl CortexServer {
 
         info!("Córtex API server stopped");
         Ok(())
+    }
+}
+
+/// Resolves the graph database path from the configuration.
+///
+/// - `":memory:"` → returns `":memory:"` (volatile in-memory storage).
+/// - An explicit path → returns it as-is.
+/// - `None` → returns the default `~/.aingle/cortex/graph.sled`.
+fn resolve_db_path(db_path: &Option<String>) -> String {
+    match db_path {
+        Some(p) if p == ":memory:" => ":memory:".to_string(),
+        Some(p) => p.clone(),
+        None => {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            let default_dir = home.join(".aingle").join("cortex");
+            std::fs::create_dir_all(&default_dir).ok();
+            default_dir.join("graph.sled").to_string_lossy().to_string()
+        }
     }
 }
 
