@@ -233,6 +233,14 @@ impl GraphStore {
         self.backend.count()
     }
 
+    /// Flushes any buffered writes to the underlying storage backend.
+    ///
+    /// For persistent backends (e.g., Sled), this ensures all data is
+    /// written to disk. For in-memory backends, this is a no-op.
+    pub fn flush(&self) -> Result<()> {
+        self.backend.flush()
+    }
+
     /// Returns statistics about the graph, such as triple and node counts.
     pub fn stats(&self) -> GraphStats {
         let index = self.index.read().ok();

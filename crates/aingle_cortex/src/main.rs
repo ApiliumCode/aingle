@@ -52,6 +52,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--public" => {
                 config.host = "0.0.0.0".to_string();
             }
+            "--db" => {
+                if i + 1 < args.len() {
+                    config.db_path = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            }
+            "--memory" => {
+                config.db_path = Some(":memory:".to_string());
+            }
             "--help" => {
                 print_help();
                 return Ok(());
@@ -72,9 +81,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         p2p
     };
 
+    // Resolve the snapshot directory for Ineru persistence
+    let snapshot_dir = match &config.db_path {
+        Some(p) if p == ":memory:" => None,
+        Some(p) => std::path::Path::new(p).parent().map(|p| p.to_path_buf()),
+        None => {
+            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+            Some(home.join(".aingle").join("cortex"))
+        }
+    };
+
     // Create and run server
     #[allow(unused_mut)]
     let mut server = CortexServer::new(config)?;
+
+    // Keep a reference to the state for shutdown flush
+    let state_for_shutdown = server.state().clone();
+    let snapshot_dir_for_shutdown = snapshot_dir.clone();
 
     // Start P2P manager if enabled.
     #[cfg(feature = "p2p")]
@@ -96,12 +119,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Set up graceful shutdown
-    let shutdown_signal = async {
-        tokio::signal::ctrl_c()
+    // Set up graceful shutdown with data flush (handles both SIGINT and SIGTERM)
+    let shutdown_signal = async move {
+        let ctrl_c = tokio::signal::ctrl_c();
+
+        #[cfg(unix)]
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("Failed to install SIGTERM handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {
+                tracing::info!("SIGINT received — flushing data...");
+            }
+            _ = terminate => {
+                tracing::info!("SIGTERM received — flushing data...");
+            }
+        }
+
+        // Flush graph database and save Ineru snapshot
+        if let Err(e) = state_for_shutdown
+            .flush(snapshot_dir_for_shutdown.as_deref())
             .await
-            .expect("Failed to install CTRL+C handler");
-        tracing::info!("Shutdown signal received");
+        {
+            tracing::error!("Failed to flush data on shutdown: {}", e);
+        } else {
+            tracing::info!("Data flushed successfully");
+        }
     };
 
     server.run_with_shutdown(shutdown_signal).await?;
@@ -119,6 +169,8 @@ fn print_help() {
     println!("    -h, --host <HOST>    Host to bind to (default: 127.0.0.1)");
     println!("    -p, --port <PORT>    Port to listen on (default: 8080)");
     println!("    --public             Bind to all interfaces (0.0.0.0)");
+    println!("    --db <PATH>          Path to graph database (default: ~/.aingle/cortex/graph.sled)");
+    println!("    --memory             Use volatile in-memory storage (no persistence)");
     println!("    -V, --version        Print version and exit");
     println!("    --help               Print this help message");
     println!();
