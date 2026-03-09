@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("AIngle Cortex v{}", env!("CARGO_PKG_VERSION"));
         println!("Copyright 2019-2026 Apilium Technologies OÜ");
-        println!("Licensed under Apache License 2.0");
+        println!("License: Apache-2.0 OR Commercial");
         println!("https://github.com/ApiliumCode/aingle");
         return Ok(());
     }
