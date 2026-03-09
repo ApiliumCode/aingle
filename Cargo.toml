@@ -4,10 +4,10 @@ members = [
   # ── Product crates ──────────────────────────────────────────────
   "crates/aingle_graph",        # Native Semantic GraphDB
   "crates/aingle_zk",           # Zero-Knowledge Proofs (Privacy)
-  "crates/titans_memory",       # Titans Memory System
+  "crates/ineru",               # Ineru Memory System
   "crates/aingle_ai",           # AI Integration Layer
   "crates/aingle_logic",        # Proof-of-Logic Validation Engine
-  "crates/hope_agents",         # Hierarchical Optimistic Planning Engine
+  "crates/kaneru",              # Kaneru — Unified Multi-Agent Execution System
   "crates/aingle_cortex",       # Córtex API (REST/GraphQL/SPARQL)
   "crates/aingle_minimal",      # IoT-optimized minimal node
   "crates/aingle_contracts",    # Smart Contracts (DSL + WASM Runtime)

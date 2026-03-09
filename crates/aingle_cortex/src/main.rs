@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! AIngle Córtex API Server
 //!
 //! REST/GraphQL/SPARQL interface for AIngle semantic graphs.
@@ -21,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Handle --version before anything else (no server init needed)
     if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("{}", env!("CARGO_PKG_VERSION"));
+        println!("AIngle Cortex v{}", env!("CARGO_PKG_VERSION"));
+        println!("Copyright 2019-2026 Apilium Technologies OÜ");
+        println!("Licensed under Apache License 2.0");
+        println!("https://github.com/ApiliumCode/aingle");
         return Ok(());
     }
 

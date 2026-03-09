@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! REST API endpoints for Córtex
 //!
 //! ## Endpoints
@@ -97,7 +100,7 @@ pub fn router() -> Router<AppState> {
             "/api/v1/proofs/{id}/verify",
             get(proof_api::verify_proof_by_id),
         )
-        // Titans Memory endpoints
+        // Ineru memory endpoints
         .merge(memory::memory_router())
         // Semantic Observability endpoints
         .merge(observability::observability_router())

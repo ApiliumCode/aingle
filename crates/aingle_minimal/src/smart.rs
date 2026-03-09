@@ -1,6 +1,9 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Smart Node - IoT+AI Pipeline Integration
 //!
-//! Combines `MinimalNode` with HOPE Agents to create intelligent IoT nodes
+//! Combines `MinimalNode` with Kaneru to create intelligent IoT nodes
 //! that can observe, decide, act, and learn.
 //!
 //! # Architecture
@@ -11,7 +14,7 @@
 //! ├─────────────────────────────────────────────────────────────┤
 //! │                                                              │
 //! │  ┌──────────────┐     ┌──────────────┐     ┌─────────────┐ │
-//! │  │   Sensors    │────>│   HOPE       │────>│  Network    │ │
+//! │  │   Sensors    │────>│   Kaneru     │────>│  Network    │ │
 //! │  │   (IoT)      │     │   Agent      │     │  (CoAP)     │ │
 //! │  └──────────────┘     └──────────────┘     └─────────────┘ │
 //! │         │                    │                    │         │
@@ -28,7 +31,7 @@
 //!
 //! ```rust,ignore
 //! use aingle_minimal::{SmartNode, SmartNodeConfig};
-//! use hope_agents::{Observation, Goal};
+//! use kaneru::{Observation, Goal};
 //!
 //! // Create smart node with AI capabilities
 //! let config = SmartNodeConfig::iot_mode();
@@ -51,8 +54,8 @@ use crate::error::Result;
 use crate::node::MinimalNode;
 use crate::types::{Entry, EntryType, Hash, NodeStats};
 
-use hope_agents::agent::AgentStats;
-use hope_agents::{
+use kaneru::agent::AgentStats;
+use kaneru::{
     Action, ActionResult, ActionType, Agent, AgentConfig, AgentState, Goal, Observation, Policy,
     Rule, SimpleAgent,
 };
@@ -116,11 +119,11 @@ impl SmartNodeConfig {
     }
 }
 
-/// Smart Node combining MinimalNode with HOPE Agent
+/// Smart Node combining MinimalNode with Kaneru Agent
 pub struct SmartNode {
     /// Base AIngle node
     node: MinimalNode,
-    /// HOPE Agent
+    /// Kaneru Agent
     agent: SimpleAgent,
     /// Configuration
     config: SmartNodeConfig,
@@ -391,24 +394,24 @@ impl SmartNode {
     fn execute_remote_call(&self, action: &Action, target: &str) -> Result<ActionResult> {
         log::info!("Remote call to target: {}", target);
 
-        // Get method from params (hope_agents::Value)
+        // Get method from params (kaneru::Value)
         let method = action
             .params
             .get("method")
             .and_then(|v| match v {
-                hope_agents::Value::String(s) => Some(s.as_str()),
+                kaneru::Value::String(s) => Some(s.as_str()),
                 _ => None,
             })
             .unwrap_or("ping");
 
-        // Get payload from params (convert hope_agents::Value to bytes)
+        // Get payload from params (convert kaneru::Value to bytes)
         let payload = action
             .params
             .get("payload")
             .map(|v| match v {
-                hope_agents::Value::Bytes(b) => b.clone(),
-                hope_agents::Value::String(s) => s.as_bytes().to_vec(),
-                hope_agents::Value::Json(j) => serde_json::to_vec(j).unwrap_or_default(),
+                kaneru::Value::Bytes(b) => b.clone(),
+                kaneru::Value::String(s) => s.as_bytes().to_vec(),
+                kaneru::Value::Json(j) => serde_json::to_vec(j).unwrap_or_default(),
                 _ => Vec::new(),
             })
             .unwrap_or_default();
@@ -573,7 +576,7 @@ pub struct SmartNodeStats {
     pub observation_entries: usize,
 }
 
-/// Sensor adapter for converting sensor readings to HOPE observations
+/// Sensor adapter for converting sensor readings to Kaneru observations
 pub struct SensorAdapter {
     name: String,
     scale: f64,
@@ -622,7 +625,7 @@ pub struct IoTPolicyBuilder;
 impl IoTPolicyBuilder {
     /// Create a threshold alert policy
     pub fn threshold_alert(sensor_name: &str, threshold: f64, alert_message: &str) -> Rule {
-        use hope_agents::policy::Condition;
+        use kaneru::policy::Condition;
 
         Rule::new(
             &format!("{}_threshold", sensor_name),
@@ -639,7 +642,7 @@ impl IoTPolicyBuilder {
         action_low: Action,
         action_high: Action,
     ) -> Vec<Rule> {
-        use hope_agents::policy::Condition;
+        use kaneru::policy::Condition;
 
         vec![
             Rule::new(
@@ -662,7 +665,7 @@ impl IoTPolicyBuilder {
         on_action: Action,
         off_action: Action,
     ) -> Vec<Rule> {
-        use hope_agents::policy::Condition;
+        use kaneru::policy::Condition;
 
         vec![
             Rule::new(
@@ -740,7 +743,7 @@ mod tests {
 
     #[test]
     fn test_smart_node_with_rule() {
-        use hope_agents::policy::Condition;
+        use kaneru::policy::Condition;
 
         let config = test_config();
         let mut node = SmartNode::new(config).unwrap();

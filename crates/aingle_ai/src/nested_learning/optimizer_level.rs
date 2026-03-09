@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Optimizer-Level optimization
 //!
 //! Validation strategies with medium-frequency updates (~100 transactions).

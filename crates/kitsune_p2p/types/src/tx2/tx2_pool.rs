@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Abstraction traits / types for tx2 networking transport.
 
 use crate::tx2::tx2_adapter::{Tx2ConDir, Uniq};

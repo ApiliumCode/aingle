@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use ai_hash::AgentPubKey;
 use aingle_types::env::EnvRead;
 use aingle_types::env::EnvWrite;

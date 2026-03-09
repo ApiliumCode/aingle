@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Defines a crude mock Keystore which always returns the same Error for every
 //! call. This is about as close as we can get to a true mock which would allow
 //! tweaking individual handlers, hence why this is a "crude" mock.

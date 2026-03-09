@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! A "Cell" represents a SAF/AgentId pair - a space where one saf/agent
 //! can track its source chain and service network requests / responses.
 

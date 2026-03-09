@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Data structures for representing the AIngle DAG in a visualization-friendly format.
 //!
 //! This module provides the core types for building and manipulating DAG visualizations.

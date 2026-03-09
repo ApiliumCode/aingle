@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! # Manage persistence of sandboxes
 //! This module gives basic helpers to save / load your sandboxes
 //! in a `.ai` file.

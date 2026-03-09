@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Core data types for the minimal AIngle node.
 //!
 //! This module defines the fundamental types used throughout the aingle_minimal crate,

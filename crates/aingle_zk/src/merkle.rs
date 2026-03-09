@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Merkle tree for membership proofs
 //!
 //! Allows proving that an element is part of a set without revealing

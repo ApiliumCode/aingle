@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::entry_def::EntryVisibility;
 use crate::link::LinkTag;
 use crate::timestamp::Timestamp;

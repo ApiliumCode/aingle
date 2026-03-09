@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use super::guest_callback::entry_defs::EntryDefsHostAccess;
 use super::guest_callback::init::InitHostAccess;
 use super::guest_callback::migrate_agent::MigrateAgentHostAccess;

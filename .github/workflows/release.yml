@@ -179,8 +179,8 @@ jobs:
         run: cargo publish -p aingle_zk --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         continue-on-error: true
 
-      - name: Publish titans_memory
-        run: cargo publish -p titans_memory --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish ineru
+        run: cargo publish -p ineru --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         continue-on-error: true
 
       - name: Publish aingle_ai
@@ -203,8 +203,8 @@ jobs:
         run: cargo publish -p aingle_logic --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         continue-on-error: true
 
-      - name: Publish hope_agents
-        run: cargo publish -p hope_agents --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish kaneru
+        run: cargo publish -p kaneru --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         continue-on-error: true
 
       - name: Wait for crates.io index update

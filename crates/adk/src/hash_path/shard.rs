@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use crate::hash_path::path::Component;
 use crate::hash_path::path::Path;
 use std::str::FromStr;

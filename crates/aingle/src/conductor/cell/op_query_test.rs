@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use aingle_sqlite::db::WriteManager;
 use aingle_state::mutations;
 use aingle_state::prelude::test_cell_env;

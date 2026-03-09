@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! the _host_ types used to track the status/result of validating entries
 //! c.f. _guest_ types for validation callbacks and packages across the wasm boudary in zome_types
 

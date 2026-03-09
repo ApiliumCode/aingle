@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Workspaces are a simple abstraction used to stage changes during Workflow
 //! execution to be persisted later
 //!

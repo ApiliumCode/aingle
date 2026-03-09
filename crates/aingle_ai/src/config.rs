@@ -1,21 +1,24 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Global AI configuration
 
-use crate::hope::HopeConfig;
+use crate::kaneru::KaneruConfig;
 use crate::nested_learning::NestedConfig;
-use crate::titans::TitansConfig;
+use crate::ineru::IneruConfig;
 use serde::{Deserialize, Serialize};
 
 /// Global AI configuration for AIngle nodes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
-    /// Titans Memory configuration
-    pub titans: TitansConfig,
+    /// Ineru memory configuration
+    pub titans: IneruConfig,
 
     /// Nested Learning configuration
     pub nested_learning: NestedConfig,
 
-    /// HOPE Agent configuration
-    pub hope: HopeConfig,
+    /// Kaneru Agent configuration
+    pub kaneru: KaneruConfig,
 
     /// Enable predictive validation
     pub predictive_validation: bool,
@@ -30,9 +33,9 @@ pub struct AiConfig {
 impl Default for AiConfig {
     fn default() -> Self {
         Self {
-            titans: TitansConfig::default(),
+            titans: IneruConfig::default(),
             nested_learning: NestedConfig::default(),
-            hope: HopeConfig::default(),
+            kaneru: KaneruConfig::default(),
             predictive_validation: true,
             adaptive_consensus: true,
             iot_mode: false,
@@ -44,9 +47,9 @@ impl AiConfig {
     /// Create IoT-optimized configuration
     pub fn iot() -> Self {
         Self {
-            titans: TitansConfig::iot(),
+            titans: IneruConfig::iot(),
             nested_learning: NestedConfig::iot(),
-            hope: HopeConfig::iot(),
+            kaneru: KaneruConfig::iot(),
             predictive_validation: false, // Too expensive for IoT
             adaptive_consensus: true,
             iot_mode: true,
@@ -56,9 +59,9 @@ impl AiConfig {
     /// Create full-power configuration for servers
     pub fn full_power() -> Self {
         Self {
-            titans: TitansConfig::full_power(),
+            titans: IneruConfig::full_power(),
             nested_learning: NestedConfig::full_power(),
-            hope: HopeConfig::full_power(),
+            kaneru: KaneruConfig::full_power(),
             predictive_validation: true,
             adaptive_consensus: true,
             iot_mode: false,
@@ -79,7 +82,7 @@ impl AiConfig {
     pub fn validate(&self) -> Result<(), String> {
         self.titans.validate()?;
         self.nested_learning.validate()?;
-        self.hope.validate()?;
+        self.kaneru.validate()?;
         Ok(())
     }
 }

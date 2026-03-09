@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Node identifiers for graph subjects and objects.
 //!
 //! A `NodeId` uniquely identifies a node (a subject or an object) in the graph.

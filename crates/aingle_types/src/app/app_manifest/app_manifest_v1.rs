@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! App Manifest format, version 1.
 //!
 //! NB: After stabilization, *do not modify this file*! Create a new version of

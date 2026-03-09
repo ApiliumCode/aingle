@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 use super::*;
 use crate::types::gossip::GossipModule;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};

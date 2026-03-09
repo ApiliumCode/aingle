@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! AIngle Minimal Node CLI
 //!
 //! Ultra-light node for IoT devices with comprehensive subcommands.
@@ -408,9 +411,9 @@ fn show_info() -> Result<()> {
     println!("  [ ] Hardware wallet");
 
     #[cfg(feature = "smart_agents")]
-    println!("  [x] Smart agents (HOPE)");
+    println!("  [x] Smart agents (Kaneru)");
     #[cfg(not(feature = "smart_agents"))]
-    println!("  [ ] Smart agents (HOPE)");
+    println!("  [ ] Smart agents (Kaneru)");
 
     #[cfg(feature = "ai_memory")]
     println!("  [x] AI memory (Titans)");

@@ -1,0 +1,81 @@
+# AIngle — Protected Technologies & Patent Notice
+
+Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+
+This file describes the proprietary technologies, algorithms, and
+architectural innovations embodied in AIngle that are protected under
+applicable intellectual property laws. This notice supplements (but
+does not replace) the Apache License 2.0 patent grant in Section 3.
+
+## Protected Innovations
+
+### 1. Semantic DAG Architecture
+
+A content-addressed directed acyclic graph that combines cryptographic
+integrity (blake3 hashing), RDF triple storage with SPO/POS/OSP indexing,
+and provenance-tracked knowledge management in a single unified data
+structure.
+
+### 2. AIngle Cortex
+
+A cryptographic semantic layer that integrates:
+- Native RDF triple store with SPARQL 1.1 query execution
+- Pattern-based graph queries with namespace isolation
+- Proof-of-Logic validation engine
+- Zero-knowledge proof generation and verification
+- REST/WebSocket API for external integration
+
+### 3. Proof-of-Logic Engine
+
+An inference engine implementing both forward chaining (data-driven)
+and backward chaining (goal-driven) reasoning over RDF knowledge graphs,
+with ontological consistency validation and rule-based inference.
+
+### 4. Kaneru (Unified Multi-Agent Execution System)
+
+A multi-agent framework for autonomous goal decomposition featuring:
+- Hierarchical task planning with optimistic execution
+- Dynamic goal tree construction and pruning
+- Inter-agent coordination via semantic message passing
+- Capability-based agent selection and delegation
+
+### 5. Ineru
+
+A neural-inspired persistence system implementing:
+- Attention-weighted short-term memory with configurable decay
+- Semantic long-term memory with automatic consolidation
+- Importance scoring for STM-to-LTM promotion
+- Content-addressed storage with semantic similarity search
+
+### 6. Zero-Knowledge Proof Integration
+
+Integration of zero-knowledge proof systems into a semantic knowledge
+graph, enabling verifiable computation over private data:
+- Pedersen commitment schemes for value hiding
+- Schnorr signature proofs for identity verification
+- Bulletproofs range proofs for numerical assertions
+- Proof composition for complex multi-step verification
+
+### 7. Nested Learning
+
+A meta-optimization framework that enables adaptive model behavior
+through hierarchical learning loops operating on the knowledge graph.
+
+### 8. AIngle Minimal
+
+A lightweight edge runtime designed for IoT and resource-constrained
+devices, implementing a subset of the AIngle protocol with:
+- Minimal memory footprint graph operations
+- Device capability sharing via semantic descriptors
+- Peer-to-peer sync with gossip protocol
+
+## Patent Status
+
+Apilium Technologies OÜ reserves all rights to seek patent protection
+for the innovations described above in any jurisdiction. The Apache
+License 2.0 patent grant (Section 3) applies only to contributions
+as defined in that license and does not constitute a waiver of patent
+rights for the system-level architectural innovations described herein.
+
+For patent licensing inquiries: legal@apilium.com
+For partnership opportunities: partners@apilium.com

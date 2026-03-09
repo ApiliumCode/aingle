@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Simple actor implementation to replace the missing GhostActor from ghost_actor crate.
 //!
 //! This provides a minimal actor implementation that:

@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Signature for authenticity of data
 use crate::Bytes;
 use ai_hash::AgentPubKey;

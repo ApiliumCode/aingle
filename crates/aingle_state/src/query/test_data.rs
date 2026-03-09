@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 #![allow(clippy::clippy::redundant_clone)]
 use ::ai_fixt::prelude::*;
 use ai_hash::*;

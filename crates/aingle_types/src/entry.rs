@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! An Entry is a unit of data in a AIngle Source Chain.
 //!
 //! This module contains all the necessary definitions for Entry, which broadly speaking

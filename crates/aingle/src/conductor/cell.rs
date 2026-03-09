@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! A Cell is an "instance" of AIngle SAF.
 //!
 //! It combines an AgentPubKey with a Saf to create a SourceChain, upon which

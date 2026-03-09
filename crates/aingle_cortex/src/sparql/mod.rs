@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! SPARQL query engine for Córtex
 //!
 //! Provides SPARQL 1.1 query support for the AIngle graph.

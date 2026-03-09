@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Kitsune Config Tuning Params
 
 /// How long kitsune should wait before timing out when joining the network.

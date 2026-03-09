@@ -1,9 +1,12 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Predictive Validator
 //!
 //! Predict validation outcome before full validation.
 
 use crate::nested_learning::NestedLearning;
-use crate::titans::TitansMemory;
+use crate::ineru::IneruMemory;
 use crate::types::{AiTransaction, ValidationPrediction};
 
 /// Predict validation outcome before full validation
@@ -32,12 +35,12 @@ impl PredictiveValidator {
     pub fn predict(
         &self,
         tx: &AiTransaction,
-        titans: &TitansMemory,
+        ineru: &IneruMemory,
         nested: &NestedLearning,
     ) -> ValidationPrediction {
         // Use Titans memory for pattern matching
         let pattern = tx.to_pattern();
-        let similar_patterns = titans.query(&pattern, 100);
+        let similar_patterns = ineru.query(&pattern, 100);
 
         // Use Nested Learning for complexity estimation
         let complexity = {
@@ -158,7 +161,7 @@ pub struct PredictionAccuracy {
 mod tests {
     use super::*;
     use crate::nested_learning::NestedConfig;
-    use crate::titans::TitansConfig;
+    use crate::ineru::IneruConfig;
 
     fn make_test_tx(id: u8) -> AiTransaction {
         AiTransaction {
@@ -174,11 +177,11 @@ mod tests {
     #[test]
     fn test_predictive_validator() {
         let validator = PredictiveValidator::new();
-        let titans = TitansMemory::new(TitansConfig::default());
+        let ineru = IneruMemory::new(IneruConfig::default());
         let nested = NestedLearning::new(NestedConfig::default());
 
         let tx = make_test_tx(1);
-        let prediction = validator.predict(&tx, &titans, &nested);
+        let prediction = validator.predict(&tx, &ineru, &nested);
 
         assert!(prediction.confidence >= 0.0 && prediction.confidence <= 1.0);
         assert!(prediction.estimated_time_ms > 0);

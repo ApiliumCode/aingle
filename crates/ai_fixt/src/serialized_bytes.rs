@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! @todo move all this out to the serialized bytes crate
 use crate::prelude::*;
 use aingle_middleware_bytes::prelude::*;

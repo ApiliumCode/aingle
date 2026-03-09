@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! DTLS Security Layer for CoAP
 //!
 //! Implements Datagram Transport Layer Security (DTLS) for secure CoAP communications.

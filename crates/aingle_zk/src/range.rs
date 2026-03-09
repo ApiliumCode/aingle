@@ -1,3 +1,6 @@
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0 OR Commercial
+
 //! Range proofs using Bulletproofs
 //!
 //! Prove that a committed value is within a specific range without revealing the actual value.
