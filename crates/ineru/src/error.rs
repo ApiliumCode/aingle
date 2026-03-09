@@ -89,6 +89,11 @@ impl Error {
     pub fn not_found(id: &str) -> Self {
         Error::NotFound(id.to_string())
     }
+
+    /// Helper to create an `Internal` error.
+    pub fn internal(msg: impl Into<String>) -> Self {
+        Error::Internal(msg.into())
+    }
 }
 
 #[cfg(test)]

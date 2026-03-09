@@ -1,6 +1,6 @@
 [package]
 name = "ineru"
-version = "0.4.0"
+version = "0.4.1"
 description = "Ineru: Neural-inspired memory system for AIngle AI agents"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -26,6 +26,7 @@ compression = []
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+bincode = "2.0"
 
 # Crypto for hashing
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
