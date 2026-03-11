@@ -20,6 +20,7 @@ sparql = ["dep:spargebra"]
 auth = ["dep:jsonwebtoken", "dep:argon2"]
 p2p = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:ed25519-dalek", "dep:hex"]
 p2p-mdns = ["p2p", "dep:mdns-sd", "dep:if-addrs"]
+cluster = ["p2p", "dep:aingle_wal"]
 full = ["rest", "graphql", "sparql", "auth"]
 
 [[bin]]
@@ -92,6 +93,9 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rcgen = { version = "0.13", optional = true }
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
 hex = { version = "0.4", optional = true }
+# Clustering (optional)
+aingle_wal = { version = "0.5", path = "../aingle_wal", optional = true }
+
 dirs = "6"
 mdns-sd = { version = "0.18", optional = true }
 if-addrs = { version = "0.13", optional = true }

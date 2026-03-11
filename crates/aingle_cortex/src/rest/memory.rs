@@ -120,6 +120,8 @@ pub async fn remember(
     State(state): State<AppState>,
     Json(req): Json<RememberRequest>,
 ) -> Result<(StatusCode, Json<RememberResponse>)> {
+    #[cfg(feature = "cluster")]
+    let wal_data = req.data.clone();
     let mut entry = MemoryEntry::new(&req.entry_type, req.data);
 
     if !req.tags.is_empty() {
@@ -137,6 +139,17 @@ pub async fn remember(
     let id = memory
         .remember(entry)
         .map_err(|e| Error::Internal(format!("Memory store failed: {e}")))?;
+
+    // Append to WAL (cluster mode)
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        let _ = wal.append(aingle_wal::WalEntryKind::MemoryStore {
+            memory_id: id.to_hex(),
+            entry_type: req.entry_type.clone(),
+            data: wal_data.clone(),
+            importance: req.importance,
+        });
+    }
 
     Ok((
         StatusCode::CREATED,
@@ -188,6 +201,14 @@ pub async fn consolidate(
         .consolidate()
         .map_err(|e| Error::Internal(format!("Consolidation failed: {e}")))?;
 
+    // Append to WAL (cluster mode)
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        let _ = wal.append(aingle_wal::WalEntryKind::MemoryConsolidate {
+            consolidated_count: count,
+        });
+    }
+
     Ok(Json(ConsolidateResponse {
         consolidated: count,
     }))
@@ -219,6 +240,14 @@ pub async fn forget(
     memory
         .forget(&memory_id)
         .map_err(|e| Error::NotFound(format!("Memory not found: {e}")))?;
+
+    // Append to WAL (cluster mode)
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        let _ = wal.append(aingle_wal::WalEntryKind::MemoryForget {
+            memory_id: id.clone(),
+        });
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
