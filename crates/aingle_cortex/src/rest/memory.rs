@@ -329,6 +329,103 @@ pub async fn restore_checkpoint(
 }
 
 // ============================================================================
+// Vector Search (Motomeru)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct VectorSearchRequest {
+    pub embedding: Vec<f32>,
+    pub k: usize,
+    #[serde(default = "default_min_similarity")]
+    pub min_similarity: f32,
+    pub entry_type: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+fn default_min_similarity() -> f32 {
+    0.0
+}
+
+#[derive(Debug, Serialize)]
+pub struct VectorIndexStatsDto {
+    pub point_count: usize,
+    pub deleted_count: usize,
+    pub dimensions: usize,
+    pub memory_bytes: usize,
+}
+
+/// Vector search over memory entries using HNSW index.
+pub async fn vector_search(
+    State(state): State<AppState>,
+    Json(req): Json<VectorSearchRequest>,
+) -> Result<Json<Vec<MemoryResultDto>>> {
+    let memory = state.memory.read().await;
+    let results = memory.ltm.vector_search_memories(&req.embedding, req.k, req.min_similarity);
+
+    let mut dtos: Vec<MemoryResultDto> = results
+        .into_iter()
+        .map(|(entry, similarity)| MemoryResultDto {
+            id: entry.id.to_hex(),
+            entry_type: entry.entry_type.clone(),
+            data: entry.data.clone(),
+            tags: entry.tags.iter().map(|t| t.0.clone()).collect(),
+            importance: entry.metadata.importance,
+            relevance: similarity,
+            source: "LongTerm".to_string(),
+            created_at: entry.metadata.created_at.0.to_string(),
+            last_accessed: entry.metadata.last_accessed.0.to_string(),
+            access_count: entry.metadata.access_count,
+        })
+        .collect();
+
+    // Apply optional filters
+    if let Some(ref entry_type) = req.entry_type {
+        dtos.retain(|d| &d.entry_type == entry_type);
+    }
+    if let Some(ref tags) = req.tags {
+        if !tags.is_empty() {
+            dtos.retain(|d| tags.iter().any(|t| d.tags.contains(t)));
+        }
+    }
+
+    Ok(Json(dtos))
+}
+
+/// Get HNSW vector index statistics.
+pub async fn vector_index_stats(
+    State(state): State<AppState>,
+) -> Result<Json<VectorIndexStatsDto>> {
+    let memory = state.memory.read().await;
+    let stats = memory.ltm.hnsw_index()
+        .map(|idx| idx.stats())
+        .unwrap_or(ineru::hnsw::HnswStats {
+            point_count: 0,
+            deleted_count: 0,
+            dimensions: 0,
+            memory_bytes: 0,
+        });
+
+    Ok(Json(VectorIndexStatsDto {
+        point_count: stats.point_count,
+        deleted_count: stats.deleted_count,
+        dimensions: stats.dimensions,
+        memory_bytes: stats.memory_bytes,
+    }))
+}
+
+/// Force rebuild of the HNSW vector index.
+pub async fn rebuild_vector_index(
+    State(state): State<AppState>,
+) -> Result<StatusCode> {
+    let mut memory = state.memory.write().await;
+    if let Some(hnsw) = memory.ltm.hnsw_index_mut() {
+        hnsw.rebuild();
+        tracing::info!("HNSW index rebuilt, {} active points", hnsw.len());
+    }
+    Ok(StatusCode::OK)
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -376,4 +473,8 @@ pub fn memory_router() -> axum::Router<AppState> {
         .route("/api/v1/memory/checkpoint", post(checkpoint))
         .route("/api/v1/memory/checkpoints", get(list_checkpoints))
         .route("/api/v1/memory/restore/{id}", post(restore_checkpoint))
+        // Motomeru: HNSW vector search endpoints
+        .route("/api/v1/memory/search", post(vector_search))
+        .route("/api/v1/memory/index/stats", get(vector_index_stats))
+        .route("/api/v1/memory/index/rebuild", post(rebuild_vector_index))
 }

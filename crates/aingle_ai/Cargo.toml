@@ -1,6 +1,6 @@
 [package]
 name = "aingle_ai"
-version = "0.4.1"
+version = "0.4.2"
 description = "AI integration layer for AIngle - Ineru, Nested Learning, Kaneru"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
