@@ -8,6 +8,7 @@
 
 use crate::config::LtmConfig;
 use crate::error::{Error, Result};
+use crate::hnsw::{HnswConfig, HnswIndex};
 use crate::types::{
     Embedding, Entity, EntityId, Link, MemoryEntry, MemoryId, MemoryQuery, MemoryResult,
     MemorySource, Relation, SemanticTag,
@@ -35,11 +36,19 @@ pub struct LongTermMemory {
     config: LtmConfig,
     /// A running estimate of the total memory used by the LTM.
     memory_usage: usize,
+    /// Optional HNSW index for fast vector search on memory embeddings.
+    hnsw_index: Option<HnswIndex>,
 }
 
 impl LongTermMemory {
     /// Creates a new, empty `LongTermMemory` with the given configuration.
     pub fn new(config: LtmConfig) -> Self {
+        let hnsw_index = if config.enable_embeddings {
+            Some(HnswIndex::new(HnswConfig::default()))
+        } else {
+            None
+        };
+
         Self {
             memories: HashMap::new(),
             entities: HashMap::new(),
@@ -49,6 +58,7 @@ impl LongTermMemory {
             type_index: HashMap::new(),
             config,
             memory_usage: 0,
+            hnsw_index,
         }
     }
 
@@ -88,6 +98,13 @@ impl LongTermMemory {
             .or_default()
             .insert(id.clone());
 
+        // Insert into HNSW index if entry has an embedding
+        if let Some(ref emb) = entry.embedding {
+            if let Some(hnsw) = self.hnsw_index.as_mut() {
+                hnsw.insert(id.clone(), emb.0.clone());
+            }
+        }
+
         // Store
         self.memory_usage += entry.size_bytes();
         self.memories.insert(id.clone(), entry);
@@ -104,6 +121,11 @@ impl LongTermMemory {
     pub fn remove(&mut self, id: &MemoryId) -> Result<()> {
         if let Some(entry) = self.memories.remove(id) {
             self.memory_usage = self.memory_usage.saturating_sub(entry.size_bytes());
+
+            // Remove from HNSW index
+            if let Some(hnsw) = self.hnsw_index.as_mut() {
+                hnsw.remove(id);
+            }
 
             // Update indices
             for tag in &entry.tags {
@@ -334,6 +356,54 @@ impl LongTermMemory {
         scored
     }
 
+    /// Performs a vector search over memory entries using the HNSW index.
+    ///
+    /// This is much faster than brute-force `semantic_search` for large datasets.
+    /// Falls back to brute-force if HNSW index is not available.
+    pub fn vector_search_memories(
+        &self,
+        query: &[f32],
+        k: usize,
+        min_similarity: f32,
+    ) -> Vec<(&MemoryEntry, f32)> {
+        if let Some(ref hnsw) = self.hnsw_index {
+            let results = hnsw.search(query, k);
+            results
+                .into_iter()
+                .filter(|(_, sim)| *sim >= min_similarity)
+                .filter_map(|(id, sim)| {
+                    self.memories.get(&id).map(|entry| (entry, sim))
+                })
+                .collect()
+        } else {
+            // Fallback to brute-force over memory entries with embeddings
+            let query_emb = Embedding::new(query.to_vec());
+            let mut scored: Vec<_> = self.memories.values()
+                .filter_map(|entry| {
+                    entry.embedding.as_ref().map(|emb| {
+                        let sim = query_emb.cosine_similarity(emb);
+                        (entry, sim)
+                    })
+                })
+                .filter(|(_, sim)| *sim >= min_similarity)
+                .collect();
+
+            scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            scored.truncate(k);
+            scored
+        }
+    }
+
+    /// Get a reference to the HNSW index, if available.
+    pub fn hnsw_index(&self) -> Option<&HnswIndex> {
+        self.hnsw_index.as_ref()
+    }
+
+    /// Get a mutable reference to the HNSW index, if available.
+    pub fn hnsw_index_mut(&mut self) -> Option<&mut HnswIndex> {
+        self.hnsw_index.as_mut()
+    }
+
     // ============ Statistics ============
 
     /// Returns the number of memory entries stored in the LTM.
@@ -370,6 +440,9 @@ impl LongTermMemory {
         self.tag_index.clear();
         self.type_index.clear();
         self.memory_usage = 0;
+        if let Some(hnsw) = self.hnsw_index.as_mut() {
+            hnsw.rebuild(); // clears all points
+        }
         Ok(())
     }
 
