@@ -13,6 +13,7 @@ members = [
   "crates/aingle_contracts",    # Smart Contracts (DSL + WASM Runtime)
   "crates/aingle_viz",          # DAG Visualization Server
   "crates/aingle_wal",          # Write-Ahead Log (clustering)
+  "crates/aingle_raft",         # Raft consensus (clustering)
 
   # ── Examples ────────────────────────────────────────────────────
   "examples/iot_sensor_network",

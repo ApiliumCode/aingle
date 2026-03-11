@@ -91,9 +91,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Parse cluster flags (feature-gated at compile time).
+    #[cfg(feature = "cluster")]
+    let cluster_config = ClusterConfig::from_args(&args);
+
     // Create and run server
     #[allow(unused_mut)]
     let mut server = CortexServer::new(config)?;
+
+    // Initialize WAL if cluster mode is enabled.
+    #[cfg(feature = "cluster")]
+    if cluster_config.enabled {
+        let wal_dir = cluster_config.wal_dir.as_deref().unwrap_or_else(|| {
+            // Default WAL directory next to the database
+            "wal"
+        });
+        let wal_path = std::path::Path::new(wal_dir);
+        match aingle_wal::WalWriter::open(wal_path) {
+            Ok(writer) => {
+                server.state_mut().wal = Some(std::sync::Arc::new(writer));
+                tracing::info!("WAL initialized at {}", wal_path.display());
+            }
+            Err(e) => {
+                tracing::error!("Failed to initialize WAL: {}", e);
+            }
+        }
+        tracing::info!(
+            node_id = cluster_config.node_id,
+            peers = ?cluster_config.peers,
+            "Cluster mode enabled"
+        );
+    }
 
     // Keep a reference to the state for shutdown flush
     let state_for_shutdown = server.state().clone();
@@ -159,6 +187,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// Cluster configuration (feature-gated at compile time).
+#[cfg(feature = "cluster")]
+struct ClusterConfig {
+    enabled: bool,
+    node_id: u64,
+    peers: Vec<String>,
+    wal_dir: Option<String>,
+}
+
+#[cfg(feature = "cluster")]
+impl ClusterConfig {
+    fn from_args(args: &[String]) -> Self {
+        let mut cfg = Self {
+            enabled: false,
+            node_id: 0,
+            peers: Vec::new(),
+            wal_dir: None,
+        };
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--cluster" => cfg.enabled = true,
+                "--cluster-node-id" => {
+                    if i + 1 < args.len() {
+                        cfg.node_id = args[i + 1].parse().unwrap_or(0);
+                        i += 1;
+                    }
+                }
+                "--cluster-peers" => {
+                    if i + 1 < args.len() {
+                        cfg.peers = args[i + 1].split(',').map(|s| s.trim().to_string()).collect();
+                        i += 1;
+                    }
+                }
+                "--cluster-wal-dir" => {
+                    if i + 1 < args.len() {
+                        cfg.wal_dir = Some(args[i + 1].clone());
+                        i += 1;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        cfg
+    }
+}
+
 fn print_help() {
     println!("AIngle Córtex API Server");
     println!();
@@ -180,6 +256,12 @@ fn print_help() {
     println!("    --p2p-seed <SEED>    Network isolation seed");
     println!("    --p2p-peer <ADDR>    Manual peer address (repeatable)");
     println!("    --p2p-mdns           Enable mDNS discovery");
+    println!();
+    println!("CLUSTER OPTIONS (requires --features cluster):");
+    println!("    --cluster                Enable cluster mode (implies --p2p)");
+    println!("    --cluster-node-id <ID>   Unique node ID (u64, required)");
+    println!("    --cluster-peers <ADDRS>  Comma-separated peer REST addresses");
+    println!("    --cluster-wal-dir <DIR>  WAL directory (default: {{db}}/../wal/)");
     println!();
     println!("ENDPOINTS:");
     println!("    REST API:    http://<host>:<port>/api/v1/");
