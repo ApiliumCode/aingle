@@ -30,6 +30,8 @@
 //! - `POST   /api/v1/assertions/verify-batch` - Batch verify assertion proofs
 
 pub mod audit;
+#[cfg(feature = "cluster")]
+pub mod cluster;
 mod memory;
 mod observability;
 #[cfg(feature = "p2p")]
@@ -115,6 +117,10 @@ pub fn router() -> Router<AppState> {
     // P2P endpoints (feature-gated)
     #[cfg(feature = "p2p")]
     let router = router.merge(p2p::p2p_router());
+
+    // Cluster endpoints (feature-gated)
+    #[cfg(feature = "cluster")]
+    let router = router.merge(cluster::cluster_router());
 
     router
 }

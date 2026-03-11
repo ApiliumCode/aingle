@@ -37,7 +37,7 @@ impl WalEntry {
 }
 
 /// The kind of mutation recorded in a WAL entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum WalEntryKind {
     /// Triple inserted into GraphDB.
     TripleInsert {
