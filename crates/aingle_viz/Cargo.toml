@@ -1,6 +1,6 @@
 [package]
 name = "aingle_viz"
-version = "0.4.1"
+version = "0.4.2"
 description = "DAG Visualization for AIngle - Web-based graph explorer"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
