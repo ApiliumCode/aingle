@@ -130,16 +130,51 @@ impl Default for CortexStateMachine {
 }
 
 /// A serializable cluster snapshot for state transfer.
+///
+/// When a new node joins the cluster, it receives this snapshot
+/// containing the full graph and LTM state. The HNSW index is
+/// rebuilt locally from the LTM data (not transferred directly).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterSnapshot {
-    /// All triples in wire format.
-    pub triples: Vec<serde_json::Value>,
-    /// Ineru memory snapshot (serialized).
-    pub ineru: Vec<u8>,
+    /// All triples in wire format (subject, predicate, object JSON).
+    pub triples: Vec<TripleSnapshot>,
+    /// Ineru LTM snapshot (serialized via export_snapshot).
+    /// STM is NOT replicated — it's node-local working memory.
+    pub ineru_ltm: Vec<u8>,
     /// Last applied log index.
     pub last_applied_index: u64,
     /// Last applied log term.
     pub last_applied_term: u64,
+}
+
+/// Wire format for a triple in a snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TripleSnapshot {
+    pub subject: String,
+    pub predicate: String,
+    pub object: serde_json::Value,
+}
+
+impl ClusterSnapshot {
+    /// Create an empty snapshot.
+    pub fn empty() -> Self {
+        Self {
+            triples: Vec::new(),
+            ineru_ltm: Vec::new(),
+            last_applied_index: 0,
+            last_applied_term: 0,
+        }
+    }
+
+    /// Serialize the snapshot to bytes.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        serde_json::to_vec(self).map_err(|e| format!("Snapshot serialization failed: {e}"))
+    }
+
+    /// Deserialize a snapshot from bytes.
+    pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
+        serde_json::from_slice(data).map_err(|e| format!("Snapshot deserialization failed: {e}"))
+    }
 }
 
 #[cfg(test)]
@@ -240,5 +275,48 @@ mod tests {
         assert!(resp.success);
 
         assert_eq!(sm.applied_count().await, 3);
+    }
+
+    #[test]
+    fn test_snapshot_empty() {
+        let snap = ClusterSnapshot::empty();
+        assert!(snap.triples.is_empty());
+        assert!(snap.ineru_ltm.is_empty());
+        assert_eq!(snap.last_applied_index, 0);
+    }
+
+    #[test]
+    fn test_snapshot_roundtrip() {
+        let snap = ClusterSnapshot {
+            triples: vec![
+                TripleSnapshot {
+                    subject: "alice".into(),
+                    predicate: "knows".into(),
+                    object: serde_json::json!("bob"),
+                },
+            ],
+            ineru_ltm: vec![1, 2, 3, 4],
+            last_applied_index: 42,
+            last_applied_term: 5,
+        };
+
+        let bytes = snap.to_bytes().unwrap();
+        let restored = ClusterSnapshot::from_bytes(&bytes).unwrap();
+
+        assert_eq!(restored.triples.len(), 1);
+        assert_eq!(restored.triples[0].subject, "alice");
+        assert_eq!(restored.ineru_ltm, vec![1, 2, 3, 4]);
+        assert_eq!(restored.last_applied_index, 42);
+        assert_eq!(restored.last_applied_term, 5);
+    }
+
+    #[test]
+    fn test_snapshot_stm_not_included() {
+        // Verify that ClusterSnapshot has no STM field —
+        // STM is node-local and NOT replicated
+        let snap = ClusterSnapshot::empty();
+        let json = serde_json::to_value(&snap).unwrap();
+        assert!(json.get("stm").is_none());
+        assert!(json.get("ineru_ltm").is_some());
     }
 }
