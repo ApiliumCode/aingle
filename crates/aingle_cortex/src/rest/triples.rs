@@ -16,6 +16,9 @@ use crate::rest::audit::AuditEntry;
 use crate::state::{AppState, Event};
 use aingle_graph::{NodeId, Predicate, Triple, TripleId, TriplePattern, Value};
 
+#[cfg(feature = "cluster")]
+use axum::http::HeaderMap;
+
 /// Triple data transfer object
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleDto {
@@ -202,13 +205,34 @@ pub async fn create_triple(
     Ok((StatusCode::CREATED, Json(triple.into())))
 }
 
+/// Parse X-Consistency header into a ConsistencyLevel.
+#[cfg(feature = "cluster")]
+fn parse_consistency_header(headers: &HeaderMap) -> aingle_raft::ConsistencyLevel {
+    headers
+        .get("x-consistency")
+        .and_then(|v| v.to_str().ok())
+        .map(aingle_raft::ConsistencyLevel::from_header)
+        .unwrap_or_default()
+}
+
 /// Get a triple by hash
 ///
 /// GET /api/v1/triples/:id
 pub async fn get_triple(
     State(state): State<AppState>,
+    #[cfg(feature = "cluster")] headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<TripleDto>> {
+    // Apply consistency level for cluster reads
+    #[cfg(feature = "cluster")]
+    {
+        let consistency = parse_consistency_header(&headers);
+        if consistency == aingle_raft::ConsistencyLevel::Linearizable {
+            tracing::debug!("Linearizable read requested for triple {}", id);
+            // In full cluster mode, this would send a no-op through Raft
+        }
+    }
+
     let triple_id = TripleId::from_hex(&id)
         .ok_or_else(|| Error::InvalidInput(format!("Invalid triple ID: {}", id)))?;
 
@@ -289,9 +313,19 @@ pub async fn delete_triple(
 /// GET /api/v1/triples
 pub async fn list_triples(
     State(state): State<AppState>,
+    #[cfg(feature = "cluster")] headers: HeaderMap,
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Query(query): Query<ListTriplesQuery>,
 ) -> Result<Json<ListTriplesResponse>> {
+    // Apply consistency level for cluster reads
+    #[cfg(feature = "cluster")]
+    {
+        let consistency = parse_consistency_header(&headers);
+        if consistency == aingle_raft::ConsistencyLevel::Linearizable {
+            tracing::debug!("Linearizable read requested for list_triples");
+        }
+    }
+
     let graph = state.graph.read().await;
 
     // Build pattern based on provided filters
