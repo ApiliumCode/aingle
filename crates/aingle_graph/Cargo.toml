@@ -20,8 +20,10 @@ rocksdb-backend = ["dep:rocksdb"]
 sqlite-backend = ["dep:rusqlite"]
 # RDF support
 rdf = ["dep:rio_turtle", "dep:rio_api"]
+# CRDT conflict resolution (for clustering)
+crdt = ["dep:uuid"]
 # Full features
-full = ["sled-backend", "rocksdb-backend", "sqlite-backend", "rdf"]
+full = ["sled-backend", "rocksdb-backend", "sqlite-backend", "rdf", "crdt"]
 
 [dependencies]
 # Serialization
@@ -52,6 +54,9 @@ rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 # RDF parsing (optional)
 rio_turtle = { version = "0.8", optional = true }
 rio_api = { version = "0.8", optional = true }
+
+# CRDT support (optional, for clustering)
+uuid = { version = "1", features = ["v4", "serde"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
