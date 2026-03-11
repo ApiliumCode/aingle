@@ -402,6 +402,7 @@ pub async fn vector_index_stats(
             point_count: 0,
             deleted_count: 0,
             dimensions: 0,
+            max_layer: 0,
             memory_bytes: 0,
         });
 
