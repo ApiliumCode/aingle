@@ -66,6 +66,7 @@
 pub mod config;
 pub mod consolidation;
 pub mod error;
+pub mod hnsw;
 pub mod ltm;
 pub mod stm;
 pub mod types;
