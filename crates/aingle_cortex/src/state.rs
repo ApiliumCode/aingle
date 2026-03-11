@@ -43,6 +43,9 @@ pub struct AppState {
     /// P2P manager for multi-node triple synchronization.
     #[cfg(feature = "p2p")]
     pub p2p: Option<Arc<crate::p2p::manager::P2pManager>>,
+    /// Write-Ahead Log for clustering.
+    #[cfg(feature = "cluster")]
+    pub wal: Option<Arc<aingle_wal::WalWriter>>,
 }
 
 impl AppState {
@@ -73,6 +76,8 @@ impl AppState {
             user_store,
             #[cfg(feature = "p2p")]
             p2p: None,
+            #[cfg(feature = "cluster")]
+            wal: None,
         }
     }
 
@@ -101,6 +106,8 @@ impl AppState {
             user_store,
             #[cfg(feature = "p2p")]
             p2p: None,
+            #[cfg(feature = "cluster")]
+            wal: None,
         }
     }
 
@@ -129,6 +136,8 @@ impl AppState {
             user_store,
             #[cfg(feature = "p2p")]
             p2p: None,
+            #[cfg(feature = "cluster")]
+            wal: None,
         }
     }
 
@@ -201,6 +210,8 @@ impl AppState {
             user_store,
             #[cfg(feature = "p2p")]
             p2p: None,
+            #[cfg(feature = "cluster")]
+            wal: None,
         })
     }
 

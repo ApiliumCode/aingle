@@ -163,6 +163,17 @@ pub async fn create_triple(
         graph.insert(triple.clone())?
     };
 
+    // Append to WAL (cluster mode)
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        let _ = wal.append(aingle_wal::WalEntryKind::TripleInsert {
+            subject: req.subject.clone(),
+            predicate: req.predicate.clone(),
+            object: serde_json::to_value(&req.object).unwrap_or_default(),
+            triple_id: *triple_id.as_bytes(),
+        });
+    }
+
     // Record audit entry
     {
         let namespace = ns_ext
@@ -239,6 +250,14 @@ pub async fn delete_triple(
     };
 
     if deleted {
+        // Append to WAL (cluster mode)
+        #[cfg(feature = "cluster")]
+        if let Some(ref wal) = state.wal {
+            let _ = wal.append(aingle_wal::WalEntryKind::TripleDelete {
+                triple_id: *triple_id.as_bytes(),
+            });
+        }
+
         // Record audit entry
         {
             let namespace = ns_ext
