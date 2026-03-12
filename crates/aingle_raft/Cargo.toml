@@ -21,6 +21,10 @@ tokio = { version = "1", features = ["full"] }
 bincode = "2"
 tracing = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
+futures-util = "0.3"
+anyerror = "0.1"
+aingle_graph = { version = "0.5", path = "../aingle_graph", features = ["sled-backend"] }
+ineru = { version = "0.5", path = "../ineru" }
 
 [dev-dependencies]
 tempfile = "3.26"
