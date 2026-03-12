@@ -22,6 +22,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::state::AppState;
 
+#[cfg(feature = "cluster")]
+use openraft::type_config::async_runtime::watch::WatchReceiver;
+
 /// Cluster status response.
 #[derive(Debug, Serialize)]
 pub struct ClusterStatus {
@@ -94,6 +97,56 @@ pub async fn cluster_status(
         { 0u64 }
     };
 
+    // Extract live Raft metrics when available
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let metrics = raft.metrics().borrow_watched().clone();
+
+        let role = format!("{:?}", metrics.state);
+        let term = metrics.current_term;
+        let leader_id = metrics.current_leader;
+
+        let last_applied = metrics
+            .last_applied
+            .as_ref()
+            .map(|lid| lid.index)
+            .unwrap_or(0);
+
+        let commit_index = metrics
+            .last_log_index
+            .unwrap_or(0);
+
+        // Build member list from membership config
+        let membership = metrics.membership_config.membership();
+        let members: Vec<ClusterMember> = membership
+            .nodes()
+            .map(|(nid, node)| ClusterMember {
+                node_id: *nid,
+                rest_addr: node.rest_addr.clone(),
+                p2p_addr: node.p2p_addr.clone(),
+                role: if Some(*nid) == leader_id {
+                    "leader".to_string()
+                } else {
+                    "follower".to_string()
+                },
+                last_heartbeat: "N/A".to_string(),
+                replication_lag: 0,
+            })
+            .collect();
+
+        return Ok(Json(ClusterStatus {
+            node_id: state.cluster_node_id.unwrap_or(0),
+            role,
+            term,
+            leader_id,
+            leader_addr: None,
+            members,
+            wal_last_seq,
+            last_applied,
+            commit_index,
+        }));
+    }
+
     Ok(Json(ClusterStatus {
         node_id: 0,
         role: "standalone".to_string(),
@@ -109,15 +162,69 @@ pub async fn cluster_status(
 
 /// POST /api/v1/cluster/join
 pub async fn cluster_join(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(req): Json<JoinRequest>,
 ) -> Result<(StatusCode, Json<JoinResponse>)> {
-    // In standalone mode, joining is not supported
     tracing::info!(
         node_id = req.node_id,
         rest_addr = %req.rest_addr,
         "Cluster join request received"
     );
+
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let node = aingle_raft::CortexNode {
+            rest_addr: req.rest_addr.clone(),
+            p2p_addr: req.p2p_addr.clone(),
+        };
+
+        // Add as learner first
+        match raft.add_learner(req.node_id, node, true).await {
+            Ok(_) => {
+                // Then promote to voter
+                let metrics = raft.metrics().borrow_watched().clone();
+                let membership = metrics.membership_config.membership();
+                let mut voter_ids: std::collections::BTreeSet<u64> =
+                    membership.voter_ids().collect();
+                voter_ids.insert(req.node_id);
+                match raft.change_membership(voter_ids, false).await {
+                    Ok(_) => {
+                        return Ok((
+                            StatusCode::OK,
+                            Json(JoinResponse {
+                                accepted: true,
+                                leader_id: metrics.current_leader,
+                                leader_addr: None,
+                                message: format!("Node {} joined cluster", req.node_id),
+                            }),
+                        ));
+                    }
+                    Err(e) => {
+                        return Ok((
+                            StatusCode::CONFLICT,
+                            Json(JoinResponse {
+                                accepted: false,
+                                leader_id: metrics.current_leader,
+                                leader_addr: None,
+                                message: format!("Membership change failed: {e}"),
+                            }),
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                return Ok((
+                    StatusCode::CONFLICT,
+                    Json(JoinResponse {
+                        accepted: false,
+                        leader_id: None,
+                        leader_addr: None,
+                        message: format!("Add learner failed: {e}"),
+                    }),
+                ));
+            }
+        }
+    }
 
     Ok((
         StatusCode::OK,
@@ -132,16 +239,58 @@ pub async fn cluster_join(
 
 /// POST /api/v1/cluster/leave
 pub async fn cluster_leave(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<StatusCode> {
     tracing::info!("Cluster leave request received");
+
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        if let Some(node_id) = state.cluster_node_id {
+            let metrics = raft.metrics().borrow_watched().clone();
+            let membership = metrics.membership_config.membership();
+            let mut voter_ids: std::collections::BTreeSet<u64> =
+                membership.voter_ids().collect();
+            voter_ids.remove(&node_id);
+            if !voter_ids.is_empty() {
+                if let Err(e) = raft.change_membership(voter_ids, false).await {
+                    tracing::error!("Failed to leave cluster: {e}");
+                    return Err(Error::Internal(format!("Leave failed: {e}")));
+                }
+            }
+        }
+    }
+
     Ok(StatusCode::OK)
 }
 
 /// GET /api/v1/cluster/members
 pub async fn cluster_members(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<Vec<ClusterMember>>> {
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let metrics = raft.metrics().borrow_watched().clone();
+        let leader_id = metrics.current_leader;
+
+        let membership = metrics.membership_config.membership();
+        let members: Vec<ClusterMember> = membership
+            .nodes()
+            .map(|(nid, node)| ClusterMember {
+                node_id: *nid,
+                rest_addr: node.rest_addr.clone(),
+                p2p_addr: node.p2p_addr.clone(),
+                role: if Some(*nid) == leader_id {
+                    "leader".to_string()
+                } else {
+                    "follower".to_string()
+                },
+                last_heartbeat: "N/A".to_string(),
+                replication_lag: 0,
+            })
+            .collect();
+        return Ok(Json(members));
+    }
+
     Ok(Json(Vec::new()))
 }
 
