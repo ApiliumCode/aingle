@@ -93,6 +93,14 @@ pub enum WalEntryKind {
     LtmEntityDelete {
         entity_id: String,
     },
+    /// Serialized openraft Raft log entry.
+    RaftEntry {
+        index: u64,
+        term: u64,
+        data: Vec<u8>,
+    },
+    /// No-op entry for linearizable reads.
+    Noop,
 }
 
 #[cfg(test)]
