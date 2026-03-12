@@ -95,27 +95,106 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "cluster")]
     let cluster_config = ClusterConfig::from_args(&args);
 
+    // Capture bind address before config is moved (used by cluster bootstrap)
+    #[allow(unused_variables)]
+    let bind_host = config.host.clone();
+    #[allow(unused_variables)]
+    let bind_port = config.port;
+
     // Create and run server
     #[allow(unused_mut)]
     let mut server = CortexServer::new(config)?;
 
-    // Initialize WAL if cluster mode is enabled.
+    // Initialize WAL and Raft if cluster mode is enabled.
     #[cfg(feature = "cluster")]
     if cluster_config.enabled {
-        let wal_dir = cluster_config.wal_dir.as_deref().unwrap_or_else(|| {
-            // Default WAL directory next to the database
-            "wal"
-        });
+        let wal_dir = cluster_config.wal_dir.as_deref().unwrap_or("wal");
         let wal_path = std::path::Path::new(wal_dir);
-        match aingle_wal::WalWriter::open(wal_path) {
-            Ok(writer) => {
-                server.state_mut().wal = Some(std::sync::Arc::new(writer));
-                tracing::info!("WAL initialized at {}", wal_path.display());
+
+        match aingle_raft::log_store::CortexLogStore::open(wal_path) {
+            Ok(log_store) => {
+                let log_store = std::sync::Arc::new(log_store);
+                server.state_mut().wal = Some(log_store.wal().clone());
+
+                // Create state machine connected to real graph + memory
+                let state_machine = std::sync::Arc::new(
+                    aingle_raft::state_machine::CortexStateMachine::new(
+                        server.state().graph.clone(),
+                        server.state().memory.clone(),
+                    ),
+                );
+
+                // Create network factory with a stub RPC sender
+                // (will be replaced with real P2P transport after P2P manager starts)
+                let resolver = std::sync::Arc::new(aingle_raft::network::NodeResolver::new());
+
+                // Register known peers
+                for peer_addr in &cluster_config.peers {
+                    // Peers format: "node_id:rest_addr:p2p_addr" or just "rest_addr"
+                    // For now, we just log them
+                    tracing::info!(peer = %peer_addr, "Registered cluster peer");
+                }
+
+                let rpc_sender = std::sync::Arc::new(StubRpcSender);
+                let network = aingle_raft::network::CortexNetworkFactory::new(
+                    resolver, rpc_sender,
+                );
+
+                // Configure Raft
+                let raft_config = openraft::Config {
+                    heartbeat_interval: 500,
+                    election_timeout_min: 1500,
+                    election_timeout_max: 3000,
+                    ..Default::default()
+                };
+
+                let node_id = cluster_config.node_id;
+
+                match openraft::Raft::new(
+                    node_id,
+                    std::sync::Arc::new(raft_config),
+                    network,
+                    log_store,
+                    state_machine,
+                )
+                .await
+                {
+                    Ok(raft) => {
+                        // Bootstrap single-node cluster if this is node 0 and no peers
+                        if cluster_config.peers.is_empty() {
+                            let mut members = std::collections::BTreeMap::new();
+                            members.insert(
+                                node_id,
+                                aingle_raft::CortexNode {
+                                    rest_addr: format!(
+                                        "{}:{}",
+                                        bind_host, bind_port
+                                    ),
+                                    p2p_addr: "127.0.0.1:19091".to_string(),
+                                },
+                            );
+                            if let Err(e) = raft.initialize(members).await {
+                                tracing::debug!("Raft init (may already be initialized): {e}");
+                            }
+                        }
+
+                        server.state_mut().raft = Some(raft);
+                        server.state_mut().cluster_node_id = Some(node_id);
+                        tracing::info!(
+                            node_id,
+                            "Raft consensus initialized"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to create Raft instance: {e}");
+                    }
+                }
             }
             Err(e) => {
-                tracing::error!("Failed to initialize WAL: {}", e);
+                tracing::error!("Failed to initialize WAL/LogStore: {e}");
             }
         }
+
         tracing::info!(
             node_id = cluster_config.node_id,
             peers = ?cluster_config.peers,
@@ -232,6 +311,23 @@ impl ClusterConfig {
             i += 1;
         }
         cfg
+    }
+}
+
+/// Stub RPC sender used during Raft bootstrap before P2P is fully wired.
+#[cfg(feature = "cluster")]
+struct StubRpcSender;
+
+#[cfg(feature = "cluster")]
+impl aingle_raft::network::RaftRpcSender for StubRpcSender {
+    fn send_rpc(
+        &self,
+        _addr: std::net::SocketAddr,
+        _msg: aingle_raft::network::RaftMessage,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<aingle_raft::network::RaftMessage, String>> + Send + '_>,
+    > {
+        Box::pin(async { Err("P2P transport not yet initialized".to_string()) })
     }
 }
 
