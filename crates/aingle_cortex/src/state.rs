@@ -46,6 +46,12 @@ pub struct AppState {
     /// Write-Ahead Log for clustering.
     #[cfg(feature = "cluster")]
     pub wal: Option<Arc<aingle_wal::WalWriter>>,
+    /// Raft consensus instance for cluster coordination.
+    #[cfg(feature = "cluster")]
+    pub raft: Option<openraft::Raft<aingle_raft::CortexTypeConfig, std::sync::Arc<aingle_raft::state_machine::CortexStateMachine>>>,
+    /// This node's ID in the Raft cluster.
+    #[cfg(feature = "cluster")]
+    pub cluster_node_id: Option<u64>,
 }
 
 impl AppState {
@@ -78,6 +84,10 @@ impl AppState {
             p2p: None,
             #[cfg(feature = "cluster")]
             wal: None,
+            #[cfg(feature = "cluster")]
+            raft: None,
+            #[cfg(feature = "cluster")]
+            cluster_node_id: None,
         }
     }
 
@@ -108,6 +118,10 @@ impl AppState {
             p2p: None,
             #[cfg(feature = "cluster")]
             wal: None,
+            #[cfg(feature = "cluster")]
+            raft: None,
+            #[cfg(feature = "cluster")]
+            cluster_node_id: None,
         }
     }
 
@@ -138,6 +152,10 @@ impl AppState {
             p2p: None,
             #[cfg(feature = "cluster")]
             wal: None,
+            #[cfg(feature = "cluster")]
+            raft: None,
+            #[cfg(feature = "cluster")]
+            cluster_node_id: None,
         }
     }
 
@@ -212,6 +230,10 @@ impl AppState {
             p2p: None,
             #[cfg(feature = "cluster")]
             wal: None,
+            #[cfg(feature = "cluster")]
+            raft: None,
+            #[cfg(feature = "cluster")]
+            cluster_node_id: None,
         })
     }
 
