@@ -9,6 +9,7 @@
 pub mod types;
 pub mod log_store;
 pub mod state_machine;
+pub mod snapshot_builder;
 pub mod network;
 pub mod consistency;
 
