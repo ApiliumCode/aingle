@@ -67,6 +67,39 @@ pub enum P2pMessage {
     TombstoneSync {
         tombstones: Vec<TombstoneWire>,
     },
+    // ── Raft / Cluster messages (feature: cluster) ──────────────
+    /// Raft AppendEntries RPC (serialized openraft request).
+    #[cfg(feature = "cluster")]
+    RaftAppendEntries { payload: Vec<u8> },
+    /// Raft AppendEntries response.
+    #[cfg(feature = "cluster")]
+    RaftAppendEntriesResponse { payload: Vec<u8> },
+    /// Raft Vote RPC.
+    #[cfg(feature = "cluster")]
+    RaftVote { payload: Vec<u8> },
+    /// Raft Vote response.
+    #[cfg(feature = "cluster")]
+    RaftVoteResponse { payload: Vec<u8> },
+    /// Raft InstallSnapshot RPC.
+    #[cfg(feature = "cluster")]
+    RaftInstallSnapshot { payload: Vec<u8> },
+    /// Raft InstallSnapshot response.
+    #[cfg(feature = "cluster")]
+    RaftInstallSnapshotResponse { payload: Vec<u8> },
+    /// Cluster membership join request.
+    #[cfg(feature = "cluster")]
+    ClusterJoin {
+        node_id: u64,
+        rest_addr: String,
+        p2p_addr: String,
+    },
+    /// Cluster membership acknowledgement.
+    #[cfg(feature = "cluster")]
+    ClusterJoinAck {
+        accepted: bool,
+        leader_id: Option<u64>,
+        leader_addr: Option<String>,
+    },
 }
 
 /// Wire format for a tombstone marker.

@@ -97,6 +97,10 @@ pub enum Error {
     /// A conflict occurred, such as trying to create a resource that already exists.
     #[error("Conflict: {0}")]
     Conflict(String),
+
+    /// The request should be redirected to another node (e.g., Raft leader).
+    #[error("Redirect to {0}")]
+    Redirect(String),
 }
 
 /// The standard JSON response body for an API error.
@@ -136,6 +140,7 @@ impl Error {
             Error::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
             Error::BadRequest(_) => StatusCode::BAD_REQUEST,
             Error::Conflict(_) => StatusCode::CONFLICT,
+            Error::Redirect(_) => StatusCode::TEMPORARY_REDIRECT,
         }
     }
 
@@ -163,6 +168,7 @@ impl Error {
             Error::Timeout(_) => "TIMEOUT",
             Error::BadRequest(_) => "BAD_REQUEST",
             Error::Conflict(_) => "CONFLICT",
+            Error::Redirect(_) => "REDIRECT",
         }
     }
 }
@@ -170,6 +176,17 @@ impl Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let status = self.status_code();
+
+        // For redirects, include a Location header so clients can follow
+        if let Error::Redirect(ref location) = self {
+            return (
+                status,
+                [(axum::http::header::LOCATION, location.as_str())],
+                "Redirecting to leader",
+            )
+                .into_response();
+        }
+
         let body = ErrorResponse {
             error: self.to_string(),
             code: self.error_code().to_string(),
