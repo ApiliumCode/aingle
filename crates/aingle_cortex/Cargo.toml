@@ -21,6 +21,8 @@ auth = ["dep:jsonwebtoken", "dep:argon2"]
 p2p = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:ed25519-dalek", "dep:hex"]
 p2p-mdns = ["p2p", "dep:mdns-sd", "dep:if-addrs"]
 cluster = ["p2p", "dep:aingle_wal", "dep:aingle_raft", "dep:openraft", "dep:tokio-rustls", "dep:rustls-pemfile"]
+dag = ["cluster", "aingle_graph/dag", "aingle_raft/dag"]
+dag-sign = ["dag", "aingle_graph/dag-sign"]
 full = ["rest", "graphql", "sparql", "auth"]
 
 [[bin]]

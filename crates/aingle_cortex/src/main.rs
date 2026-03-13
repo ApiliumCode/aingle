@@ -104,11 +104,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cfg
     };
 
-    // Capture bind address before config is moved (used by cluster bootstrap)
+    // Capture bind address and db_path before config is moved
     #[allow(unused_variables)]
     let bind_host = config.host.clone();
     #[allow(unused_variables)]
     let bind_port = config.port;
+    #[allow(unused_variables)]
+    let db_path = config.db_path.clone();
 
     // Create and run server
     #[allow(unused_mut)]
@@ -140,6 +142,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             peers = ?cluster_config.peers,
             "Cluster mode enabled"
         );
+    }
+
+    // Initialize DAG if enabled: enable DAG on the graph, create genesis if needed
+    #[cfg(feature = "dag")]
+    {
+        let state = server.state_mut();
+
+        // Enable DAG on the GraphDB (persistent for Sled, in-memory otherwise)
+        {
+            let mut graph = state.graph.write().await;
+            match &db_path {
+                Some(p) if p != ":memory:" => {
+                    if let Err(e) = graph.enable_dag_persistent(p) {
+                        tracing::error!(
+                            "Failed to enable persistent DAG: {e}. \
+                             Falling back to in-memory DAG — data will NOT survive restarts!"
+                        );
+                        graph.enable_dag();
+                    } else {
+                        tracing::info!("DAG persistence enabled (Sled)");
+                    }
+                }
+                _ => {
+                    tracing::warn!("DAG using in-memory backend — data will NOT survive restarts");
+                    graph.enable_dag();
+                }
+            }
+            let triple_count = graph.count();
+            if let Some(dag_store) = graph.dag_store() {
+                match dag_store.init_or_migrate(triple_count) {
+                    Ok(genesis_hash) => {
+                        tracing::info!(
+                            hash = %genesis_hash,
+                            triples = triple_count,
+                            "DAG initialized (genesis)"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("DAG initialization failed: {e}");
+                    }
+                }
+            }
+        }
+
+        // Set DAG author from cluster node ID
+        #[cfg(feature = "cluster")]
+        if let Some(node_id) = state.cluster_node_id {
+            state.dag_author = Some(aingle_graph::NodeId::named(&format!("node:{}", node_id)));
+        }
+
+        tracing::info!("Semantic DAG v0.6.0 enabled");
     }
 
     // Keep a reference to the state for shutdown flush
