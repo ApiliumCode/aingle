@@ -1,6 +1,6 @@
 [package]
 name = "aingle_raft"
-version = "0.5.0"
+version = "0.6.0"
 description = "Raft consensus for AIngle clustering"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -12,9 +12,13 @@ categories = ["database"]
 edition = "2021"
 rust-version = "1.83"
 
+[features]
+default = []
+dag = ["aingle_graph/dag"]
+
 [dependencies]
 openraft = { version = "0.10.0-alpha.17", features = ["serde", "type-alias"] }
-aingle_wal = { version = "0.5", path = "../aingle_wal" }
+aingle_wal = { version = "0.6", path = "../aingle_wal" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -24,8 +28,8 @@ tracing = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 anyerror = "0.1"
-aingle_graph = { version = "0.5", path = "../aingle_graph", features = ["sled-backend"] }
-ineru = { version = "0.5", path = "../ineru" }
+aingle_graph = { version = "0.6", path = "../aingle_graph", features = ["sled-backend"] }
+ineru = { version = "0.6", path = "../ineru" }
 
 [dev-dependencies]
 tempfile = "3.26"

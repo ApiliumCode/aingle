@@ -1,6 +1,6 @@
 [package]
 name = "aingle_graph"
-version = "0.5.0"
+version = "0.6.0"
 description = "Native GraphDB for AIngle - Semantic triple store with SPO indexes"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -22,6 +22,10 @@ sqlite-backend = ["dep:rusqlite"]
 rdf = ["dep:rio_turtle", "dep:rio_api"]
 # CRDT conflict resolution (for clustering)
 crdt = ["dep:uuid"]
+# Semantic DAG — hash-linked action history
+dag = []
+# Signed DAG actions with Ed25519 PKI (requires dag)
+dag-sign = ["dag", "dep:ed25519-dalek", "dep:rand"]
 # Full features
 full = ["sled-backend", "rocksdb-backend", "sqlite-backend", "rdf", "crdt"]
 
@@ -57,6 +61,10 @@ rio_api = { version = "0.8", optional = true }
 
 # CRDT support (optional, for clustering)
 uuid = { version = "1", features = ["v4", "serde"], optional = true }
+
+# Ed25519 signing (optional, for dag-sign)
+ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
+rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
