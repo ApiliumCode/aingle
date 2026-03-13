@@ -38,7 +38,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 log = "0.4"
 
 # Optional: SQLite for persistent LTM (matching workspace version)
-rusqlite = { version = "0.32", default-features = false, features = ["bundled"], optional = true }
+rusqlite = { version = "0.38", default-features = false, features = ["bundled"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
