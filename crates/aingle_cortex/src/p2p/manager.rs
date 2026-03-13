@@ -671,7 +671,15 @@ impl P2pManager {
                                 })
                                 .await;
                         }
-                        _ => {}
+                        other => {
+                            // Raft RPC is routed over HTTP, not P2P QUIC.
+                            // Log any unexpected messages instead of silently dropping.
+                            tracing::debug!(
+                                from = %addr,
+                                msg_type = ?std::mem::discriminant(&other),
+                                "Ignoring unexpected P2P message variant"
+                            );
+                        }
                     }
                 }
             }));

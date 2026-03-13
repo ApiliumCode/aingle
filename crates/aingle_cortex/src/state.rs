@@ -43,6 +43,21 @@ pub struct AppState {
     /// P2P manager for multi-node triple synchronization.
     #[cfg(feature = "p2p")]
     pub p2p: Option<Arc<crate::p2p::manager::P2pManager>>,
+    /// Write-Ahead Log for clustering.
+    #[cfg(feature = "cluster")]
+    pub wal: Option<Arc<aingle_wal::WalWriter>>,
+    /// Raft consensus instance for cluster coordination.
+    #[cfg(feature = "cluster")]
+    pub raft: Option<openraft::Raft<aingle_raft::CortexTypeConfig, std::sync::Arc<aingle_raft::state_machine::CortexStateMachine>>>,
+    /// This node's ID in the Raft cluster.
+    #[cfg(feature = "cluster")]
+    pub cluster_node_id: Option<u64>,
+    /// Shared secret for authenticating internal cluster RPCs.
+    #[cfg(feature = "cluster")]
+    pub cluster_secret: Option<String>,
+    /// TLS server config for encrypting inter-node communication.
+    #[cfg(feature = "cluster")]
+    pub tls_server_config: Option<Arc<rustls::ServerConfig>>,
 }
 
 impl AppState {
@@ -73,6 +88,16 @@ impl AppState {
             user_store,
             #[cfg(feature = "p2p")]
             p2p: None,
+            #[cfg(feature = "cluster")]
+            wal: None,
+            #[cfg(feature = "cluster")]
+            raft: None,
+            #[cfg(feature = "cluster")]
+            cluster_node_id: None,
+            #[cfg(feature = "cluster")]
+            cluster_secret: None,
+            #[cfg(feature = "cluster")]
+            tls_server_config: None,
         }
     }
 
@@ -101,6 +126,16 @@ impl AppState {
             user_store,
             #[cfg(feature = "p2p")]
             p2p: None,
+            #[cfg(feature = "cluster")]
+            wal: None,
+            #[cfg(feature = "cluster")]
+            raft: None,
+            #[cfg(feature = "cluster")]
+            cluster_node_id: None,
+            #[cfg(feature = "cluster")]
+            cluster_secret: None,
+            #[cfg(feature = "cluster")]
+            tls_server_config: None,
         }
     }
 
@@ -129,6 +164,16 @@ impl AppState {
             user_store,
             #[cfg(feature = "p2p")]
             p2p: None,
+            #[cfg(feature = "cluster")]
+            wal: None,
+            #[cfg(feature = "cluster")]
+            raft: None,
+            #[cfg(feature = "cluster")]
+            cluster_node_id: None,
+            #[cfg(feature = "cluster")]
+            cluster_secret: None,
+            #[cfg(feature = "cluster")]
+            tls_server_config: None,
         }
     }
 
@@ -201,8 +246,19 @@ impl AppState {
             user_store,
             #[cfg(feature = "p2p")]
             p2p: None,
+            #[cfg(feature = "cluster")]
+            wal: None,
+            #[cfg(feature = "cluster")]
+            raft: None,
+            #[cfg(feature = "cluster")]
+            cluster_node_id: None,
+            #[cfg(feature = "cluster")]
+            cluster_secret: None,
+            #[cfg(feature = "cluster")]
+            tls_server_config: None,
         })
     }
+
 
     /// Flushes the graph database and saves the Ineru memory snapshot to disk.
     ///

@@ -16,6 +16,9 @@ use crate::rest::audit::AuditEntry;
 use crate::state::{AppState, Event};
 use aingle_graph::{NodeId, Predicate, Triple, TripleId, TriplePattern, Value};
 
+#[cfg(feature = "cluster")]
+use axum::http::HeaderMap;
+
 /// Triple data transfer object
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleDto {
@@ -150,6 +153,80 @@ pub async fn create_triple(
 
     let object: Value = req.object.clone().into();
 
+    // Cluster mode: route writes through Raft
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let raft_req = aingle_raft::CortexRequest {
+            kind: aingle_wal::WalEntryKind::TripleInsert {
+                subject: req.subject.clone(),
+                predicate: req.predicate.clone(),
+                object: serde_json::to_value(&req.object).unwrap_or_default(),
+                triple_id: [0u8; 32], // State machine will compute the real ID
+            },
+        };
+        let resp = raft
+            .client_write(raft_req)
+            .await
+            .map_err(|e| handle_raft_write_error(e, &state))?;
+
+        if !resp.response().success {
+            return Err(Error::Internal(
+                resp.response()
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| "Raft apply failed".to_string()),
+            ));
+        }
+
+        // State machine already applied the triple to GraphDB.
+        // Build response DTO from the request data, using the ID from the state machine.
+        let triple_id = resp.response().id.clone();
+        let dto = TripleDto {
+            id: triple_id.clone(),
+            subject: req.subject.clone(),
+            predicate: req.predicate.clone(),
+            object: req.object.clone(),
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+        };
+
+        let hash = triple_id.unwrap_or_else(|| "raft".to_string());
+
+        // Record audit entry
+        {
+            let namespace = ns_ext
+                .as_ref()
+                .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
+            let mut audit = state.audit_log.write().await;
+            audit.record(AuditEntry {
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
+                namespace,
+                action: "create".to_string(),
+                resource: format!("/api/v1/triples/{}", hash),
+                details: Some(format!("subject={}", req.subject)),
+                request_id: None,
+            });
+        }
+
+        // Broadcast event
+        state.broadcaster.broadcast(Event::TripleAdded {
+            hash,
+            subject: req.subject,
+            predicate: req.predicate,
+            object: serde_json::to_value(&req.object).unwrap_or_default(),
+        });
+
+        return Ok((StatusCode::CREATED, Json(dto)));
+    }
+
+    // Guard: if Raft is initialized, all writes MUST go through Raft.
+    // Reaching here means Raft was skipped — prevent split-brain (#2).
+    #[cfg(feature = "cluster")]
+    if state.raft.is_some() {
+        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+    }
+
+    // Non-cluster mode: direct write
     // Create the triple
     let triple = Triple::new(
         NodeId::named(&req.subject),
@@ -162,6 +239,17 @@ pub async fn create_triple(
         let graph = state.graph.read().await;
         graph.insert(triple.clone())?
     };
+
+    // Append to WAL (cluster mode without Raft — legacy path)
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        wal.append(aingle_wal::WalEntryKind::TripleInsert {
+            subject: req.subject.clone(),
+            predicate: req.predicate.clone(),
+            object: serde_json::to_value(&req.object).unwrap_or_default(),
+            triple_id: *triple_id.as_bytes(),
+        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+    }
 
     // Record audit entry
     {
@@ -191,13 +279,45 @@ pub async fn create_triple(
     Ok((StatusCode::CREATED, Json(triple.into())))
 }
 
+/// Parse X-Consistency header into a ConsistencyLevel.
+#[cfg(feature = "cluster")]
+fn parse_consistency_header(headers: &HeaderMap) -> aingle_raft::ConsistencyLevel {
+    headers
+        .get("x-consistency")
+        .and_then(|v| v.to_str().ok())
+        .map(aingle_raft::ConsistencyLevel::from_header)
+        .unwrap_or_default()
+}
+
 /// Get a triple by hash
 ///
 /// GET /api/v1/triples/:id
 pub async fn get_triple(
     State(state): State<AppState>,
+    #[cfg(feature = "cluster")] headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<TripleDto>> {
+    // Apply consistency level for cluster reads
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let consistency = parse_consistency_header(&headers);
+        match consistency {
+            aingle_raft::ConsistencyLevel::Linearizable => {
+                raft.ensure_linearizable(openraft::raft::ReadPolicy::ReadIndex)
+                    .await
+                    .map_err(|e| Error::Internal(format!("Linearizable read: {e}")))?;
+            }
+            aingle_raft::ConsistencyLevel::Quorum => {
+                raft.ensure_linearizable(openraft::raft::ReadPolicy::LeaseRead)
+                    .await
+                    .map_err(|e| Error::Internal(format!("Quorum read: {e}")))?;
+            }
+            aingle_raft::ConsistencyLevel::Local => {
+                // Read from local state — no Raft check needed
+            }
+        }
+    }
+
     let triple_id = TripleId::from_hex(&id)
         .ok_or_else(|| Error::InvalidInput(format!("Invalid triple ID: {}", id)))?;
 
@@ -233,12 +353,55 @@ pub async fn delete_triple(
         }
     }
 
+    // Cluster mode: route deletes through Raft
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let raft_req = aingle_raft::CortexRequest {
+            kind: aingle_wal::WalEntryKind::TripleDelete {
+                triple_id: *triple_id.as_bytes(),
+            },
+        };
+        let resp = raft
+            .client_write(raft_req)
+            .await
+            .map_err(|e| handle_raft_write_error(e, &state))?;
+
+        if !resp.response().success {
+            return Err(Error::Internal(
+                resp.response()
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| "Raft delete failed".to_string()),
+            ));
+        }
+
+        state
+            .broadcaster
+            .broadcast(Event::TripleDeleted { hash: id });
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
+    // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
+    #[cfg(feature = "cluster")]
+    if state.raft.is_some() {
+        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+    }
+
+    // Non-cluster mode: direct delete
     let deleted = {
         let graph = state.graph.read().await;
         graph.delete(&triple_id)?
     };
 
     if deleted {
+        // Append to WAL (legacy cluster path)
+        #[cfg(feature = "cluster")]
+        if let Some(ref wal) = state.wal {
+            wal.append(aingle_wal::WalEntryKind::TripleDelete {
+                triple_id: *triple_id.as_bytes(),
+            }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+        }
+
         // Record audit entry
         {
             let namespace = ns_ext
@@ -270,9 +433,29 @@ pub async fn delete_triple(
 /// GET /api/v1/triples
 pub async fn list_triples(
     State(state): State<AppState>,
+    #[cfg(feature = "cluster")] headers: HeaderMap,
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Query(query): Query<ListTriplesQuery>,
 ) -> Result<Json<ListTriplesResponse>> {
+    // Apply consistency level for cluster reads
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let consistency = parse_consistency_header(&headers);
+        match consistency {
+            aingle_raft::ConsistencyLevel::Linearizable => {
+                raft.ensure_linearizable(openraft::raft::ReadPolicy::ReadIndex)
+                    .await
+                    .map_err(|e| Error::Internal(format!("Consistent read: {e}")))?;
+            }
+            aingle_raft::ConsistencyLevel::Quorum => {
+                raft.ensure_linearizable(openraft::raft::ReadPolicy::LeaseRead)
+                    .await
+                    .map_err(|e| Error::Internal(format!("Consistent read: {e}")))?;
+            }
+            aingle_raft::ConsistencyLevel::Local => {}
+        }
+    }
+
     let graph = state.graph.read().await;
 
     // Build pattern based on provided filters
@@ -320,6 +503,10 @@ pub struct ListTriplesResponse {
     pub limit: usize,
     pub offset: usize,
 }
+
+/// Re-export shared Raft write error handler for this module.
+#[cfg(feature = "cluster")]
+use crate::rest::cluster_utils::handle_raft_write_error;
 
 #[cfg(test)]
 mod tests {
