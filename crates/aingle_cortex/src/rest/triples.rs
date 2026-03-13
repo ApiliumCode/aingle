@@ -153,7 +153,107 @@ pub async fn create_triple(
 
     let object: Value = req.object.clone().into();
 
-    // Cluster mode: route writes through Raft
+    // DAG + Cluster mode: create DagAction and route through Raft
+    #[cfg(feature = "dag")]
+    if let Some(ref raft) = state.raft {
+        let dag_author = state
+            .dag_author
+            .clone()
+            .unwrap_or_else(|| aingle_graph::NodeId::named(&format!(
+                "node:{}",
+                state.cluster_node_id.unwrap_or(0)
+            )));
+        let dag_seq = state
+            .dag_seq_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Get current tips
+        let parents = {
+            let graph = state.graph.read().await;
+            graph
+                .dag_tips()
+                .unwrap_or_default()
+        };
+
+        let mut action = aingle_graph::dag::DagAction {
+            parents,
+            author: dag_author,
+            seq: dag_seq,
+            timestamp: chrono::Utc::now(),
+            payload: aingle_graph::dag::DagPayload::TripleInsert {
+                triples: vec![aingle_graph::dag::TripleInsertPayload {
+                    subject: req.subject.clone(),
+                    predicate: req.predicate.clone(),
+                    object: serde_json::to_value(&req.object).unwrap_or_default(),
+                }],
+            },
+            signature: None,
+        };
+
+        // Sign the action with the node's Ed25519 key
+        if let Some(ref key) = state.dag_signing_key {
+            key.sign(&mut action);
+        }
+
+        let raft_req = aingle_raft::CortexRequest {
+            kind: aingle_wal::WalEntryKind::DagAction {
+                action_bytes: action.to_bytes(),
+            },
+        };
+        let resp = raft
+            .client_write(raft_req)
+            .await
+            .map_err(|e| handle_raft_write_error(e, &state))?;
+
+        if !resp.response().success {
+            return Err(Error::Internal(
+                resp.response()
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| "Raft apply failed".to_string()),
+            ));
+        }
+
+        let dag_action_hash = resp.response().id.clone();
+        let dto = TripleDto {
+            id: dag_action_hash.clone(),
+            subject: req.subject.clone(),
+            predicate: req.predicate.clone(),
+            object: req.object.clone(),
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+        };
+
+        let hash = dag_action_hash.unwrap_or_else(|| "raft-dag".to_string());
+
+        // Record audit entry
+        {
+            let namespace = ns_ext
+                .as_ref()
+                .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
+            let mut audit = state.audit_log.write().await;
+            audit.record(AuditEntry {
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
+                namespace,
+                action: "create".to_string(),
+                resource: format!("/api/v1/triples/{}", hash),
+                details: Some(format!("subject={} (dag)", req.subject)),
+                request_id: None,
+            });
+        }
+
+        // Broadcast event
+        state.broadcaster.broadcast(Event::TripleAdded {
+            hash,
+            subject: req.subject,
+            predicate: req.predicate,
+            object: serde_json::to_value(&req.object).unwrap_or_default(),
+        });
+
+        return Ok((StatusCode::CREATED, Json(dto)));
+    }
+
+    // Cluster mode (non-DAG): route writes through Raft
     #[cfg(feature = "cluster")]
     if let Some(ref raft) = state.raft {
         let raft_req = aingle_raft::CortexRequest {
@@ -353,7 +453,67 @@ pub async fn delete_triple(
         }
     }
 
-    // Cluster mode: route deletes through Raft
+    // DAG + Cluster mode: create DagAction for delete
+    #[cfg(feature = "dag")]
+    if let Some(ref raft) = state.raft {
+        let dag_author = state
+            .dag_author
+            .clone()
+            .unwrap_or_else(|| aingle_graph::NodeId::named(&format!(
+                "node:{}",
+                state.cluster_node_id.unwrap_or(0)
+            )));
+        let dag_seq = state
+            .dag_seq_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        let parents = {
+            let graph = state.graph.read().await;
+            graph.dag_tips().unwrap_or_default()
+        };
+
+        let mut action = aingle_graph::dag::DagAction {
+            parents,
+            author: dag_author,
+            seq: dag_seq,
+            timestamp: chrono::Utc::now(),
+            payload: aingle_graph::dag::DagPayload::TripleDelete {
+                triple_ids: vec![*triple_id.as_bytes()],
+            },
+            signature: None,
+        };
+
+        // Sign the action with the node's Ed25519 key
+        if let Some(ref key) = state.dag_signing_key {
+            key.sign(&mut action);
+        }
+
+        let raft_req = aingle_raft::CortexRequest {
+            kind: aingle_wal::WalEntryKind::DagAction {
+                action_bytes: action.to_bytes(),
+            },
+        };
+        let resp = raft
+            .client_write(raft_req)
+            .await
+            .map_err(|e| handle_raft_write_error(e, &state))?;
+
+        if !resp.response().success {
+            return Err(Error::Internal(
+                resp.response()
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| "Raft delete failed".to_string()),
+            ));
+        }
+
+        state
+            .broadcaster
+            .broadcast(Event::TripleDeleted { hash: id });
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
+    // Cluster mode (non-DAG): route deletes through Raft
     #[cfg(feature = "cluster")]
     if let Some(ref raft) = state.raft {
         let raft_req = aingle_raft::CortexRequest {

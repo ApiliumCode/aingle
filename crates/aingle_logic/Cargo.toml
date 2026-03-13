@@ -1,6 +1,6 @@
 [package]
 name = "aingle_logic"
-version = "0.5.0"
+version = "0.6.0"
 description = "Proof-of-Logic validation engine for AIngle semantic graphs"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -21,7 +21,7 @@ owl = []
 
 [dependencies]
 # Graph database
-aingle_graph = { version = "0.5", path = "../aingle_graph" }
+aingle_graph = { version = "0.6", path = "../aingle_graph" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

@@ -99,6 +99,11 @@ pub enum WalEntryKind {
         term: u64,
         data: Vec<u8>,
     },
+    /// DAG action (serialized bytes to avoid circular deps with aingle_graph).
+    DagAction {
+        /// Serialized DagAction bytes (JSON).
+        action_bytes: Vec<u8>,
+    },
     /// No-op entry for linearizable reads.
     Noop,
 }
