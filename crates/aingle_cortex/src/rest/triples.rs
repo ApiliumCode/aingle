@@ -175,7 +175,7 @@ pub async fn create_triple(
                 .unwrap_or_default()
         };
 
-        let action = aingle_graph::dag::DagAction {
+        let mut action = aingle_graph::dag::DagAction {
             parents,
             author: dag_author,
             seq: dag_seq,
@@ -189,6 +189,11 @@ pub async fn create_triple(
             },
             signature: None,
         };
+
+        // Sign the action with the node's Ed25519 key
+        if let Some(ref key) = state.dag_signing_key {
+            key.sign(&mut action);
+        }
 
         let raft_req = aingle_raft::CortexRequest {
             kind: aingle_wal::WalEntryKind::DagAction {
@@ -467,7 +472,7 @@ pub async fn delete_triple(
             graph.dag_tips().unwrap_or_default()
         };
 
-        let action = aingle_graph::dag::DagAction {
+        let mut action = aingle_graph::dag::DagAction {
             parents,
             author: dag_author,
             seq: dag_seq,
@@ -477,6 +482,11 @@ pub async fn delete_triple(
             },
             signature: None,
         };
+
+        // Sign the action with the node's Ed25519 key
+        if let Some(ref key) = state.dag_signing_key {
+            key.sign(&mut action);
+        }
 
         let raft_req = aingle_raft::CortexRequest {
             kind: aingle_wal::WalEntryKind::DagAction {

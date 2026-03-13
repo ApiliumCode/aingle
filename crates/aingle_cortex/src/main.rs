@@ -192,6 +192,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             state.dag_author = Some(aingle_graph::NodeId::named(&format!("node:{}", node_id)));
         }
 
+        // Initialize Ed25519 signing key for DAG actions.
+        // Reuses the same node.key seed as P2P identity (deterministic).
+        {
+            let key = match &db_path {
+                Some(p) if p != ":memory:" => {
+                    let key_path = std::path::Path::new(p)
+                        .parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .join("node.key");
+                    if key_path.exists() {
+                        match std::fs::read(&key_path) {
+                            Ok(seed) if seed.len() == 32 => {
+                                let mut arr = [0u8; 32];
+                                arr.copy_from_slice(&seed);
+                                Some(aingle_graph::dag::DagSigningKey::from_seed(&arr))
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        // Generate new key and persist
+                        let key = aingle_graph::dag::DagSigningKey::generate();
+                        let seed = key.seed();
+                        if let Some(parent) = key_path.parent() {
+                            std::fs::create_dir_all(parent).ok();
+                        }
+                        #[cfg(unix)]
+                        {
+                            use std::io::Write;
+                            use std::os::unix::fs::OpenOptionsExt;
+                            if let Ok(mut f) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .write(true)
+                                .truncate(true)
+                                .mode(0o600)
+                                .open(&key_path)
+                            {
+                                let _ = f.write_all(&seed);
+                            }
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            let _ = std::fs::write(&key_path, &seed);
+                        }
+                        Some(key)
+                    }
+                }
+                _ => {
+                    // In-memory mode: generate ephemeral key
+                    Some(aingle_graph::dag::DagSigningKey::generate())
+                }
+            };
+
+            if let Some(ref k) = key {
+                tracing::info!(
+                    public_key = %k.public_key_hex(),
+                    "DAG signing key loaded (Ed25519)"
+                );
+            }
+            state.dag_signing_key = key.map(std::sync::Arc::new);
+        }
+
         tracing::info!("Semantic DAG v0.6.0 enabled");
     }
 

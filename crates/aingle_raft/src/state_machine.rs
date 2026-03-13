@@ -239,6 +239,22 @@ impl CortexStateMachine {
                 }
             };
 
+            // Reject unsigned actions (Genesis exempt — system-generated at init)
+            if action.signature.is_none()
+                && !matches!(action.payload, DagPayload::Genesis { .. })
+            {
+                tracing::warn!(
+                    seq = action.seq,
+                    author = %action.author,
+                    "Rejecting unsigned DagAction — Ed25519 signature is mandatory"
+                );
+                return CortexResponse {
+                    success: false,
+                    detail: Some("DagAction rejected: missing Ed25519 signature".into()),
+                    id: None,
+                };
+            }
+
             let action_hash = action.compute_hash();
 
             // Store in DagStore
