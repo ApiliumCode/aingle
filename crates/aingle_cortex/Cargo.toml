@@ -103,7 +103,7 @@ rustls-pemfile = { version = "2", optional = true }
 
 dirs = "6"
 mdns-sd = { version = "0.18", optional = true }
-if-addrs = { version = "0.13", optional = true }
+if-addrs = { version = "0.15", optional = true }
 
 [dev-dependencies]
 tempfile = "3.26"

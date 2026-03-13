@@ -81,7 +81,7 @@ rocksdb = { version = "0.24", optional = true }
 
 # mDNS/DNS-SD for peer discovery
 mdns-sd = { version = "0.18", optional = true }
-if-addrs = { version = "0.13", optional = true }
+if-addrs = { version = "0.15", optional = true }
 
 # WebRTC for browser support
 webrtc = { version = "0.17", optional = true }
