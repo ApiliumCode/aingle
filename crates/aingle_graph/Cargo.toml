@@ -59,7 +59,7 @@ rio_api = { version = "0.8", optional = true }
 uuid = { version = "1", features = ["v4", "serde"], optional = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 tempfile = "3.26"
 
 [[bench]]

@@ -41,7 +41,7 @@ log = "0.4"
 rusqlite = { version = "0.32", default-features = false, features = ["bundled"], optional = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 
 [[bench]]
 name = "memory_bench"

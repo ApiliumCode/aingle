@@ -52,7 +52,7 @@ subtle = "2"
 hex = "0.4"
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 
 [[bench]]
 name = "zk_benchmarks"

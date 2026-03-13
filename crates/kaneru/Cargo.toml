@@ -40,7 +40,7 @@ rand = { version = "0.9", default-features = false, features = ["std", "thread_r
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 
 [[bench]]
 name = "agent_bench"

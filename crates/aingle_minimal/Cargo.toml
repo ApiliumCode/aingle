@@ -134,7 +134,7 @@ tiny_http = { version = "0.12", optional = true }
 
 [dev-dependencies]
 # Testing
-criterion = "0.5"
+criterion = "0.8"
 
 [[bin]]
 name = "aingle-minimal"
