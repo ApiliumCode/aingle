@@ -70,6 +70,8 @@
 //! ```
 
 pub mod backends;
+#[cfg(feature = "crdt")]
+pub mod crdt;
 pub mod error;
 pub mod index;
 pub mod node;

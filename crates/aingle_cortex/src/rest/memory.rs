@@ -120,6 +120,52 @@ pub async fn remember(
     State(state): State<AppState>,
     Json(req): Json<RememberRequest>,
 ) -> Result<(StatusCode, Json<RememberResponse>)> {
+    // Cluster mode: route through Raft
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let raft_req = aingle_raft::CortexRequest {
+            kind: aingle_wal::WalEntryKind::MemoryStore {
+                memory_id: String::new(), // assigned by state machine
+                entry_type: req.entry_type.clone(),
+                data: req.data.clone(),
+                importance: req.importance,
+            },
+        };
+        let resp = raft
+            .client_write(raft_req)
+            .await
+            .map_err(|e| handle_raft_write_error(e, &state))?;
+
+        if !resp.response().success {
+            return Err(Error::Internal(
+                resp.response()
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| "Raft memory store failed".to_string()),
+            ));
+        }
+
+        let id = resp
+            .response()
+            .id
+            .clone()
+            .unwrap_or_else(|| "raft".to_string());
+
+        return Ok((
+            StatusCode::CREATED,
+            Json(RememberResponse { id }),
+        ));
+    }
+
+    // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
+    #[cfg(feature = "cluster")]
+    if state.raft.is_some() {
+        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+    }
+
+    // Non-cluster mode: direct write
+    #[cfg(feature = "cluster")]
+    let wal_data = req.data.clone();
     let mut entry = MemoryEntry::new(&req.entry_type, req.data);
 
     if !req.tags.is_empty() {
@@ -137,6 +183,17 @@ pub async fn remember(
     let id = memory
         .remember(entry)
         .map_err(|e| Error::Internal(format!("Memory store failed: {e}")))?;
+
+    // Append to WAL (legacy cluster path)
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        wal.append(aingle_wal::WalEntryKind::MemoryStore {
+            memory_id: id.to_hex(),
+            entry_type: req.entry_type.clone(),
+            data: wal_data.clone(),
+            importance: req.importance,
+        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+    }
 
     Ok((
         StatusCode::CREATED,
@@ -183,10 +240,60 @@ pub async fn recall(
 pub async fn consolidate(
     State(state): State<AppState>,
 ) -> Result<Json<ConsolidateResponse>> {
+    // Cluster mode: route through Raft so all nodes consolidate deterministically
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let raft_req = aingle_raft::CortexRequest {
+            kind: aingle_wal::WalEntryKind::MemoryConsolidate {
+                consolidated_count: 0, // state machine will compute real count
+            },
+        };
+        let resp = raft
+            .client_write(raft_req)
+            .await
+            .map_err(|e| handle_raft_write_error(e, &state))?;
+
+        if !resp.response().success {
+            return Err(Error::Internal(
+                resp.response()
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| "Raft consolidate failed".to_string()),
+            ));
+        }
+
+        // The detail field contains the consolidated count from state machine
+        let count: usize = resp
+            .response()
+            .detail
+            .as_ref()
+            .and_then(|d| d.parse().ok())
+            .unwrap_or(0);
+
+        return Ok(Json(ConsolidateResponse {
+            consolidated: count,
+        }));
+    }
+
+    // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
+    #[cfg(feature = "cluster")]
+    if state.raft.is_some() {
+        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+    }
+
+    // Non-cluster mode: direct consolidation
     let mut memory = state.memory.write().await;
     let count = memory
         .consolidate()
         .map_err(|e| Error::Internal(format!("Consolidation failed: {e}")))?;
+
+    // Append to WAL (legacy cluster path)
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        wal.append(aingle_wal::WalEntryKind::MemoryConsolidate {
+            consolidated_count: count,
+        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+    }
 
     Ok(Json(ConsolidateResponse {
         consolidated: count,
@@ -212,6 +319,38 @@ pub async fn forget(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
+    // Cluster mode: route through Raft
+    #[cfg(feature = "cluster")]
+    if let Some(ref raft) = state.raft {
+        let raft_req = aingle_raft::CortexRequest {
+            kind: aingle_wal::WalEntryKind::MemoryForget {
+                memory_id: id.clone(),
+            },
+        };
+        let resp = raft
+            .client_write(raft_req)
+            .await
+            .map_err(|e| handle_raft_write_error(e, &state))?;
+
+        if !resp.response().success {
+            return Err(Error::Internal(
+                resp.response()
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| "Raft forget failed".to_string()),
+            ));
+        }
+
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
+    // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
+    #[cfg(feature = "cluster")]
+    if state.raft.is_some() {
+        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+    }
+
+    // Non-cluster mode: direct delete
     let memory_id = MemoryId::from_hex(&id)
         .ok_or_else(|| Error::InvalidInput(format!("Invalid memory ID: {id}")))?;
 
@@ -219,6 +358,14 @@ pub async fn forget(
     memory
         .forget(&memory_id)
         .map_err(|e| Error::NotFound(format!("Memory not found: {e}")))?;
+
+    // Append to WAL (legacy cluster path)
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        wal.append(aingle_wal::WalEntryKind::MemoryForget {
+            memory_id: id.clone(),
+        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -429,6 +576,10 @@ pub async fn rebuild_vector_index(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/// Re-export shared Raft write error handler for this module.
+#[cfg(feature = "cluster")]
+use crate::rest::cluster_utils::handle_raft_write_error;
 
 fn build_query(req: &RecallRequest) -> MemoryQuery {
     let mut query = if let Some(text) = &req.text {

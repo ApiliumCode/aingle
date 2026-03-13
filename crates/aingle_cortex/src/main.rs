@@ -91,9 +91,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Parse and validate cluster config (feature-gated at compile time).
+    #[cfg(feature = "cluster")]
+    let cluster_config = {
+        let cfg = aingle_cortex::cluster_init::ClusterConfig::from_args(&args);
+        if cfg.enabled {
+            if let Err(e) = cfg.validate() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        cfg
+    };
+
+    // Capture bind address before config is moved (used by cluster bootstrap)
+    #[allow(unused_variables)]
+    let bind_host = config.host.clone();
+    #[allow(unused_variables)]
+    let bind_port = config.port;
+
     // Create and run server
     #[allow(unused_mut)]
     let mut server = CortexServer::new(config)?;
+
+    // Initialize Raft cluster if enabled.
+    #[cfg(feature = "cluster")]
+    if cluster_config.enabled {
+        let this_rest_addr = format!("{}:{}", bind_host, bind_port);
+        #[cfg(feature = "p2p")]
+        let this_p2p_addr = format!("{}:{}", bind_host, p2p_config.port);
+        #[cfg(not(feature = "p2p"))]
+        let this_p2p_addr = "127.0.0.1:19091".to_string();
+
+        if let Err(e) = aingle_cortex::cluster_init::init_cluster(
+            &mut server,
+            &cluster_config,
+            &this_rest_addr,
+            &this_p2p_addr,
+        )
+        .await
+        {
+            tracing::error!("Cluster initialization failed: {e}");
+            std::process::exit(1);
+        }
+
+        tracing::info!(
+            node_id = cluster_config.node_id,
+            peers = ?cluster_config.peers,
+            "Cluster mode enabled"
+        );
+    }
 
     // Keep a reference to the state for shutdown flush
     let state_for_shutdown = server.state().clone();
@@ -136,10 +183,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         tokio::select! {
             _ = ctrl_c => {
-                tracing::info!("SIGINT received — flushing data...");
+                tracing::info!("SIGINT received — shutting down...");
             }
             _ = terminate => {
-                tracing::info!("SIGTERM received — flushing data...");
+                tracing::info!("SIGTERM received — shutting down...");
+            }
+        }
+
+        // Gracefully shut down Raft before flushing data
+        #[cfg(feature = "cluster")]
+        if let Some(ref raft) = state_for_shutdown.raft {
+            tracing::info!("Shutting down Raft...");
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                raft.shutdown(),
+            )
+            .await
+            {
+                Ok(Ok(())) => tracing::info!("Raft shut down gracefully"),
+                Ok(Err(e)) => tracing::error!("Raft shutdown error: {e}"),
+                Err(_) => tracing::error!("Raft shutdown timed out after 10s"),
             }
         }
 
@@ -180,6 +243,16 @@ fn print_help() {
     println!("    --p2p-seed <SEED>    Network isolation seed");
     println!("    --p2p-peer <ADDR>    Manual peer address (repeatable)");
     println!("    --p2p-mdns           Enable mDNS discovery");
+    println!();
+    println!("CLUSTER OPTIONS (requires --features cluster):");
+    println!("    --cluster                       Enable cluster mode (implies --p2p)");
+    println!("    --cluster-node-id <ID>          Unique node ID (u64, required)");
+    println!("    --cluster-peers <ADDRS>         Comma-separated peer REST addresses");
+    println!("    --cluster-wal-dir <DIR>         WAL directory (default: wal/)");
+    println!("    --cluster-secret <SECRET>       Shared secret for internal RPC auth (min 16 bytes)");
+    println!("    --cluster-tls                   Enable TLS for inter-node communication");
+    println!("    --cluster-tls-cert <PATH>       TLS certificate PEM file");
+    println!("    --cluster-tls-key <PATH>        TLS private key PEM file");
     println!();
     println!("ENDPOINTS:");
     println!("    REST API:    http://<host>:<port>/api/v1/");
