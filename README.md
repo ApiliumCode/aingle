@@ -13,7 +13,8 @@
 <p align="center">
   <a href="https://github.com/ApiliumCode/aingle/actions/workflows/ci.yml"><img src="https://github.com/ApiliumCode/aingle/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.70%2B-orange.svg" alt="Rust"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.83%2B-orange.svg" alt="Rust"></a>
+  <a href="https://github.com/ApiliumCode/mayros"><img src="https://img.shields.io/badge/Powers-Mayros%20AI-blueviolet?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0wIDNjMS42NiAwIDMgMS4zNCAzIDNzLTEuMzQgMy0zIDMtMy0xLjM0LTMtMyAxLjM0LTMgMy0zem0wIDE0LjJjLTIuNSAwLTQuNzEtMS4yOC02LTMuMjIuMDMtMS45OSA0LTMuMDggNi0zLjA4IDEuOTkgMCA1Ljk3IDEuMDkgNiAzLjA4LTEuMjkgMS45NC0zLjUgMy4yMi02IDMuMjJ6Ii8+PC9zdmc+" alt="Powers Mayros AI"></a>
 </p>
 
 <p align="center">
@@ -156,6 +157,73 @@ Interactive D3.js dashboard. Watch your DAG evolve in real-time. Filter, search,
 
 ---
 
+## Clustering
+
+AIngle supports multi-node clustering via Raft consensus for high availability and horizontal scalability. Writes are replicated to all nodes; reads can be served from any node with optional quorum consistency.
+
+### Quick Start (3-node cluster)
+
+```bash
+# Node 1 — bootstrap leader
+aingle-cortex --port 8081 \
+  --cluster --cluster-node-id 1 \
+  --cluster-secret "your-secret-at-least-16-chars" \
+  --cluster-wal-dir ./data/node1/wal \
+  --db-path ./data/node1/graph.sled
+
+# Node 2 — joins via node 1
+aingle-cortex --port 8082 \
+  --cluster --cluster-node-id 2 \
+  --cluster-peers 127.0.0.1:8081 \
+  --cluster-secret "your-secret-at-least-16-chars" \
+  --cluster-wal-dir ./data/node2/wal \
+  --db-path ./data/node2/graph.sled
+
+# Node 3 — joins via node 1
+aingle-cortex --port 8083 \
+  --cluster --cluster-node-id 3 \
+  --cluster-peers 127.0.0.1:8081 \
+  --cluster-secret "your-secret-at-least-16-chars" \
+  --cluster-wal-dir ./data/node3/wal \
+  --db-path ./data/node3/graph.sled
+```
+
+### With TLS encryption
+
+```bash
+# Auto-generated self-signed certs (development)
+aingle-cortex --port 8081 --cluster --cluster-node-id 1 \
+  --cluster-secret "your-secret" --cluster-tls
+
+# Custom certificates (production)
+aingle-cortex --port 8081 --cluster --cluster-node-id 1 \
+  --cluster-secret "your-secret" --cluster-tls \
+  --cluster-tls-cert /path/to/cert.pem \
+  --cluster-tls-key /path/to/key.pem
+```
+
+### Cluster endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/cluster/status` | GET | Node role, leader ID, current term |
+| `/api/v1/cluster/members` | GET | All cluster members and their state |
+| `/api/v1/cluster/join` | POST | Add a new node to the cluster |
+| `/api/v1/cluster/leave` | POST | Gracefully remove a node |
+| `/api/v1/cluster/wal/stats` | GET | WAL segment count and disk usage |
+| `/api/v1/cluster/wal/verify` | POST | Verify WAL integrity (checksums) |
+
+### Features
+
+- **Raft consensus** — automatic leader election, log replication, and membership changes
+- **Streaming snapshots** — 512KB chunked transfer with per-chunk ACK for large datasets
+- **Write-Ahead Log** — crash-safe durability with segment rotation and integrity verification
+- **TLS encryption** — optional TLS for inter-node communication (self-signed or custom certs)
+- **Constant-time auth** — cluster secret verified with timing-safe comparison
+- **Quorum reads** — optional strong consistency for read operations
+
+---
+
 ## Architecture
 
 ```
@@ -175,6 +243,12 @@ Interactive D3.js dashboard. Watch your DAG evolve in real-time. Filter, search,
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
 │   │  Semantic    │  │    Logic     │  │  ZK Proofs   │  │ Contracts │ │
 │   │   Graph      │  │   Engine     │  │  (Privacy)   │  │  Runtime  │ │
+│   └──────────────┘  └──────────────┘  └──────────────┘  └───────────┘ │
+├────────────────────────────────────────────────────────────────────────┤
+│                        CONSENSUS LAYER                                  │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
+│   │    Raft      │  │     WAL      │  │  Streaming   │  │   TLS     │ │
+│   │ (openraft)   │  │ (Durability) │  │  Snapshots   │  │  (mTLS)   │ │
 │   └──────────────┘  └──────────────┘  └──────────────┘  └───────────┘ │
 ├────────────────────────────────────────────────────────────────────────┤
 │                         NETWORK LAYER                                   │
@@ -199,6 +273,9 @@ cd aingle
 # Build
 cargo build --workspace --release
 
+# Build with clustering support
+cargo build -p aingle_cortex --features cluster --release
+
 # Test
 cargo test --workspace
 
@@ -208,7 +285,7 @@ cargo doc --workspace --no-deps --open
 
 ### Prerequisites
 
-- **Rust** 1.70 or later
+- **Rust** 1.83 or later
 - **libsodium-dev** (cryptography)
 - **libssl-dev** (TLS)
 - **pkg-config**
@@ -263,6 +340,13 @@ cargo doc --workspace --no-deps --open
 | `kaneru` | Kaneru multi-agent execution framework |
 | `aingle_logic` | Prolog-style reasoning engine |
 | `aingle_graph` | Semantic graph database |
+
+### Clustering & Consensus
+
+| Component | Purpose |
+|-----------|---------|
+| `aingle_raft` | Raft consensus (leader election, log replication, streaming snapshots) |
+| `aingle_wal` | Write-Ahead Log for crash-safe durability |
 
 ### Security & Privacy
 
