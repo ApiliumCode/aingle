@@ -87,7 +87,7 @@ if-addrs = { version = "0.13", optional = true }
 webrtc = { version = "0.17", optional = true }
 bytes = { version = "1.11", optional = true }
 # WebSocket signaling server for WebRTC
-async-tungstenite = { version = "0.27", features = ["async-std-runtime"], optional = true }
+async-tungstenite = { version = "0.33", features = ["async-std-runtime"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink"], optional = true }
 
 # QUIC transport (reliable encrypted UDP)
