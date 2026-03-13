@@ -1,0 +1,23 @@
+[package]
+name = "aingle_wal"
+version = "0.5.0"
+description = "Write-Ahead Log for AIngle clustering and replication"
+license = "Apache-2.0 OR LicenseRef-Commercial"
+repository = "https://github.com/ApiliumCode/aingle"
+homepage = "https://apilium.com"
+documentation = "https://docs.rs/aingle_wal"
+authors = ["Apilium Technologies <hello@apilium.com>"]
+keywords = ["aingle", "wal", "replication", "clustering"]
+categories = ["database"]
+edition = "2021"
+rust-version = "1.83"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "2"
+blake3 = "1.8"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3.26"
