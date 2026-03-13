@@ -137,7 +137,7 @@ fn default_export_format() -> String {
     "json".into()
 }
 
-#[cfg(feature = "dag-sign")]
+#[cfg(feature = "dag")]
 #[derive(Debug, Deserialize)]
 pub struct VerifyQuery {
     /// Hex-encoded Ed25519 public key (64 chars).
@@ -320,7 +320,7 @@ pub async fn get_dag_export(
 }
 
 /// GET /api/v1/dag/verify/:hash?public_key=X — verify an action's Ed25519 signature
-#[cfg(feature = "dag-sign")]
+#[cfg(feature = "dag")]
 pub async fn get_dag_verify(
     State(state): State<AppState>,
     Path(hash): Path<String>,
@@ -536,7 +536,7 @@ pub fn dag_router() -> Router<AppState> {
         .route("/api/v1/dag/sync", post(post_dag_sync))
         .route("/api/v1/dag/sync/pull", post(post_dag_pull));
 
-    #[cfg(feature = "dag-sign")]
+    #[cfg(feature = "dag")]
     let router = router.route("/api/v1/dag/verify/{hash}", get(get_dag_verify));
 
     router
