@@ -59,11 +59,28 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
             None => (0, 0),
         };
 
+        // Read DAG tips if enabled
+        let dag_tips = {
+            #[cfg(feature = "dag")]
+            {
+                let graph = self.graph.read().await;
+                graph
+                    .dag_store()
+                    .and_then(|ds| ds.tips_raw().ok())
+                    .unwrap_or_default()
+            }
+            #[cfg(not(feature = "dag"))]
+            {
+                Vec::<[u8; 32]>::new()
+            }
+        };
+
         let snapshot = ClusterSnapshot {
             triples,
             ineru_ltm,
             last_applied_index,
             last_applied_term,
+            dag_tips,
             checksum: String::new(),
         };
 
