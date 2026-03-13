@@ -52,6 +52,12 @@ pub struct AppState {
     /// This node's ID in the Raft cluster.
     #[cfg(feature = "cluster")]
     pub cluster_node_id: Option<u64>,
+    /// Shared secret for authenticating internal cluster RPCs.
+    #[cfg(feature = "cluster")]
+    pub cluster_secret: Option<String>,
+    /// TLS server config for encrypting inter-node communication.
+    #[cfg(feature = "cluster")]
+    pub tls_server_config: Option<Arc<rustls::ServerConfig>>,
 }
 
 impl AppState {
@@ -88,6 +94,10 @@ impl AppState {
             raft: None,
             #[cfg(feature = "cluster")]
             cluster_node_id: None,
+            #[cfg(feature = "cluster")]
+            cluster_secret: None,
+            #[cfg(feature = "cluster")]
+            tls_server_config: None,
         }
     }
 
@@ -122,6 +132,10 @@ impl AppState {
             raft: None,
             #[cfg(feature = "cluster")]
             cluster_node_id: None,
+            #[cfg(feature = "cluster")]
+            cluster_secret: None,
+            #[cfg(feature = "cluster")]
+            tls_server_config: None,
         }
     }
 
@@ -156,6 +170,10 @@ impl AppState {
             raft: None,
             #[cfg(feature = "cluster")]
             cluster_node_id: None,
+            #[cfg(feature = "cluster")]
+            cluster_secret: None,
+            #[cfg(feature = "cluster")]
+            tls_server_config: None,
         }
     }
 
@@ -234,8 +252,13 @@ impl AppState {
             raft: None,
             #[cfg(feature = "cluster")]
             cluster_node_id: None,
+            #[cfg(feature = "cluster")]
+            cluster_secret: None,
+            #[cfg(feature = "cluster")]
+            tls_server_config: None,
         })
     }
+
 
     /// Flushes the graph database and saves the Ineru memory snapshot to disk.
     ///

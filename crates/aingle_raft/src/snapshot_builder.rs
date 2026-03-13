@@ -28,9 +28,11 @@ pub struct CortexSnapshotBuilder {
 
 impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
     async fn build_snapshot(&mut self) -> Result<SnapshotOf<C>, io::Error> {
-        // Read all triples from graph
+        // Acquire both locks simultaneously for an atomic snapshot
+        let graph = self.graph.read().await;
+        let memory = self.memory.read().await;
+
         let triples = {
-            let graph = self.graph.read().await;
             let all = graph
                 .find(aingle_graph::TriplePattern::any())
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
@@ -44,13 +46,13 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
                 .collect::<Vec<_>>()
         };
 
-        // Export LTM
-        let ineru_ltm = {
-            let memory = self.memory.read().await;
-            memory
-                .export_snapshot()
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
-        };
+        let ineru_ltm = memory
+            .export_snapshot()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+        // Drop locks before serialization to reduce hold time
+        drop(graph);
+        drop(memory);
 
         let (last_applied_index, last_applied_term) = match &self.last_applied {
             Some(lid) => (lid.index, lid.leader_id.term),
@@ -62,6 +64,7 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
             ineru_ltm,
             last_applied_index,
             last_applied_term,
+            checksum: String::new(),
         };
 
         let data = snapshot

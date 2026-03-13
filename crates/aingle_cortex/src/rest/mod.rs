@@ -32,6 +32,10 @@
 pub mod audit;
 #[cfg(feature = "cluster")]
 pub mod cluster;
+#[cfg(feature = "cluster")]
+pub(crate) mod cluster_utils;
+#[cfg(feature = "cluster")]
+pub mod raft_rpc;
 mod memory;
 mod observability;
 #[cfg(feature = "p2p")]
@@ -120,7 +124,9 @@ pub fn router() -> Router<AppState> {
 
     // Cluster endpoints (feature-gated)
     #[cfg(feature = "cluster")]
-    let router = router.merge(cluster::cluster_router());
+    let router = router
+        .merge(cluster::cluster_router())
+        .merge(raft_rpc::raft_rpc_router());
 
     router
 }

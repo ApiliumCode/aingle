@@ -41,10 +41,23 @@ pub enum RaftMessage {
     Vote { payload: Vec<u8> },
     /// Raft Vote response.
     VoteResponse { payload: Vec<u8> },
-    /// Raft snapshot data.
+    /// Raft snapshot data (monolithic, for small snapshots).
     InstallSnapshot { payload: Vec<u8> },
     /// Raft snapshot response.
     InstallSnapshotResponse { payload: Vec<u8> },
+    /// Snapshot chunk for streaming large snapshots.
+    SnapshotChunk {
+        snapshot_id: String,
+        offset: u64,
+        total_size: u64,
+        is_final: bool,
+        data: Vec<u8>,
+    },
+    /// Acknowledgement for a snapshot chunk.
+    SnapshotChunkAck {
+        snapshot_id: String,
+        next_offset: u64,
+    },
     /// Cluster join request.
     ClusterJoin {
         node_id: u64,
@@ -151,10 +164,11 @@ impl RaftNetworkFactory<C> for CortexNetworkFactory {
     type Network = CortexNetworkConnection;
 
     async fn new_client(&mut self, target: NodeId, node: &CortexNode) -> Self::Network {
+        // Use REST address for HTTP-based Raft RPC routing.
         let addr: SocketAddr = node
-            .p2p_addr
+            .rest_addr
             .parse()
-            .unwrap_or_else(|_| "127.0.0.1:19091".parse().unwrap());
+            .unwrap_or_else(|_| "127.0.0.1:8080".parse().unwrap());
 
         CortexNetworkConnection {
             target,
@@ -179,18 +193,26 @@ impl RaftNetworkV2<C> for CortexNetworkConnection {
     async fn append_entries(
         &mut self,
         rpc: AppendEntriesRequest<C>,
-        _option: RPCOption,
+        option: RPCOption,
     ) -> Result<AppendEntriesResponse<C>, RPCError<C>> {
         let payload = serde_json::to_vec(&rpc)
             .map_err(|e| RPCError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
 
         let msg = RaftMessage::AppendEntries { payload };
 
-        let response = self
-            .rpc_sender
-            .send_rpc(self.target_addr, msg)
-            .await
-            .map_err(|e| RPCError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
+        let response = tokio::time::timeout(
+            option.hard_ttl(),
+            self.rpc_sender.send_rpc(self.target_addr, msg),
+        )
+        .await
+        .map_err(|_| {
+            RPCError::Unreachable(Unreachable::new(&AnyError::error(format!(
+                "AppendEntries RPC to {} timed out after {:?}",
+                self.target_addr,
+                option.hard_ttl()
+            ))))
+        })?
+        .map_err(|e| RPCError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
 
         match response {
             RaftMessage::AppendEntriesResponse { payload } => {
@@ -207,18 +229,26 @@ impl RaftNetworkV2<C> for CortexNetworkConnection {
     async fn vote(
         &mut self,
         rpc: VoteRequest<C>,
-        _option: RPCOption,
+        option: RPCOption,
     ) -> Result<VoteResponse<C>, RPCError<C>> {
         let payload = serde_json::to_vec(&rpc)
             .map_err(|e| RPCError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
 
         let msg = RaftMessage::Vote { payload };
 
-        let response = self
-            .rpc_sender
-            .send_rpc(self.target_addr, msg)
-            .await
-            .map_err(|e| RPCError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
+        let response = tokio::time::timeout(
+            option.hard_ttl(),
+            self.rpc_sender.send_rpc(self.target_addr, msg),
+        )
+        .await
+        .map_err(|_| {
+            RPCError::Unreachable(Unreachable::new(&AnyError::error(format!(
+                "Vote RPC to {} timed out after {:?}",
+                self.target_addr,
+                option.hard_ttl()
+            ))))
+        })?
+        .map_err(|e| RPCError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
 
         match response {
             RaftMessage::VoteResponse { payload } => {
@@ -237,7 +267,7 @@ impl RaftNetworkV2<C> for CortexNetworkConnection {
         vote: VoteOf<C>,
         snapshot: SnapshotOf<C>,
         _cancel: impl Future<Output = ReplicationClosed> + Send + 'static,
-        _option: RPCOption,
+        option: RPCOption,
     ) -> Result<SnapshotResponse<C>, StreamingError<C>> {
         // Serialize full snapshot + metadata
         let snap_data = serde_json::json!({
@@ -249,13 +279,32 @@ impl RaftNetworkV2<C> for CortexNetworkConnection {
             StreamingError::Unreachable(Unreachable::new(&AnyError::error(e)))
         })?;
 
+        // Use chunked transfer for payloads > 1MB to avoid timeouts
+        // and reduce memory pressure on the receiver.
+        const CHUNK_THRESHOLD: usize = 1024 * 1024; // 1MB
+
+        if payload.len() > CHUNK_THRESHOLD {
+            return self
+                .send_chunked_snapshot(&payload, option)
+                .await;
+        }
+
+        // Small snapshot: send monolithic
         let msg = RaftMessage::InstallSnapshot { payload };
 
-        let response = self
-            .rpc_sender
-            .send_rpc(self.target_addr, msg)
-            .await
-            .map_err(|e| StreamingError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
+        let response = tokio::time::timeout(
+            option.hard_ttl(),
+            self.rpc_sender.send_rpc(self.target_addr, msg),
+        )
+        .await
+        .map_err(|_| {
+            StreamingError::Unreachable(Unreachable::new(&AnyError::error(format!(
+                "Snapshot RPC to {} timed out after {:?}",
+                self.target_addr,
+                option.hard_ttl()
+            ))))
+        })?
+        .map_err(|e| StreamingError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
 
         match response {
             RaftMessage::InstallSnapshotResponse { payload } => {
@@ -268,6 +317,110 @@ impl RaftNetworkV2<C> for CortexNetworkConnection {
                 &AnyError::error("unexpected response type for InstallSnapshot"),
             ))),
         }
+    }
+
+}
+
+impl CortexNetworkConnection {
+    /// Send a large snapshot in chunks, waiting for ACK after each chunk.
+    ///
+    /// Each chunk is sent sequentially with an ACK-per-chunk protocol.
+    /// The final chunk triggers snapshot installation on the receiver,
+    /// which returns an `InstallSnapshotResponse`.
+    async fn send_chunked_snapshot(
+        &self,
+        payload: &[u8],
+        option: RPCOption,
+    ) -> Result<SnapshotResponse<C>, StreamingError<C>> {
+        const CHUNK_SIZE: usize = 512 * 1024;
+        let total_size = payload.len() as u64;
+        let snapshot_id = format!(
+            "snap-{}-{}",
+            self.target,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        );
+
+        let num_chunks = (payload.len() + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        tracing::info!(
+            target_node = self.target,
+            total_bytes = total_size,
+            chunks = num_chunks,
+            "Streaming snapshot in chunks"
+        );
+
+        // Per-chunk timeout: use the caller's TTL divided by chunks (min 30s).
+        let per_chunk_timeout = std::cmp::max(
+            option.hard_ttl() / (num_chunks as u32 + 1),
+            std::time::Duration::from_secs(30),
+        );
+
+        let mut offset = 0u64;
+        while (offset as usize) < payload.len() {
+            let end = std::cmp::min(offset as usize + CHUNK_SIZE, payload.len());
+            let chunk_data = payload[offset as usize..end].to_vec();
+            let is_final = end == payload.len();
+
+            let msg = RaftMessage::SnapshotChunk {
+                snapshot_id: snapshot_id.clone(),
+                offset,
+                total_size,
+                is_final,
+                data: chunk_data,
+            };
+
+            let response = tokio::time::timeout(
+                per_chunk_timeout,
+                self.rpc_sender.send_rpc(self.target_addr, msg),
+            )
+            .await
+            .map_err(|_| {
+                StreamingError::Unreachable(Unreachable::new(&AnyError::error(format!(
+                    "Snapshot chunk at offset {offset} timed out after {per_chunk_timeout:?}"
+                ))))
+            })?
+            .map_err(|e| {
+                StreamingError::Unreachable(Unreachable::new(&AnyError::error(e)))
+            })?;
+
+            match response {
+                // Final chunk returns the install response
+                RaftMessage::InstallSnapshotResponse { payload } => {
+                    let resp: SnapshotResponse<C> =
+                        serde_json::from_slice(&payload).map_err(|e| {
+                            StreamingError::Unreachable(Unreachable::new(&AnyError::error(e)))
+                        })?;
+                    return Ok(resp);
+                }
+                // Intermediate ACK — advance offset
+                RaftMessage::SnapshotChunkAck { next_offset, .. } if !is_final => {
+                    offset = next_offset;
+                }
+                // Got ACK on what should have been the final chunk — receiver
+                // didn't install yet (shouldn't happen, but handle gracefully)
+                RaftMessage::SnapshotChunkAck { .. } => {
+                    return Err(StreamingError::Unreachable(Unreachable::new(
+                        &AnyError::error(
+                            "received SnapshotChunkAck for final chunk instead of InstallSnapshotResponse"
+                        ),
+                    )));
+                }
+                other => {
+                    return Err(StreamingError::Unreachable(Unreachable::new(
+                        &AnyError::error(format!(
+                            "unexpected response for snapshot chunk: {:?}",
+                            std::mem::discriminant(&other)
+                        )),
+                    )));
+                }
+            }
+        }
+
+        Err(StreamingError::Unreachable(Unreachable::new(
+            &AnyError::error("snapshot transfer ended without a final response"),
+        )))
     }
 }
 

@@ -177,6 +177,8 @@ pub mod sparql;
 pub mod state;
 #[cfg(feature = "p2p")]
 pub mod p2p;
+#[cfg(feature = "cluster")]
+pub mod cluster_init;
 
 pub use client::{CortexClientConfig, CortexInternalClient};
 pub use error::{Error, Result};

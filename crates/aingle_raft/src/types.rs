@@ -31,6 +31,9 @@ impl fmt::Display for CortexRequest {
 pub struct CortexResponse {
     pub success: bool,
     pub detail: Option<String>,
+    /// Generated resource ID (triple hash, memory ID, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 impl fmt::Display for CortexResponse {

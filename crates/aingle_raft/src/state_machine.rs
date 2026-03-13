@@ -70,18 +70,20 @@ impl CortexStateMachine {
                 );
                 let graph = self.graph.read().await;
                 match graph.insert(triple) {
-                    Ok(_id) => {
+                    Ok(id) => {
                         tracing::debug!(subject, predicate, "Applied TripleInsert");
                         CortexResponse {
                             success: true,
                             detail: None,
+                            id: Some(id.to_hex()),
                         }
                     }
                     Err(e) => {
-                        tracing::error!("TripleInsert failed: {e}");
+                        tracing::error!("TripleInsert failed (potential state divergence): {e}");
                         CortexResponse {
                             success: false,
                             detail: Some(format!("Insert failed: {e}")),
+                            id: None,
                         }
                     }
                 }
@@ -95,13 +97,15 @@ impl CortexStateMachine {
                         CortexResponse {
                             success: true,
                             detail: None,
+                            id: None,
                         }
                     }
                     Err(e) => {
-                        tracing::error!("TripleDelete failed: {e}");
+                        tracing::error!("TripleDelete failed (potential state divergence): {e}");
                         CortexResponse {
                             success: false,
                             detail: Some(format!("Delete failed: {e}")),
+                            id: None,
                         }
                     }
                 }
@@ -116,13 +120,15 @@ impl CortexStateMachine {
                     ineru::MemoryEntry::new(entry_type, data.clone()).with_importance(*importance);
                 let mut memory = self.memory.write().await;
                 match memory.remember(entry) {
-                    Ok(_id) => CortexResponse {
+                    Ok(id) => CortexResponse {
                         success: true,
                         detail: None,
+                        id: Some(id.to_hex()),
                     },
                     Err(e) => CortexResponse {
                         success: false,
                         detail: Some(format!("MemoryStore failed: {e}")),
+                        id: None,
                     },
                 }
             }
@@ -133,23 +139,40 @@ impl CortexStateMachine {
                         Ok(()) => CortexResponse {
                             success: true,
                             detail: None,
+                            id: None,
                         },
                         Err(e) => CortexResponse {
                             success: false,
                             detail: Some(format!("MemoryForget failed: {e}")),
+                            id: None,
                         },
                     }
                 } else {
                     CortexResponse {
                         success: false,
                         detail: Some("Invalid memory ID".to_string()),
+                        id: None,
                     }
                 }
             }
-            WalEntryKind::MemoryConsolidate { consolidated_count } => CortexResponse {
-                success: true,
-                detail: Some(format!("Consolidated {} entries", consolidated_count)),
-            },
+            WalEntryKind::MemoryConsolidate {
+                consolidated_count: _,
+            } => {
+                // Actually perform consolidation on this node
+                let mut memory = self.memory.write().await;
+                match memory.consolidate() {
+                    Ok(count) => CortexResponse {
+                        success: true,
+                        detail: Some(count.to_string()),
+                        id: None,
+                    },
+                    Err(e) => CortexResponse {
+                        success: false,
+                        detail: Some(format!("Consolidation failed: {e}")),
+                        id: None,
+                    },
+                }
+            }
             WalEntryKind::LtmEntityCreate {
                 entity_id: _,
                 name,
@@ -159,6 +182,7 @@ impl CortexStateMachine {
                 CortexResponse {
                     success: true,
                     detail: None,
+                    id: None,
                 }
             }
             WalEntryKind::LtmLinkCreate {
@@ -167,10 +191,16 @@ impl CortexStateMachine {
                 relation,
                 weight: _,
             } => {
-                tracing::debug!("Applied LtmLinkCreate: {} -> {} ({})", from_entity, to_entity, relation);
+                tracing::debug!(
+                    "Applied LtmLinkCreate: {} -> {} ({})",
+                    from_entity,
+                    to_entity,
+                    relation
+                );
                 CortexResponse {
                     success: true,
                     detail: None,
+                    id: None,
                 }
             }
             WalEntryKind::LtmEntityDelete { entity_id } => {
@@ -178,11 +208,13 @@ impl CortexStateMachine {
                 CortexResponse {
                     success: true,
                     detail: None,
+                    id: None,
                 }
             }
             _ => CortexResponse {
                 success: true,
                 detail: None,
+                id: None,
             },
         }
     }
@@ -229,12 +261,6 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
         while let Some(item) = entries.next().await {
             let (entry, responder) = item?;
 
-            // Update last applied
-            {
-                let mut la = self.last_applied.write().await;
-                *la = Some(entry.log_id.clone());
-            }
-
             // Check for membership change
             if let Some(membership) = entry.get_membership() {
                 let mut lm = self.last_membership.write().await;
@@ -246,6 +272,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
                 openraft::EntryPayload::Blank => CortexResponse {
                     success: true,
                     detail: None,
+                    id: None,
                 },
                 openraft::EntryPayload::Normal(ref req) => {
                     self.apply_mutation(&req.kind).await
@@ -253,8 +280,16 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
                 openraft::EntryPayload::Membership(_) => CortexResponse {
                     success: true,
                     detail: None,
+                    id: None,
                 },
             };
+
+            // Update last_applied AFTER successful apply to avoid
+            // marking entries as applied before they actually are (#1).
+            {
+                let mut la = self.last_applied.write().await;
+                *la = Some(entry.log_id.clone());
+            }
 
             // Send response to client if waiting (leader only)
             if let Some(resp) = responder {
@@ -289,33 +324,42 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
         let cluster_snap = ClusterSnapshot::from_bytes(&data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-        // Rebuild graph from snapshot
-        {
-            let graph = self.graph.read().await;
-            // Clear existing data and insert snapshot triples
-            for ts in &cluster_snap.triples {
-                let value = json_to_value(&ts.object);
-                let triple = aingle_graph::Triple::new(
-                    aingle_graph::NodeId::named(&ts.subject),
-                    aingle_graph::Predicate::named(&ts.predicate),
-                    value,
-                );
-                let _ = graph.insert(triple);
-            }
+        // Build both new graph and new memory into temporaries FIRST,
+        // then swap atomically only if both succeed (#7).
+        let new_graph = GraphDB::memory()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        for ts in &cluster_snap.triples {
+            let value = json_to_value(&ts.object);
+            let triple = aingle_graph::Triple::new(
+                aingle_graph::NodeId::named(&ts.subject),
+                aingle_graph::Predicate::named(&ts.predicate),
+                value,
+            );
+            new_graph
+                .insert(triple)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
         }
 
-        // Rebuild memory from snapshot
-        if !cluster_snap.ineru_ltm.is_empty() {
-            match IneruMemory::import_snapshot(&cluster_snap.ineru_ltm) {
-                Ok(restored) => {
-                    let mut memory = self.memory.write().await;
-                    *memory = restored;
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to restore Ineru from snapshot: {e}");
-                }
-            }
+        let new_memory = if !cluster_snap.ineru_ltm.is_empty() {
+            Some(
+                IneruMemory::import_snapshot(&cluster_snap.ineru_ltm)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData,
+                        format!("Failed to restore Ineru from snapshot: {e}")))?
+            )
+        } else {
+            None
+        };
+
+        // Both built successfully — now swap under both locks so concurrent
+        // readers never observe new graph with old memory (or vice versa).
+        let mut graph = self.graph.write().await;
+        let mut memory = self.memory.write().await;
+        *graph = new_graph;
+        if let Some(restored) = new_memory {
+            *memory = restored;
         }
+        drop(memory);
+        drop(graph);
 
         // Update metadata
         {
@@ -370,6 +414,9 @@ pub struct ClusterSnapshot {
     pub last_applied_index: u64,
     /// Last applied log term.
     pub last_applied_term: u64,
+    /// Blake3 integrity checksum over triples + ineru_ltm.
+    #[serde(default)]
+    pub checksum: String,
 }
 
 /// Wire format for a triple in a snapshot.
@@ -388,23 +435,62 @@ impl ClusterSnapshot {
             ineru_ltm: Vec::new(),
             last_applied_index: 0,
             last_applied_term: 0,
+            checksum: String::new(),
         }
     }
 
-    /// Serialize the snapshot to bytes.
+    /// Serialize the snapshot to bytes, computing a blake3 integrity checksum.
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
-        serde_json::to_vec(self).map_err(|e| format!("Snapshot serialization failed: {e}"))
+        // Serialize everything except checksum first, then patch checksum in
+        // to avoid cloning the entire snapshot (triples + LTM can be large).
+        let checksum = compute_checksum(&self.triples, &self.ineru_ltm);
+        let wrapper = ClusterSnapshotRef {
+            triples: &self.triples,
+            ineru_ltm: &self.ineru_ltm,
+            last_applied_index: self.last_applied_index,
+            last_applied_term: self.last_applied_term,
+            checksum: &checksum,
+        };
+        serde_json::to_vec(&wrapper).map_err(|e| format!("Snapshot serialization failed: {e}"))
     }
 
-    /// Deserialize a snapshot from bytes.
+    /// Deserialize a snapshot from bytes, verifying the integrity checksum.
     pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
-        serde_json::from_slice(data).map_err(|e| format!("Snapshot deserialization failed: {e}"))
+        let snap: Self = serde_json::from_slice(data)
+            .map_err(|e| format!("Snapshot deserialization failed: {e}"))?;
+        let expected = compute_checksum(&snap.triples, &snap.ineru_ltm);
+        if !snap.checksum.is_empty() && snap.checksum != expected {
+            return Err(format!(
+                "Snapshot checksum mismatch: expected {expected}, got {}",
+                snap.checksum
+            ));
+        }
+        Ok(snap)
     }
 }
 
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/// Borrow-based snapshot wrapper to avoid cloning during serialization.
+#[derive(Serialize)]
+struct ClusterSnapshotRef<'a> {
+    triples: &'a [TripleSnapshot],
+    ineru_ltm: &'a [u8],
+    last_applied_index: u64,
+    last_applied_term: u64,
+    checksum: &'a str,
+}
+
+/// Compute a blake3 checksum over snapshot content for integrity verification.
+fn compute_checksum(triples: &[TripleSnapshot], ineru_ltm: &[u8]) -> String {
+    let mut hasher = blake3::Hasher::new();
+    let triples_bytes = serde_json::to_vec(triples).unwrap_or_default();
+    hasher.update(&triples_bytes);
+    hasher.update(ineru_ltm);
+    hasher.finalize().to_hex().to_string()
+}
 
 fn json_to_value(v: &serde_json::Value) -> aingle_graph::Value {
     match v {
@@ -426,6 +512,7 @@ fn json_to_value(v: &serde_json::Value) -> aingle_graph::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openraft::vote::RaftLeaderId;
 
     fn make_graph_and_memory() -> (Arc<RwLock<GraphDB>>, Arc<RwLock<IneruMemory>>) {
         let graph = GraphDB::memory().unwrap();
@@ -457,6 +544,7 @@ mod tests {
         };
         let resp = sm.apply_mutation(&kind).await;
         assert!(resp.success);
+        assert!(resp.id.is_some(), "TripleInsert should return an ID");
         assert_eq!(sm.applied_count().await, 1);
 
         // Verify in GraphDB
@@ -502,6 +590,7 @@ mod tests {
         };
         let resp = sm.apply_mutation(&kind).await;
         assert!(resp.success);
+        assert!(resp.id.is_some(), "MemoryStore should return an ID");
     }
 
     #[tokio::test]
@@ -554,6 +643,66 @@ mod tests {
         assert_eq!(sm.applied_count().await, 3);
     }
 
+    #[tokio::test]
+    async fn test_install_snapshot_clears_existing_data() {
+        let (graph, memory) = make_graph_and_memory();
+        let sm = Arc::new(CortexStateMachine::new(
+            Arc::clone(&graph),
+            Arc::clone(&memory),
+        ));
+
+        // Pre-populate graph with data that should be cleared
+        {
+            let g = graph.read().await;
+            g.insert(aingle_graph::Triple::new(
+                aingle_graph::NodeId::named("old_subject"),
+                aingle_graph::Predicate::named("old_pred"),
+                aingle_graph::Value::String("old_value".into()),
+            ))
+            .unwrap();
+        }
+        assert_eq!(graph.read().await.count(), 1);
+
+        // Create snapshot with different data
+        let snap = ClusterSnapshot {
+            triples: vec![TripleSnapshot {
+                subject: "new_subject".into(),
+                predicate: "new_pred".into(),
+                object: serde_json::json!("new_value"),
+            }],
+            ineru_ltm: vec![],
+            last_applied_index: 10,
+            last_applied_term: 2,
+            checksum: String::new(),
+        };
+        let data = snap.to_bytes().unwrap();
+
+        let meta = openraft::storage::SnapshotMeta {
+            last_log_id: Some(openraft::LogId::new(
+                openraft::vote::leader_id_adv::CommittedLeaderId::new(2, 0),
+                10,
+            )),
+            last_membership: openraft::StoredMembership::default(),
+            snapshot_id: "test".to_string(),
+        };
+
+        let mut sm_mut = sm.clone();
+        sm_mut
+            .install_snapshot(&meta, Cursor::new(data))
+            .await
+            .unwrap();
+
+        // Verify: old data cleared, only snapshot data present
+        let g = graph.read().await;
+        assert_eq!(g.count(), 1, "old data should be cleared, only snapshot data remains");
+        let triples = g.find(aingle_graph::TriplePattern::any()).unwrap();
+        let subject_str = triples[0].subject.to_string();
+        assert!(
+            subject_str.contains("new_subject"),
+            "Expected subject containing 'new_subject', got '{subject_str}'"
+        );
+    }
+
     #[test]
     fn test_snapshot_empty() {
         let snap = ClusterSnapshot::empty();
@@ -573,6 +722,7 @@ mod tests {
             ineru_ltm: vec![1, 2, 3, 4],
             last_applied_index: 42,
             last_applied_term: 5,
+            checksum: String::new(),
         };
 
         let bytes = snap.to_bytes().unwrap();
@@ -591,5 +741,92 @@ mod tests {
         let json = serde_json::to_value(&snap).unwrap();
         assert!(json.get("stm").is_none());
         assert!(json.get("ineru_ltm").is_some());
+    }
+
+    #[test]
+    fn test_snapshot_checksum_roundtrip() {
+        let snap = ClusterSnapshot {
+            triples: vec![TripleSnapshot {
+                subject: "alice".into(),
+                predicate: "knows".into(),
+                object: serde_json::json!("bob"),
+            }],
+            ineru_ltm: vec![10, 20, 30],
+            last_applied_index: 7,
+            last_applied_term: 2,
+            checksum: String::new(),
+        };
+        let bytes = snap.to_bytes().unwrap();
+        // Verify checksum was written into serialized data
+        let raw: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let checksum = raw["checksum"].as_str().unwrap();
+        assert!(!checksum.is_empty(), "checksum should be set after to_bytes");
+
+        // Valid roundtrip succeeds
+        let restored = ClusterSnapshot::from_bytes(&bytes).unwrap();
+        assert_eq!(restored.checksum, checksum);
+    }
+
+    #[test]
+    fn test_snapshot_corrupt_data_rejected() {
+        let snap = ClusterSnapshot {
+            triples: vec![TripleSnapshot {
+                subject: "s".into(),
+                predicate: "p".into(),
+                object: serde_json::json!("o"),
+            }],
+            ineru_ltm: vec![1, 2, 3],
+            last_applied_index: 1,
+            last_applied_term: 1,
+            checksum: String::new(),
+        };
+        let mut bytes = snap.to_bytes().unwrap();
+
+        // Corrupt one byte in the middle of the payload
+        let mid = bytes.len() / 2;
+        bytes[mid] ^= 0xFF;
+
+        // Deserialization should fail (either JSON parse error or checksum mismatch)
+        let result = ClusterSnapshot::from_bytes(&bytes);
+        assert!(result.is_err(), "corrupted snapshot must be rejected");
+    }
+
+    #[test]
+    fn test_snapshot_wrong_checksum_rejected() {
+        // Manually craft a snapshot with a valid structure but wrong checksum
+        let snap = ClusterSnapshot {
+            triples: vec![TripleSnapshot {
+                subject: "a".into(),
+                predicate: "b".into(),
+                object: serde_json::json!("c"),
+            }],
+            ineru_ltm: vec![],
+            last_applied_index: 0,
+            last_applied_term: 0,
+            checksum: "deadbeef".to_string(),
+        };
+        // Serialize directly (bypassing to_bytes which would compute correct checksum)
+        let bytes = serde_json::to_vec(&snap).unwrap();
+        let result = ClusterSnapshot::from_bytes(&bytes);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("checksum mismatch"),
+            "error should mention checksum mismatch"
+        );
+    }
+
+    #[test]
+    fn test_snapshot_empty_checksum_accepted() {
+        // Backward compatibility: snapshots without checksum should be accepted
+        let snap = ClusterSnapshot {
+            triples: vec![],
+            ineru_ltm: vec![],
+            last_applied_index: 0,
+            last_applied_term: 0,
+            checksum: String::new(),
+        };
+        let bytes = serde_json::to_vec(&snap).unwrap();
+        let result = ClusterSnapshot::from_bytes(&bytes);
+        assert!(result.is_ok(), "empty checksum should be accepted for backward compat");
     }
 }
