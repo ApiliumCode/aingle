@@ -20,7 +20,7 @@ sparql = ["dep:spargebra"]
 auth = ["dep:jsonwebtoken", "dep:argon2"]
 p2p = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:ed25519-dalek", "dep:hex"]
 p2p-mdns = ["p2p", "dep:mdns-sd", "dep:if-addrs"]
-cluster = ["p2p", "dep:aingle_wal", "dep:aingle_raft", "dep:openraft"]
+cluster = ["p2p", "dep:aingle_wal", "dep:aingle_raft", "dep:openraft", "dep:tokio-rustls", "dep:rustls-pemfile"]
 full = ["rest", "graphql", "sparql", "auth"]
 
 [[bin]]
@@ -69,6 +69,7 @@ rand = "0.9"
 
 # Hashing
 blake3 = "1.8"
+subtle = "2.6"
 
 # Streaming
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -97,6 +98,8 @@ hex = { version = "0.4", optional = true }
 aingle_wal = { version = "0.5", path = "../aingle_wal", optional = true }
 aingle_raft = { version = "0.5", path = "../aingle_raft", optional = true }
 openraft = { version = "0.10.0-alpha.17", features = ["serde", "type-alias"], optional = true }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"], optional = true }
+rustls-pemfile = { version = "2", optional = true }
 
 dirs = "6"
 mdns-sd = { version = "0.18", optional = true }

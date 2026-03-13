@@ -213,6 +213,21 @@ impl CortexServer {
 
         let router = self.build_router();
 
+        #[cfg(feature = "cluster")]
+        if let Some(ref tls_config) = self.state.tls_server_config {
+            info!("Starting Córtex API server on https://{}", addr);
+
+            let tls_acceptor =
+                tokio_rustls::TlsAcceptor::from(tls_config.clone());
+            let tcp_listener = tokio::net::TcpListener::bind(addr).await?;
+            let tls_listener = TlsListener {
+                inner: tcp_listener,
+                acceptor: tls_acceptor,
+            };
+            axum::serve(tls_listener, router.into_make_service()).await?;
+            return Ok(());
+        }
+
         info!("Starting Córtex API server on http://{}", addr);
         info!("REST API: http://{}/api/v1", addr);
         #[cfg(feature = "graphql")]
@@ -233,6 +248,7 @@ impl CortexServer {
     /// Runs the server with a graceful shutdown signal.
     ///
     /// The server will run until the `shutdown_signal` future completes.
+    /// If cluster TLS is configured, the server will accept HTTPS connections.
     pub async fn run_with_shutdown<F>(self, shutdown_signal: F) -> Result<()>
     where
         F: std::future::Future<Output = ()> + Send + 'static,
@@ -242,6 +258,28 @@ impl CortexServer {
             .map_err(|e| crate::error::Error::Internal(format!("Invalid address: {}", e)))?;
 
         let router = self.build_router();
+
+        #[cfg(feature = "cluster")]
+        if let Some(ref tls_config) = self.state.tls_server_config {
+            info!("Starting Córtex API server on https://{}", addr);
+
+            let tls_acceptor =
+                tokio_rustls::TlsAcceptor::from(tls_config.clone());
+            let tcp_listener = tokio::net::TcpListener::bind(addr).await?;
+            let tls_listener = TlsListener {
+                inner: tcp_listener,
+                acceptor: tls_acceptor,
+            };
+            axum::serve(
+                tls_listener,
+                router.into_make_service(),
+            )
+            .with_graceful_shutdown(shutdown_signal)
+            .await?;
+
+            info!("Córtex API server stopped");
+            return Ok(());
+        }
 
         info!("Starting Córtex API server on http://{}", addr);
 
@@ -273,6 +311,48 @@ fn resolve_db_path(db_path: &Option<String>) -> String {
             std::fs::create_dir_all(&default_dir).ok();
             default_dir.join("graph.sled").to_string_lossy().to_string()
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TLS Listener for cluster mode
+// ---------------------------------------------------------------------------
+
+/// A TLS-wrapping listener that implements `axum::serve::Listener`.
+///
+/// Accepts TCP connections, performs the TLS handshake, and yields
+/// `TlsStream<TcpStream>` to axum for request handling. Failed
+/// handshakes are logged and retried automatically.
+#[cfg(feature = "cluster")]
+struct TlsListener {
+    inner: tokio::net::TcpListener,
+    acceptor: tokio_rustls::TlsAcceptor,
+}
+
+#[cfg(feature = "cluster")]
+impl axum::serve::Listener for TlsListener {
+    type Io = tokio_rustls::server::TlsStream<tokio::net::TcpStream>;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            match self.inner.accept().await {
+                Ok((stream, addr)) => match self.acceptor.accept(stream).await {
+                    Ok(tls_stream) => return (tls_stream, addr),
+                    Err(e) => {
+                        tracing::debug!("TLS handshake failed from {addr}: {e}");
+                    }
+                },
+                Err(e) => {
+                    tracing::debug!("TCP accept failed: {e}");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        self.inner.local_addr()
     }
 }
 

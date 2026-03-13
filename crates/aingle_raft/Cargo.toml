@@ -19,6 +19,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 bincode = "2"
+blake3 = "1.8"
 tracing = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"

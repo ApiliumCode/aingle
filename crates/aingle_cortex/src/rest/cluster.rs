@@ -14,12 +14,13 @@
 
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::rest::cluster_utils::validate_cluster_auth;
 use crate::state::AppState;
 
 #[cfg(feature = "cluster")]
@@ -134,12 +135,17 @@ pub async fn cluster_status(
             })
             .collect();
 
+        // Resolve leader address from membership config (#13)
+        let leader_addr = leader_id.and_then(|lid| {
+            membership.nodes().find(|(nid, _)| **nid == lid).map(|(_, node)| node.rest_addr.clone())
+        });
+
         return Ok(Json(ClusterStatus {
             node_id: state.cluster_node_id.unwrap_or(0),
             role,
             term,
             leader_id,
-            leader_addr: None,
+            leader_addr,
             members,
             wal_last_seq,
             last_applied,
@@ -163,8 +169,11 @@ pub async fn cluster_status(
 /// POST /api/v1/cluster/join
 pub async fn cluster_join(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<JoinRequest>,
 ) -> Result<(StatusCode, Json<JoinResponse>)> {
+    validate_cluster_auth(&headers, &state)?;
+
     tracing::info!(
         node_id = req.node_id,
         rest_addr = %req.rest_addr,
@@ -173,6 +182,27 @@ pub async fn cluster_join(
 
     #[cfg(feature = "cluster")]
     if let Some(ref raft) = state.raft {
+        // Check if this node is leader; if not, redirect (#14)
+        let metrics = raft.metrics().borrow_watched().clone();
+        if metrics.current_leader != state.cluster_node_id {
+            let membership = metrics.membership_config.membership();
+            let leader_addr = metrics.current_leader.and_then(|lid| {
+                membership.nodes().find(|(nid, _)| **nid == lid).map(|(_, node)| node.rest_addr.clone())
+            });
+            if let Some(ref addr) = leader_addr {
+                return Err(Error::Redirect(format!("http://{}/api/v1/cluster/join", addr)));
+            }
+            return Ok((
+                StatusCode::CONFLICT,
+                Json(JoinResponse {
+                    accepted: false,
+                    leader_id: metrics.current_leader,
+                    leader_addr,
+                    message: "Not leader; leader unknown".to_string(),
+                }),
+            ));
+        }
+
         let node = aingle_raft::CortexNode {
             rest_addr: req.rest_addr.clone(),
             p2p_addr: req.p2p_addr.clone(),
@@ -187,25 +217,37 @@ pub async fn cluster_join(
                 let mut voter_ids: std::collections::BTreeSet<u64> =
                     membership.voter_ids().collect();
                 voter_ids.insert(req.node_id);
-                match raft.change_membership(voter_ids, false).await {
+                // Resolve leader_addr for response
+                let leader_addr = metrics.current_leader.and_then(|lid| {
+                    membership.nodes().find(|(nid, _)| **nid == lid).map(|(_, node)| node.rest_addr.clone())
+                });
+                match raft.change_membership(voter_ids.clone(), false).await {
                     Ok(_) => {
                         return Ok((
                             StatusCode::OK,
                             Json(JoinResponse {
                                 accepted: true,
                                 leader_id: metrics.current_leader,
-                                leader_addr: None,
+                                leader_addr,
                                 message: format!("Node {} joined cluster", req.node_id),
                             }),
                         ));
                     }
                     Err(e) => {
+                        // Rollback: remove orphaned learner
+                        tracing::warn!(
+                            "Membership change failed, removing learner {}",
+                            req.node_id
+                        );
+                        let mut rollback_ids = voter_ids;
+                        rollback_ids.remove(&req.node_id);
+                        let _ = raft.change_membership(rollback_ids, false).await;
                         return Ok((
                             StatusCode::CONFLICT,
                             Json(JoinResponse {
                                 accepted: false,
                                 leader_id: metrics.current_leader,
-                                leader_addr: None,
+                                leader_addr,
                                 message: format!("Membership change failed: {e}"),
                             }),
                         ));
@@ -240,13 +282,27 @@ pub async fn cluster_join(
 /// POST /api/v1/cluster/leave
 pub async fn cluster_leave(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<StatusCode> {
+    validate_cluster_auth(&headers, &state)?;
     tracing::info!("Cluster leave request received");
 
     #[cfg(feature = "cluster")]
     if let Some(ref raft) = state.raft {
+        // Check if this node is leader; if not, redirect to leader (#14)
+        let metrics = raft.metrics().borrow_watched().clone();
+        if metrics.current_leader != state.cluster_node_id {
+            let membership = metrics.membership_config.membership();
+            let leader_addr = metrics.current_leader.and_then(|lid| {
+                membership.nodes().find(|(nid, _)| **nid == lid).map(|(_, node)| node.rest_addr.clone())
+            });
+            if let Some(ref addr) = leader_addr {
+                return Err(Error::Redirect(format!("http://{}/api/v1/cluster/leave", addr)));
+            }
+            return Err(Error::Internal("Not leader; leader unknown".to_string()));
+        }
+
         if let Some(node_id) = state.cluster_node_id {
-            let metrics = raft.metrics().borrow_watched().clone();
             let membership = metrics.membership_config.membership();
             let mut voter_ids: std::collections::BTreeSet<u64> =
                 membership.voter_ids().collect();
@@ -319,10 +375,23 @@ pub async fn wal_stats(
 
 /// POST /api/v1/cluster/wal/verify
 pub async fn wal_verify(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<WalVerifyResponse>> {
-    // WAL verification requires a WalReader; for now return success
-    // when no WAL is configured
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        let wal_dir = wal.dir();
+        let reader = aingle_wal::WalReader::open(wal_dir)
+            .map_err(|e| Error::Internal(format!("WAL open failed: {e}")))?;
+        let result = reader
+            .verify_integrity()
+            .map_err(|e| Error::Internal(format!("WAL verify failed: {e}")))?;
+        return Ok(Json(WalVerifyResponse {
+            valid: result.valid,
+            entries_checked: result.entries_checked,
+            first_invalid_seq: result.first_invalid_seq,
+        }));
+    }
+
     Ok(Json(WalVerifyResponse {
         valid: true,
         entries_checked: 0,

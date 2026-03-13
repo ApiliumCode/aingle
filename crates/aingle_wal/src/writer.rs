@@ -121,6 +121,11 @@ impl WalWriter {
         if next == 0 { 0 } else { next - 1 }
     }
 
+    /// Get the WAL directory path.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     /// Write a checkpoint entry.
     pub fn checkpoint(
         &self,

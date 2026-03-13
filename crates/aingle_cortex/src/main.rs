@@ -91,9 +91,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Parse cluster flags (feature-gated at compile time).
+    // Parse and validate cluster config (feature-gated at compile time).
     #[cfg(feature = "cluster")]
-    let cluster_config = ClusterConfig::from_args(&args);
+    let cluster_config = {
+        let cfg = aingle_cortex::cluster_init::ClusterConfig::from_args(&args);
+        if cfg.enabled {
+            if let Err(e) = cfg.validate() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        cfg
+    };
 
     // Capture bind address before config is moved (used by cluster bootstrap)
     #[allow(unused_variables)]
@@ -105,94 +114,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[allow(unused_mut)]
     let mut server = CortexServer::new(config)?;
 
-    // Initialize WAL and Raft if cluster mode is enabled.
+    // Initialize Raft cluster if enabled.
     #[cfg(feature = "cluster")]
     if cluster_config.enabled {
-        let wal_dir = cluster_config.wal_dir.as_deref().unwrap_or("wal");
-        let wal_path = std::path::Path::new(wal_dir);
+        let this_rest_addr = format!("{}:{}", bind_host, bind_port);
+        #[cfg(feature = "p2p")]
+        let this_p2p_addr = format!("{}:{}", bind_host, p2p_config.port);
+        #[cfg(not(feature = "p2p"))]
+        let this_p2p_addr = "127.0.0.1:19091".to_string();
 
-        match aingle_raft::log_store::CortexLogStore::open(wal_path) {
-            Ok(log_store) => {
-                let log_store = std::sync::Arc::new(log_store);
-                server.state_mut().wal = Some(log_store.wal().clone());
-
-                // Create state machine connected to real graph + memory
-                let state_machine = std::sync::Arc::new(
-                    aingle_raft::state_machine::CortexStateMachine::new(
-                        server.state().graph.clone(),
-                        server.state().memory.clone(),
-                    ),
-                );
-
-                // Create network factory with a stub RPC sender
-                // (will be replaced with real P2P transport after P2P manager starts)
-                let resolver = std::sync::Arc::new(aingle_raft::network::NodeResolver::new());
-
-                // Register known peers
-                for peer_addr in &cluster_config.peers {
-                    // Peers format: "node_id:rest_addr:p2p_addr" or just "rest_addr"
-                    // For now, we just log them
-                    tracing::info!(peer = %peer_addr, "Registered cluster peer");
-                }
-
-                let rpc_sender = std::sync::Arc::new(StubRpcSender);
-                let network = aingle_raft::network::CortexNetworkFactory::new(
-                    resolver, rpc_sender,
-                );
-
-                // Configure Raft
-                let raft_config = openraft::Config {
-                    heartbeat_interval: 500,
-                    election_timeout_min: 1500,
-                    election_timeout_max: 3000,
-                    ..Default::default()
-                };
-
-                let node_id = cluster_config.node_id;
-
-                match openraft::Raft::new(
-                    node_id,
-                    std::sync::Arc::new(raft_config),
-                    network,
-                    log_store,
-                    state_machine,
-                )
-                .await
-                {
-                    Ok(raft) => {
-                        // Bootstrap single-node cluster if this is node 0 and no peers
-                        if cluster_config.peers.is_empty() {
-                            let mut members = std::collections::BTreeMap::new();
-                            members.insert(
-                                node_id,
-                                aingle_raft::CortexNode {
-                                    rest_addr: format!(
-                                        "{}:{}",
-                                        bind_host, bind_port
-                                    ),
-                                    p2p_addr: "127.0.0.1:19091".to_string(),
-                                },
-                            );
-                            if let Err(e) = raft.initialize(members).await {
-                                tracing::debug!("Raft init (may already be initialized): {e}");
-                            }
-                        }
-
-                        server.state_mut().raft = Some(raft);
-                        server.state_mut().cluster_node_id = Some(node_id);
-                        tracing::info!(
-                            node_id,
-                            "Raft consensus initialized"
-                        );
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to create Raft instance: {e}");
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to initialize WAL/LogStore: {e}");
-            }
+        if let Err(e) = aingle_cortex::cluster_init::init_cluster(
+            &mut server,
+            &cluster_config,
+            &this_rest_addr,
+            &this_p2p_addr,
+        )
+        .await
+        {
+            tracing::error!("Cluster initialization failed: {e}");
+            std::process::exit(1);
         }
 
         tracing::info!(
@@ -243,10 +183,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         tokio::select! {
             _ = ctrl_c => {
-                tracing::info!("SIGINT received — flushing data...");
+                tracing::info!("SIGINT received — shutting down...");
             }
             _ = terminate => {
-                tracing::info!("SIGTERM received — flushing data...");
+                tracing::info!("SIGTERM received — shutting down...");
+            }
+        }
+
+        // Gracefully shut down Raft before flushing data
+        #[cfg(feature = "cluster")]
+        if let Some(ref raft) = state_for_shutdown.raft {
+            tracing::info!("Shutting down Raft...");
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                raft.shutdown(),
+            )
+            .await
+            {
+                Ok(Ok(())) => tracing::info!("Raft shut down gracefully"),
+                Ok(Err(e)) => tracing::error!("Raft shutdown error: {e}"),
+                Err(_) => tracing::error!("Raft shutdown timed out after 10s"),
             }
         }
 
@@ -264,71 +220,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     server.run_with_shutdown(shutdown_signal).await?;
 
     Ok(())
-}
-
-// Cluster configuration (feature-gated at compile time).
-#[cfg(feature = "cluster")]
-struct ClusterConfig {
-    enabled: bool,
-    node_id: u64,
-    peers: Vec<String>,
-    wal_dir: Option<String>,
-}
-
-#[cfg(feature = "cluster")]
-impl ClusterConfig {
-    fn from_args(args: &[String]) -> Self {
-        let mut cfg = Self {
-            enabled: false,
-            node_id: 0,
-            peers: Vec::new(),
-            wal_dir: None,
-        };
-        let mut i = 1;
-        while i < args.len() {
-            match args[i].as_str() {
-                "--cluster" => cfg.enabled = true,
-                "--cluster-node-id" => {
-                    if i + 1 < args.len() {
-                        cfg.node_id = args[i + 1].parse().unwrap_or(0);
-                        i += 1;
-                    }
-                }
-                "--cluster-peers" => {
-                    if i + 1 < args.len() {
-                        cfg.peers = args[i + 1].split(',').map(|s| s.trim().to_string()).collect();
-                        i += 1;
-                    }
-                }
-                "--cluster-wal-dir" => {
-                    if i + 1 < args.len() {
-                        cfg.wal_dir = Some(args[i + 1].clone());
-                        i += 1;
-                    }
-                }
-                _ => {}
-            }
-            i += 1;
-        }
-        cfg
-    }
-}
-
-/// Stub RPC sender used during Raft bootstrap before P2P is fully wired.
-#[cfg(feature = "cluster")]
-struct StubRpcSender;
-
-#[cfg(feature = "cluster")]
-impl aingle_raft::network::RaftRpcSender for StubRpcSender {
-    fn send_rpc(
-        &self,
-        _addr: std::net::SocketAddr,
-        _msg: aingle_raft::network::RaftMessage,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<aingle_raft::network::RaftMessage, String>> + Send + '_>,
-    > {
-        Box::pin(async { Err("P2P transport not yet initialized".to_string()) })
-    }
 }
 
 fn print_help() {
@@ -354,10 +245,14 @@ fn print_help() {
     println!("    --p2p-mdns           Enable mDNS discovery");
     println!();
     println!("CLUSTER OPTIONS (requires --features cluster):");
-    println!("    --cluster                Enable cluster mode (implies --p2p)");
-    println!("    --cluster-node-id <ID>   Unique node ID (u64, required)");
-    println!("    --cluster-peers <ADDRS>  Comma-separated peer REST addresses");
-    println!("    --cluster-wal-dir <DIR>  WAL directory (default: {{db}}/../wal/)");
+    println!("    --cluster                       Enable cluster mode (implies --p2p)");
+    println!("    --cluster-node-id <ID>          Unique node ID (u64, required)");
+    println!("    --cluster-peers <ADDRS>         Comma-separated peer REST addresses");
+    println!("    --cluster-wal-dir <DIR>         WAL directory (default: wal/)");
+    println!("    --cluster-secret <SECRET>       Shared secret for internal RPC auth (min 16 bytes)");
+    println!("    --cluster-tls                   Enable TLS for inter-node communication");
+    println!("    --cluster-tls-cert <PATH>       TLS certificate PEM file");
+    println!("    --cluster-tls-key <PATH>        TLS private key PEM file");
     println!();
     println!("ENDPOINTS:");
     println!("    REST API:    http://<host>:<port>/api/v1/");

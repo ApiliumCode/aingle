@@ -167,7 +167,7 @@ pub async fn create_triple(
         let resp = raft
             .client_write(raft_req)
             .await
-            .map_err(|e| Error::Internal(format!("Raft write failed: {e}")))?;
+            .map_err(|e| handle_raft_write_error(e, &state))?;
 
         if !resp.response().success {
             return Err(Error::Internal(
@@ -179,14 +179,17 @@ pub async fn create_triple(
         }
 
         // State machine already applied the triple to GraphDB.
-        // Build response DTO from the request data.
+        // Build response DTO from the request data, using the ID from the state machine.
+        let triple_id = resp.response().id.clone();
         let dto = TripleDto {
-            id: None,
+            id: triple_id.clone(),
             subject: req.subject.clone(),
             predicate: req.predicate.clone(),
             object: req.object.clone(),
             created_at: Some(chrono::Utc::now().to_rfc3339()),
         };
+
+        let hash = triple_id.unwrap_or_else(|| "raft".to_string());
 
         // Record audit entry
         {
@@ -199,7 +202,7 @@ pub async fn create_triple(
                 user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
                 namespace,
                 action: "create".to_string(),
-                resource: "/api/v1/triples/raft".to_string(),
+                resource: format!("/api/v1/triples/{}", hash),
                 details: Some(format!("subject={}", req.subject)),
                 request_id: None,
             });
@@ -207,13 +210,20 @@ pub async fn create_triple(
 
         // Broadcast event
         state.broadcaster.broadcast(Event::TripleAdded {
-            hash: "raft".to_string(),
+            hash,
             subject: req.subject,
             predicate: req.predicate,
             object: serde_json::to_value(&req.object).unwrap_or_default(),
         });
 
         return Ok((StatusCode::CREATED, Json(dto)));
+    }
+
+    // Guard: if Raft is initialized, all writes MUST go through Raft.
+    // Reaching here means Raft was skipped — prevent split-brain (#2).
+    #[cfg(feature = "cluster")]
+    if state.raft.is_some() {
+        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
     }
 
     // Non-cluster mode: direct write
@@ -233,12 +243,12 @@ pub async fn create_triple(
     // Append to WAL (cluster mode without Raft — legacy path)
     #[cfg(feature = "cluster")]
     if let Some(ref wal) = state.wal {
-        let _ = wal.append(aingle_wal::WalEntryKind::TripleInsert {
+        wal.append(aingle_wal::WalEntryKind::TripleInsert {
             subject: req.subject.clone(),
             predicate: req.predicate.clone(),
             object: serde_json::to_value(&req.object).unwrap_or_default(),
             triple_id: *triple_id.as_bytes(),
-        });
+        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
     }
 
     // Record audit entry
@@ -354,7 +364,7 @@ pub async fn delete_triple(
         let resp = raft
             .client_write(raft_req)
             .await
-            .map_err(|e| Error::Internal(format!("Raft write failed: {e}")))?;
+            .map_err(|e| handle_raft_write_error(e, &state))?;
 
         if !resp.response().success {
             return Err(Error::Internal(
@@ -371,6 +381,12 @@ pub async fn delete_triple(
         return Ok(StatusCode::NO_CONTENT);
     }
 
+    // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
+    #[cfg(feature = "cluster")]
+    if state.raft.is_some() {
+        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+    }
+
     // Non-cluster mode: direct delete
     let deleted = {
         let graph = state.graph.read().await;
@@ -381,9 +397,9 @@ pub async fn delete_triple(
         // Append to WAL (legacy cluster path)
         #[cfg(feature = "cluster")]
         if let Some(ref wal) = state.wal {
-            let _ = wal.append(aingle_wal::WalEntryKind::TripleDelete {
+            wal.append(aingle_wal::WalEntryKind::TripleDelete {
                 triple_id: *triple_id.as_bytes(),
-            });
+            }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
         }
 
         // Record audit entry
@@ -487,6 +503,10 @@ pub struct ListTriplesResponse {
     pub limit: usize,
     pub offset: usize,
 }
+
+/// Re-export shared Raft write error handler for this module.
+#[cfg(feature = "cluster")]
+use crate::rest::cluster_utils::handle_raft_write_error;
 
 #[cfg(test)]
 mod tests {
