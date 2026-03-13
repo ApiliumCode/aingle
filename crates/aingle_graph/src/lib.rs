@@ -84,6 +84,9 @@ pub mod value;
 #[cfg(feature = "rdf")]
 pub mod rdf;
 
+#[cfg(feature = "dag")]
+pub mod dag;
+
 // Re-exports
 pub use error::{Error, Result};
 pub use index::{IndexType, TripleIndex};
@@ -185,6 +188,8 @@ pub use backends::memory::MemoryBackend;
 /// ```
 pub struct GraphDB {
     store: GraphStore,
+    #[cfg(feature = "dag")]
+    dag_store: Option<dag::DagStore>,
 }
 
 impl GraphDB {
@@ -207,7 +212,11 @@ impl GraphDB {
     pub fn memory() -> Result<Self> {
         let backend = MemoryBackend::new();
         let store = GraphStore::new(Box::new(backend))?;
-        Ok(Self { store })
+        Ok(Self {
+            store,
+            #[cfg(feature = "dag")]
+            dag_store: None,
+        })
     }
 
     /// Creates or opens a `GraphDB` using the `Sled` storage backend.
@@ -236,7 +245,11 @@ impl GraphDB {
     pub fn sled(path: &str) -> Result<Self> {
         let backend = SledBackend::open(path)?;
         let store = GraphStore::new(Box::new(backend))?;
-        Ok(Self { store })
+        Ok(Self {
+            store,
+            #[cfg(feature = "dag")]
+            dag_store: None,
+        })
     }
 
     /// Creates or opens a `GraphDB` using the `RocksDB` storage backend.
@@ -265,7 +278,11 @@ impl GraphDB {
     pub fn rocksdb(path: &str) -> Result<Self> {
         let backend = RocksBackend::open(path)?;
         let store = GraphStore::new(Box::new(backend))?;
-        Ok(Self { store })
+        Ok(Self {
+            store,
+            #[cfg(feature = "dag")]
+            dag_store: None,
+        })
     }
 
     /// Creates or opens a `GraphDB` using the `SQLite` storage backend.
@@ -295,7 +312,319 @@ impl GraphDB {
     pub fn sqlite(path: &str) -> Result<Self> {
         let backend = SqliteBackend::open(path)?;
         let store = GraphStore::new(Box::new(backend))?;
-        Ok(Self { store })
+        Ok(Self {
+            store,
+            #[cfg(feature = "dag")]
+            dag_store: None,
+        })
+    }
+
+    /// Creates an in-memory `GraphDB` with DAG enabled.
+    #[cfg(feature = "dag")]
+    pub fn memory_with_dag() -> Result<Self> {
+        let backend = MemoryBackend::new();
+        let store = GraphStore::new(Box::new(backend))?;
+        Ok(Self {
+            store,
+            dag_store: Some(dag::DagStore::new()),
+        })
+    }
+
+    /// Creates a Sled-backed `GraphDB` with persistent DAG enabled.
+    ///
+    /// Both the triple store and the DAG share the same Sled database
+    /// (reference-counted) but use separate named trees.
+    #[cfg(all(feature = "dag", feature = "sled-backend"))]
+    pub fn sled_with_dag(path: &str) -> Result<Self> {
+        let backend = SledBackend::open(path)?;
+        let store = GraphStore::new(Box::new(backend))?;
+        let dag_backend = dag::SledDagBackend::open(path)?;
+        Ok(Self {
+            store,
+            dag_store: Some(dag::DagStore::with_backend(Box::new(dag_backend))?),
+        })
+    }
+
+    /// Enable DAG on an existing GraphDB instance (in-memory backend).
+    ///
+    /// For persistent DAG storage, use [`enable_dag_persistent`] instead.
+    #[cfg(feature = "dag")]
+    pub fn enable_dag(&mut self) {
+        if self.dag_store.is_none() {
+            self.dag_store = Some(dag::DagStore::new());
+        }
+    }
+
+    /// Enable DAG with a persistent Sled backend.
+    ///
+    /// The DAG tree is created inside the same Sled database at `path`,
+    /// sharing the instance with the triple store.
+    #[cfg(all(feature = "dag", feature = "sled-backend"))]
+    pub fn enable_dag_persistent(&mut self, path: &str) -> Result<()> {
+        if self.dag_store.is_none() {
+            let dag_backend = dag::SledDagBackend::open(path)?;
+            self.dag_store = Some(dag::DagStore::with_backend(Box::new(dag_backend))?);
+        }
+        Ok(())
+    }
+
+    /// Returns a reference to the DAG store, if enabled.
+    #[cfg(feature = "dag")]
+    pub fn dag_store(&self) -> Option<&dag::DagStore> {
+        self.dag_store.as_ref()
+    }
+
+    /// Insert a triple via the DAG, creating a new DagAction.
+    ///
+    /// The triple is inserted into the materialized view (triple store)
+    /// AND recorded as a DagAction in the DAG history.
+    #[cfg(feature = "dag")]
+    pub fn insert_via_dag(
+        &self,
+        triple: Triple,
+        author: NodeId,
+        seq: u64,
+        parents: Vec<dag::DagActionHash>,
+    ) -> Result<(dag::DagActionHash, TripleId)> {
+        // Insert into materialized view
+        let triple_id = self.store.insert(triple.clone())?;
+
+        // Record in DAG
+        let dag_store = self
+            .dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?;
+
+        let action = dag::DagAction {
+            parents,
+            author,
+            seq,
+            timestamp: chrono::Utc::now(),
+            payload: dag::DagPayload::TripleInsert {
+                triples: vec![dag::TripleInsertPayload {
+                    subject: triple.subject.to_string(),
+                    predicate: triple.predicate.to_string(),
+                    object: value_to_json(&triple.object),
+                }],
+            },
+            signature: None,
+        };
+
+        let hash = dag_store.put(&action)?;
+        Ok((hash, triple_id))
+    }
+
+    /// Delete a triple via the DAG, creating a DagAction recording the deletion.
+    #[cfg(feature = "dag")]
+    pub fn delete_via_dag(
+        &self,
+        triple_id: &TripleId,
+        author: NodeId,
+        seq: u64,
+        parents: Vec<dag::DagActionHash>,
+    ) -> Result<dag::DagActionHash> {
+        // Delete from materialized view
+        self.store.delete(triple_id)?;
+
+        // Record in DAG
+        let dag_store = self
+            .dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?;
+
+        let action = dag::DagAction {
+            parents,
+            author,
+            seq,
+            timestamp: chrono::Utc::now(),
+            payload: dag::DagPayload::TripleDelete {
+                triple_ids: vec![*triple_id.as_bytes()],
+            },
+            signature: None,
+        };
+
+        dag_store.put(&action)
+    }
+
+    /// Get current DAG tips.
+    #[cfg(feature = "dag")]
+    pub fn dag_tips(&self) -> Result<Vec<dag::DagActionHash>> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .tips()
+    }
+
+    /// Get a single DagAction by hash.
+    #[cfg(feature = "dag")]
+    pub fn dag_action(&self, hash: &dag::DagActionHash) -> Result<Option<dag::DagAction>> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .get(hash)
+    }
+
+    /// Get mutation history for a specific triple.
+    #[cfg(feature = "dag")]
+    pub fn dag_history(
+        &self,
+        triple_id: &[u8; 32],
+        limit: usize,
+    ) -> Result<Vec<dag::DagAction>> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .history(triple_id, limit)
+    }
+
+    /// Get an author's action chain in sequence order.
+    #[cfg(feature = "dag")]
+    pub fn dag_chain(&self, author: &NodeId, limit: usize) -> Result<Vec<dag::DagAction>> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .chain(author, limit)
+    }
+
+    /// Prune old DAG actions according to a retention policy.
+    #[cfg(feature = "dag")]
+    pub fn dag_prune(
+        &self,
+        policy: &dag::RetentionPolicy,
+        create_checkpoint: bool,
+    ) -> Result<dag::PruneResult> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .prune(policy, create_checkpoint)
+    }
+
+    /// Reconstruct graph state at a specific point in DAG history.
+    ///
+    /// Returns a new in-memory `GraphDB` containing only the triples that
+    /// existed at the target action, plus metadata about the reconstruction.
+    #[cfg(feature = "dag")]
+    pub fn dag_at(
+        &self,
+        target: &dag::DagActionHash,
+    ) -> Result<(GraphDB, dag::TimeTravelSnapshot)> {
+        let dag_store = self
+            .dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?;
+
+        let actions = dag_store.ancestors(target)?;
+        let snapshot_db = GraphDB::memory()?;
+
+        for action in &actions {
+            dag::timetravel::replay_payload(&snapshot_db, &action.payload)?;
+        }
+
+        let target_action = dag_store
+            .get(target)?
+            .ok_or_else(|| Error::NotFound(format!("DagAction {} not found", target)))?;
+
+        let info = dag::TimeTravelSnapshot {
+            target_hash: *target,
+            target_timestamp: target_action.timestamp,
+            actions_replayed: actions.len(),
+            triple_count: snapshot_db.count(),
+        };
+
+        Ok((snapshot_db, info))
+    }
+
+    /// Reconstruct graph state at the latest action on or before a timestamp.
+    #[cfg(feature = "dag")]
+    pub fn dag_at_timestamp(
+        &self,
+        ts: &chrono::DateTime<chrono::Utc>,
+    ) -> Result<(GraphDB, dag::TimeTravelSnapshot)> {
+        let dag_store = self
+            .dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?;
+
+        let target = dag_store
+            .action_at_or_before(ts)?
+            .ok_or_else(|| Error::NotFound("No actions found before the given timestamp".into()))?;
+
+        self.dag_at(&target)
+    }
+
+    /// Sign a DAG action using an Ed25519 signing key.
+    #[cfg(feature = "dag-sign")]
+    pub fn dag_sign(
+        &self,
+        action: &mut dag::DagAction,
+        key: &dag::DagSigningKey,
+    ) {
+        key.sign(action);
+    }
+
+    /// Verify a DAG action's signature.
+    #[cfg(feature = "dag-sign")]
+    pub fn dag_verify(
+        &self,
+        action: &dag::DagAction,
+        public_key: &[u8; 32],
+    ) -> Result<dag::VerifyResult> {
+        dag::signing::verify_action(action, public_key)
+            .map_err(|e| Error::Config(e.to_string()))
+    }
+
+    /// Export the full DAG as a portable graph structure.
+    #[cfg(feature = "dag")]
+    pub fn dag_export(&self) -> Result<dag::DagGraph> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .export_graph()
+    }
+
+    /// Ingest a DAG action from a peer without updating tips.
+    #[cfg(feature = "dag")]
+    pub fn dag_ingest(&self, action: &dag::DagAction) -> Result<dag::DagActionHash> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .ingest(action)
+    }
+
+    /// Compute actions that a remote node with the given tips is missing.
+    #[cfg(feature = "dag")]
+    pub fn dag_compute_missing(
+        &self,
+        remote_tips: &[dag::DagActionHash],
+    ) -> Result<Vec<dag::DagAction>> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .compute_missing(remote_tips)
+    }
+
+    /// Compute the diff between two points in DAG history.
+    ///
+    /// Returns actions in `to`'s ancestry that are not in `from`'s ancestry,
+    /// in topological order.
+    #[cfg(feature = "dag")]
+    pub fn dag_diff(
+        &self,
+        from: &dag::DagActionHash,
+        to: &dag::DagActionHash,
+    ) -> Result<dag::DagDiff> {
+        let dag_store = self
+            .dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?;
+
+        let actions = dag_store.actions_between(from, to)?;
+
+        Ok(dag::DagDiff {
+            from: *from,
+            to: *to,
+            actions,
+        })
     }
 
     /// Inserts a single [`Triple`] into the graph.
@@ -946,6 +1275,22 @@ pub struct GraphStats {
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Helper to convert a `Value` to a `serde_json::Value` for DAG payloads.
+#[cfg(feature = "dag")]
+fn value_to_json(v: &Value) -> serde_json::Value {
+    match v {
+        Value::String(s) => serde_json::Value::String(s.clone()),
+        Value::Integer(i) => serde_json::json!(*i),
+        Value::Float(f) => serde_json::json!(*f),
+        Value::Boolean(b) => serde_json::json!(*b),
+        Value::Json(j) => j.clone(),
+        Value::Node(n) => serde_json::json!({ "node": n.to_string() }),
+        Value::DateTime(dt) => serde_json::Value::String(dt.clone()),
+        Value::Null => serde_json::Value::Null,
+        _ => serde_json::Value::String(format!("{:?}", v)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1402,5 +1747,127 @@ mod tests {
         // Deleting with no matches returns 0
         let deleted_none = db.delete_by_subject_prefix("nonexistent:").unwrap();
         assert_eq!(deleted_none, 0);
+    }
+
+    #[cfg(feature = "dag")]
+    mod dag_tests {
+        use super::*;
+
+        #[test]
+        fn test_memory_with_dag() {
+            let db = GraphDB::memory_with_dag().unwrap();
+            assert!(db.dag_store().is_some());
+            assert_eq!(db.count(), 0);
+        }
+
+        #[test]
+        fn test_insert_via_dag() {
+            let db = GraphDB::memory_with_dag().unwrap();
+
+            let triple = Triple::new(
+                NodeId::named("alice"),
+                Predicate::named("knows"),
+                Value::literal("bob"),
+            );
+
+            let (dag_hash, triple_id) = db
+                .insert_via_dag(triple, NodeId::named("node:1"), 1, vec![])
+                .unwrap();
+
+            // Triple is in the materialized view
+            assert_eq!(db.count(), 1);
+            assert!(db.get(&triple_id).unwrap().is_some());
+
+            // DAG has one action
+            let action = db.dag_action(&dag_hash).unwrap().unwrap();
+            assert_eq!(action.seq, 1);
+            assert!(action.is_genesis() == false || action.parents.is_empty());
+
+            // Tips point to the new action
+            let tips = db.dag_tips().unwrap();
+            assert_eq!(tips.len(), 1);
+            assert_eq!(tips[0], dag_hash);
+        }
+
+        #[test]
+        fn test_insert_via_dag_same_materialized_state_as_insert() {
+            let db_plain = GraphDB::memory().unwrap();
+            let db_dag = GraphDB::memory_with_dag().unwrap();
+
+            let triple = Triple::new(
+                NodeId::named("alice"),
+                Predicate::named("knows"),
+                Value::literal("bob"),
+            );
+
+            let id_plain = db_plain.insert(triple.clone()).unwrap();
+            let (_, id_dag) = db_dag
+                .insert_via_dag(triple, NodeId::named("node:1"), 1, vec![])
+                .unwrap();
+
+            // Same triple ID (content-addressable)
+            assert_eq!(id_plain, id_dag);
+            assert_eq!(db_plain.count(), db_dag.count());
+        }
+
+        #[test]
+        fn test_delete_via_dag() {
+            let db = GraphDB::memory_with_dag().unwrap();
+
+            let triple = Triple::new(
+                NodeId::named("alice"),
+                Predicate::named("knows"),
+                Value::literal("bob"),
+            );
+
+            let (h1, triple_id) = db
+                .insert_via_dag(triple, NodeId::named("node:1"), 1, vec![])
+                .unwrap();
+
+            let h2 = db
+                .delete_via_dag(&triple_id, NodeId::named("node:1"), 2, vec![h1])
+                .unwrap();
+
+            // Triple is gone from materialized view
+            assert_eq!(db.count(), 0);
+
+            // DAG has two actions
+            let store = db.dag_store().unwrap();
+            assert_eq!(store.action_count(), 2);
+
+            // Tips point to delete action
+            let tips = db.dag_tips().unwrap();
+            assert_eq!(tips.len(), 1);
+            assert_eq!(tips[0], h2);
+        }
+
+        #[test]
+        fn test_dag_chain() {
+            let db = GraphDB::memory_with_dag().unwrap();
+
+            for seq in 1..=5 {
+                let triple = Triple::new(
+                    NodeId::named(&format!("node:{}", seq)),
+                    Predicate::named("p"),
+                    Value::integer(seq),
+                );
+                db.insert_via_dag(triple, NodeId::named("node:1"), seq as u64, vec![])
+                    .unwrap();
+            }
+
+            let chain = db.dag_chain(&NodeId::named("node:1"), 10).unwrap();
+            assert_eq!(chain.len(), 5);
+            // Most recent first
+            assert_eq!(chain[0].seq, 5);
+        }
+
+        #[test]
+        fn test_enable_dag() {
+            let mut db = GraphDB::memory().unwrap();
+            assert!(db.dag_store().is_none());
+
+            db.enable_dag();
+            assert!(db.dag_store().is_some());
+        }
     }
 }

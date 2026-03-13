@@ -145,7 +145,8 @@ mod tests {
 
         // Size should be minimal initially
         let initial_size = backend.size_bytes();
-        assert!(initial_size >= 0);
+        // MemoryBackend starts near-empty
+        let _ = initial_size;
     }
 
     #[test]

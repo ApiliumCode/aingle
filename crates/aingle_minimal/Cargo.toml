@@ -1,6 +1,6 @@
 [package]
 name = "aingle_minimal"
-version = "0.5.0"
+version = "0.6.0"
 description = "Ultra-light AIngle node for IoT devices (<1MB RAM)"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -124,10 +124,10 @@ embedded-hal = { version = "1.0", optional = true }
 embedded-hal-async = { version = "1.0", optional = true }
 
 # AI Memory (Ineru)
-ineru = { version = "0.5", path = "../ineru", optional = true }
+ineru = { version = "0.6", path = "../ineru", optional = true }
 
 # Kaneru (AI Agent Framework)
-kaneru = { version = "0.5", path = "../kaneru", optional = true }
+kaneru = { version = "0.6", path = "../kaneru", optional = true }
 
 # REST API server (lightweight HTTP)
 tiny_http = { version = "0.12", optional = true }

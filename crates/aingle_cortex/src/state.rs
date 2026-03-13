@@ -58,6 +58,15 @@ pub struct AppState {
     /// TLS server config for encrypting inter-node communication.
     #[cfg(feature = "cluster")]
     pub tls_server_config: Option<Arc<rustls::ServerConfig>>,
+    /// This node's author identity for DAG actions.
+    #[cfg(feature = "dag")]
+    pub dag_author: Option<aingle_graph::NodeId>,
+    /// Per-author monotonic sequence counter for DAG actions.
+    #[cfg(feature = "dag")]
+    pub dag_seq_counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Ed25519 signing key for DAG actions (mandatory in production).
+    #[cfg(feature = "dag")]
+    pub dag_signing_key: Option<std::sync::Arc<aingle_graph::dag::DagSigningKey>>,
 }
 
 impl AppState {
@@ -98,6 +107,12 @@ impl AppState {
             cluster_secret: None,
             #[cfg(feature = "cluster")]
             tls_server_config: None,
+            #[cfg(feature = "dag")]
+            dag_author: None,
+            #[cfg(feature = "dag")]
+            dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            #[cfg(feature = "dag")]
+            dag_signing_key: None,
         }
     }
 
@@ -136,6 +151,12 @@ impl AppState {
             cluster_secret: None,
             #[cfg(feature = "cluster")]
             tls_server_config: None,
+            #[cfg(feature = "dag")]
+            dag_author: None,
+            #[cfg(feature = "dag")]
+            dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            #[cfg(feature = "dag")]
+            dag_signing_key: None,
         }
     }
 
@@ -174,6 +195,12 @@ impl AppState {
             cluster_secret: None,
             #[cfg(feature = "cluster")]
             tls_server_config: None,
+            #[cfg(feature = "dag")]
+            dag_author: None,
+            #[cfg(feature = "dag")]
+            dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            #[cfg(feature = "dag")]
+            dag_signing_key: None,
         }
     }
 
@@ -256,6 +283,12 @@ impl AppState {
             cluster_secret: None,
             #[cfg(feature = "cluster")]
             tls_server_config: None,
+            #[cfg(feature = "dag")]
+            dag_author: None,
+            #[cfg(feature = "dag")]
+            dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            #[cfg(feature = "dag")]
+            dag_signing_key: None,
         })
     }
 
