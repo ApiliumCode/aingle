@@ -211,11 +211,181 @@ impl CortexStateMachine {
                     id: None,
                 }
             }
+            WalEntryKind::DagAction { action_bytes } => {
+                self.apply_dag_action(action_bytes).await
+            }
             _ => CortexResponse {
                 success: true,
                 detail: None,
                 id: None,
             },
+        }
+    }
+
+    /// Apply a serialized DagAction: store in DagStore, apply payload to GraphDB.
+    async fn apply_dag_action(&self, action_bytes: &[u8]) -> CortexResponse {
+        #[cfg(feature = "dag")]
+        {
+            use aingle_graph::dag::{DagAction, DagPayload};
+
+            let action = match DagAction::from_bytes(action_bytes) {
+                Some(a) => a,
+                None => {
+                    return CortexResponse {
+                        success: false,
+                        detail: Some("Failed to deserialize DagAction".into()),
+                        id: None,
+                    };
+                }
+            };
+
+            // Reject unsigned actions (Genesis exempt — system-generated at init)
+            if action.signature.is_none()
+                && !matches!(action.payload, DagPayload::Genesis { .. })
+            {
+                tracing::warn!(
+                    seq = action.seq,
+                    author = %action.author,
+                    "Rejecting unsigned DagAction — Ed25519 signature is mandatory"
+                );
+                return CortexResponse {
+                    success: false,
+                    detail: Some("DagAction rejected: missing Ed25519 signature".into()),
+                    id: None,
+                };
+            }
+
+            let action_hash = action.compute_hash();
+
+            // Store in DagStore
+            {
+                let graph = self.graph.read().await;
+                if let Some(dag_store) = graph.dag_store() {
+                    if let Err(e) = dag_store.put(&action) {
+                        tracing::error!("DagStore put failed: {e}");
+                        return CortexResponse {
+                            success: false,
+                            detail: Some(format!("DagStore put failed: {e}")),
+                            id: None,
+                        };
+                    }
+                }
+            }
+
+            // Apply payload to materialized view
+            match &action.payload {
+                DagPayload::TripleInsert { triples } => {
+                    let graph = self.graph.read().await;
+                    for t in triples {
+                        let value = json_to_value(
+                            &serde_json::to_value(&t.object).unwrap_or_default(),
+                        );
+                        let triple = aingle_graph::Triple::new(
+                            aingle_graph::NodeId::named(&t.subject),
+                            aingle_graph::Predicate::named(&t.predicate),
+                            value,
+                        );
+                        if let Err(e) = graph.insert(triple) {
+                            tracing::error!("DagAction TripleInsert failed: {e}");
+                        }
+                    }
+                }
+                DagPayload::TripleDelete { triple_ids } => {
+                    let graph = self.graph.read().await;
+                    for tid in triple_ids {
+                        let _ = graph.delete(&aingle_graph::TripleId::new(*tid));
+                    }
+                }
+                DagPayload::MemoryOp { kind } => {
+                    // Memory operations are node-local by design (STM is not replicated).
+                    // The DAG records them for audit purposes only; the actual memory
+                    // mutation is applied via the separate MemoryStore/MemoryForget WAL entries.
+                    match kind {
+                        aingle_graph::dag::MemoryOpKind::Store {
+                            entry_type,
+                            importance,
+                        } => {
+                            tracing::debug!(
+                                entry_type,
+                                importance,
+                                "DagAction MemoryOp::Store recorded (audit only)"
+                            );
+                        }
+                        aingle_graph::dag::MemoryOpKind::Forget { memory_id } => {
+                            tracing::debug!(memory_id, "DagAction MemoryOp::Forget recorded (audit only)");
+                        }
+                        aingle_graph::dag::MemoryOpKind::Consolidate => {
+                            tracing::debug!("DagAction MemoryOp::Consolidate recorded (audit only)");
+                        }
+                    }
+                }
+                DagPayload::Batch { ops } => {
+                    // Apply each op's effect on the graph.
+                    // TripleInsert and TripleDelete mutate state; all others
+                    // are audit-only (logged but no graph mutation).
+                    let graph = self.graph.read().await;
+                    for op in ops {
+                        match op {
+                            DagPayload::TripleInsert { triples } => {
+                                for t in triples {
+                                    let value = json_to_value(
+                                        &serde_json::to_value(&t.object).unwrap_or_default(),
+                                    );
+                                    let triple = aingle_graph::Triple::new(
+                                        aingle_graph::NodeId::named(&t.subject),
+                                        aingle_graph::Predicate::named(&t.predicate),
+                                        value,
+                                    );
+                                    let _ = graph.insert(triple);
+                                }
+                            }
+                            DagPayload::TripleDelete { triple_ids } => {
+                                for tid in triple_ids {
+                                    let _ = graph.delete(&aingle_graph::TripleId::new(*tid));
+                                }
+                            }
+                            DagPayload::MemoryOp { .. }
+                            | DagPayload::Genesis { .. }
+                            | DagPayload::Compact { .. }
+                            | DagPayload::Noop => {
+                                // Audit-only: no graph mutation needed
+                            }
+                            DagPayload::Batch { .. } => {
+                                tracing::warn!("Nested Batch inside Batch — skipping to avoid recursion");
+                            }
+                        }
+                    }
+                }
+                DagPayload::Genesis { triple_count, description } => {
+                    tracing::info!(
+                        triple_count,
+                        description,
+                        "Applied DagAction::Genesis"
+                    );
+                }
+                DagPayload::Compact { pruned_count, retained_count, ref policy } => {
+                    tracing::info!(pruned_count, retained_count, policy, "Applied DagAction::Compact");
+                }
+                DagPayload::Noop => {}
+            }
+
+            tracing::debug!(hash = %action_hash, "Applied DagAction");
+            CortexResponse {
+                success: true,
+                detail: None,
+                id: Some(action_hash.to_hex()),
+            }
+        }
+
+        #[cfg(not(feature = "dag"))]
+        {
+            let _ = action_bytes;
+            tracing::warn!("DagAction received but `dag` feature is not enabled");
+            CortexResponse {
+                success: false,
+                detail: Some("DAG feature not enabled".into()),
+                id: None,
+            }
         }
     }
 
@@ -358,6 +528,30 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
         if let Some(restored) = new_memory {
             *memory = restored;
         }
+
+        // Restore DAG tips if present
+        #[cfg(feature = "dag")]
+        {
+            if !cluster_snap.dag_tips.is_empty() {
+                graph.enable_dag();
+                if let Some(dag_store) = graph.dag_store() {
+                    if let Err(e) = dag_store.restore_tips(cluster_snap.dag_tips.clone()) {
+                        tracing::warn!("Failed to restore DAG tips from snapshot: {e}");
+                    } else {
+                        tracing::info!(
+                            tips = cluster_snap.dag_tips.len(),
+                            "Restored DAG tips from snapshot"
+                        );
+                    }
+                }
+            } else if graph.dag_store().is_some() {
+                tracing::warn!(
+                    "Snapshot has no DAG tips but this node has DAG enabled. \
+                     The snapshot may have been created by a node without DAG support."
+                );
+            }
+        }
+
         drop(memory);
         drop(graph);
 
@@ -414,6 +608,9 @@ pub struct ClusterSnapshot {
     pub last_applied_index: u64,
     /// Last applied log term.
     pub last_applied_term: u64,
+    /// DAG tip hashes (empty if DAG not enabled). Backward compatible via serde(default).
+    #[serde(default)]
+    pub dag_tips: Vec<[u8; 32]>,
     /// Blake3 integrity checksum over triples + ineru_ltm.
     #[serde(default)]
     pub checksum: String,
@@ -435,6 +632,7 @@ impl ClusterSnapshot {
             ineru_ltm: Vec::new(),
             last_applied_index: 0,
             last_applied_term: 0,
+            dag_tips: Vec::new(),
             checksum: String::new(),
         }
     }
@@ -449,6 +647,7 @@ impl ClusterSnapshot {
             ineru_ltm: &self.ineru_ltm,
             last_applied_index: self.last_applied_index,
             last_applied_term: self.last_applied_term,
+            dag_tips: &self.dag_tips,
             checksum: &checksum,
         };
         serde_json::to_vec(&wrapper).map_err(|e| format!("Snapshot serialization failed: {e}"))
@@ -480,6 +679,7 @@ struct ClusterSnapshotRef<'a> {
     ineru_ltm: &'a [u8],
     last_applied_index: u64,
     last_applied_term: u64,
+    dag_tips: &'a [[u8; 32]],
     checksum: &'a str,
 }
 
@@ -673,6 +873,7 @@ mod tests {
             ineru_ltm: vec![],
             last_applied_index: 10,
             last_applied_term: 2,
+            dag_tips: vec![],
             checksum: String::new(),
         };
         let data = snap.to_bytes().unwrap();
@@ -722,6 +923,7 @@ mod tests {
             ineru_ltm: vec![1, 2, 3, 4],
             last_applied_index: 42,
             last_applied_term: 5,
+            dag_tips: vec![],
             checksum: String::new(),
         };
 
@@ -754,6 +956,7 @@ mod tests {
             ineru_ltm: vec![10, 20, 30],
             last_applied_index: 7,
             last_applied_term: 2,
+            dag_tips: vec![],
             checksum: String::new(),
         };
         let bytes = snap.to_bytes().unwrap();
@@ -778,6 +981,7 @@ mod tests {
             ineru_ltm: vec![1, 2, 3],
             last_applied_index: 1,
             last_applied_term: 1,
+            dag_tips: vec![],
             checksum: String::new(),
         };
         let mut bytes = snap.to_bytes().unwrap();
@@ -803,6 +1007,7 @@ mod tests {
             ineru_ltm: vec![],
             last_applied_index: 0,
             last_applied_term: 0,
+            dag_tips: vec![],
             checksum: "deadbeef".to_string(),
         };
         // Serialize directly (bypassing to_bytes which would compute correct checksum)
@@ -823,6 +1028,7 @@ mod tests {
             ineru_ltm: vec![],
             last_applied_index: 0,
             last_applied_term: 0,
+            dag_tips: vec![],
             checksum: String::new(),
         };
         let bytes = serde_json::to_vec(&snap).unwrap();

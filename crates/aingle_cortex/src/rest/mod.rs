@@ -36,6 +36,8 @@ pub mod cluster;
 pub(crate) mod cluster_utils;
 #[cfg(feature = "cluster")]
 pub mod raft_rpc;
+#[cfg(feature = "dag")]
+pub mod dag;
 mod memory;
 mod observability;
 #[cfg(feature = "p2p")]
@@ -127,6 +129,10 @@ pub fn router() -> Router<AppState> {
     let router = router
         .merge(cluster::cluster_router())
         .merge(raft_rpc::raft_rpc_router());
+
+    // DAG endpoints (feature-gated)
+    #[cfg(feature = "dag")]
+    let router = router.merge(dag::dag_router());
 
     router
 }

@@ -1,6 +1,6 @@
 [package]
 name = "aingle_viz"
-version = "0.5.0"
+version = "0.6.0"
 description = "DAG Visualization for AIngle - Web-based graph explorer"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -30,8 +30,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Graph data
-aingle_graph = { version = "0.5", path = "../aingle_graph" }
-aingle_minimal = { version = "0.5", path = "../aingle_minimal", default-features = false, features = ["sqlite"] }
+aingle_graph = { version = "0.6", path = "../aingle_graph" }
+aingle_minimal = { version = "0.6", path = "../aingle_minimal", default-features = false, features = ["sqlite"] }
 
 # Utilities
 log = "0.4"

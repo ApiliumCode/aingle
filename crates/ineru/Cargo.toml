@@ -1,6 +1,6 @@
 [package]
 name = "ineru"
-version = "0.5.0"
+version = "0.6.0"
 description = "Ineru: Neural-inspired memory system for AIngle AI agents"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
