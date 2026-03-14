@@ -56,7 +56,7 @@ pub async fn start_cortex_server() -> anyhow::Result<()> {
     // Configure server
     let config = CortexConfig {
         host: "127.0.0.1".to_string(),
-        port: 8080,
+        port: 19090,
         cors_enabled: true,
         graphql_playground: true,
         tracing: true,
@@ -100,16 +100,16 @@ cargo run
 **Expected output:**
 ```
 🚀 Starting Cortex API Server...
-   Host: 127.0.0.1:8080
-   REST API: http://127.0.0.1:8080/api/v1
-   GraphQL: http://127.0.0.1:8080/graphql
-   SPARQL: http://127.0.0.1:8080/sparql
+   Host: 127.0.0.1:19090
+   REST API: http://127.0.0.1:19090/api/v1
+   GraphQL: http://127.0.0.1:19090/graphql
+   SPARQL: http://127.0.0.1:19090/sparql
 
-[INFO] Cortex API server listening on 127.0.0.1:8080
+[INFO] Cortex API server listening on 127.0.0.1:19090
 ```
 
 **Explanation:**
-- **Port 8080**: REST API, GraphQL and SPARQL
+- **Port 19090**: REST API, GraphQL and SPARQL
 - **CORS enabled**: Allows calls from browser
 - **Rate limiting**: Maximum 100 requests/minute per IP
 - **GraphQL Playground**: Interactive UI at `/graphql`
@@ -189,7 +189,7 @@ Usage:
 ```rust
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let client = CortexClient::new("http://127.0.0.1:8080");
+    let client = CortexClient::new("http://127.0.0.1:19090");
 
     // Health check
     client.health_check().await?;
@@ -414,7 +414,7 @@ impl GraphQLClient {
 Usage:
 
 ```rust
-let graphql = GraphQLClient::new("http://127.0.0.1:8080/graphql");
+let graphql = GraphQLClient::new("http://127.0.0.1:19090/graphql");
 
 // Query temperature sensors
 let entries = graphql
@@ -509,7 +509,7 @@ impl SparqlClient {
 ### Query 1: List all temperature sensors
 
 ```rust
-let sparql = SparqlClient::new("http://127.0.0.1:8080/sparql");
+let sparql = SparqlClient::new("http://127.0.0.1:19090/sparql");
 
 let query = r#"
     PREFIX aingle: <http://aingle.ai/vocab#>
@@ -781,7 +781,7 @@ impl WebSocketClient {
 Usage:
 
 ```rust
-let ws_client = WebSocketClient::new("ws://127.0.0.1:8080/ws/updates");
+let ws_client = WebSocketClient::new("ws://127.0.0.1:19090/ws/updates");
 
 // Subscribe to new IoT sensor entries
 ws_client.subscribe_entries(Some("iot_sensors".to_string())).await?;
@@ -836,14 +836,14 @@ async fn main() -> anyhow::Result<()> {
 
     // 1. REST API
     println!("═══ REST API ═══");
-    let rest = CortexClient::new("http://127.0.0.1:8080");
+    let rest = CortexClient::new("http://127.0.0.1:19090");
     rest.health_check().await?;
     let entries = rest.list_entries(5).await?;
     println!();
 
     // 2. GraphQL
     println!("═══ GraphQL ═══");
-    let graphql = GraphQLClient::new("http://127.0.0.1:8080/graphql");
+    let graphql = GraphQLClient::new("http://127.0.0.1:19090/graphql");
     let gql_entries = graphql
         .query_entries("iot_sensors", "temperature", 5)
         .await?;
@@ -851,7 +851,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 3. SPARQL
     println!("═══ SPARQL ═══");
-    let sparql = SparqlClient::new("http://127.0.0.1:8080/sparql");
+    let sparql = SparqlClient::new("http://127.0.0.1:19090/sparql");
     let sparql_query = r#"
         PREFIX aingle: <http://aingle.ai/vocab#>
         SELECT ?entry ?timestamp
@@ -866,7 +866,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 4. WebSocket (in background)
     tokio::spawn(async move {
-        let ws = WebSocketClient::new("ws://127.0.0.1:8080/ws/updates");
+        let ws = WebSocketClient::new("ws://127.0.0.1:19090/ws/updates");
         ws.subscribe_entries(None).await
     });
 
@@ -891,7 +891,7 @@ async fn main() -> anyhow::Result<()> {
 **Solution:**
 ```bash
 # Verify that the Cortex server is running
-curl http://127.0.0.1:8080/api/v1/health
+curl http://127.0.0.1:19090/api/v1/health
 ```
 
 ### Rate limit exceeded

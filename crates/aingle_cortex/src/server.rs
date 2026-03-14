@@ -50,7 +50,7 @@ impl Default for CortexConfig {
     fn default() -> Self {
         Self {
             host: "127.0.0.1".to_string(),
-            port: 8080,
+            port: 19090,
             cors_allowed_origins: vec![], // CORS disabled by default
             graphql_playground: false,    // Disabled by default for security
             tracing: true,
@@ -364,7 +364,7 @@ mod tests {
     fn test_config_default() {
         let config = CortexConfig::default();
         assert_eq!(config.host, "127.0.0.1");
-        assert_eq!(config.port, 8080);
+        assert_eq!(config.port, 19090);
         assert!(config.cors_allowed_origins.is_empty());
     }
 

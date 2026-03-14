@@ -334,10 +334,48 @@ pub async fn create_triple(
         object,
     );
 
-    // Add triple to graph
+    // Add triple to graph (and record DAG action if enabled)
     let triple_id = {
         let graph = state.graph.read().await;
-        graph.insert(triple.clone())?
+        let id = graph.insert(triple.clone())?;
+
+        // Record in DAG if enabled
+        #[cfg(feature = "dag")]
+        if let Some(dag_store) = graph.dag_store() {
+            let dag_author = state
+                .dag_author
+                .clone()
+                .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
+            let dag_seq = state
+                .dag_seq_counter
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let parents = dag_store.tips().unwrap_or_default();
+
+            let mut action = aingle_graph::dag::DagAction {
+                parents,
+                author: dag_author,
+                seq: dag_seq,
+                timestamp: chrono::Utc::now(),
+                payload: aingle_graph::dag::DagPayload::TripleInsert {
+                    triples: vec![aingle_graph::dag::TripleInsertPayload {
+                        subject: req.subject.clone(),
+                        predicate: req.predicate.clone(),
+                        object: serde_json::to_value(&req.object).unwrap_or_default(),
+                    }],
+                },
+                signature: None,
+            };
+
+            if let Some(ref key) = state.dag_signing_key {
+                key.sign(&mut action);
+            }
+
+            if let Err(e) = dag_store.put(&action) {
+                tracing::warn!("Failed to record DAG action for triple insert: {e}");
+            }
+        }
+
+        id
     };
 
     // Append to WAL (cluster mode without Raft — legacy path)
@@ -467,9 +505,15 @@ pub async fn delete_triple(
             .dag_seq_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        let parents = {
+        let (parents, subject_for_dag) = {
             let graph = state.graph.read().await;
-            graph.dag_tips().unwrap_or_default()
+            let tips = graph.dag_tips().unwrap_or_default();
+            let subj = graph
+                .get(&triple_id)
+                .ok()
+                .flatten()
+                .map(|t| t.subject.to_string());
+            (tips, subj)
         };
 
         let mut action = aingle_graph::dag::DagAction {
@@ -479,6 +523,7 @@ pub async fn delete_triple(
             timestamp: chrono::Utc::now(),
             payload: aingle_graph::dag::DagPayload::TripleDelete {
                 triple_ids: vec![*triple_id.as_bytes()],
+                subjects: subject_for_dag.into_iter().collect(),
             },
             signature: None,
         };
@@ -550,7 +595,53 @@ pub async fn delete_triple(
     // Non-cluster mode: direct delete
     let deleted = {
         let graph = state.graph.read().await;
-        graph.delete(&triple_id)?
+
+        // Look up subject before deleting (for DAG indexing)
+        #[cfg(feature = "dag")]
+        let subject_for_dag = graph
+            .get(&triple_id)
+            .ok()
+            .flatten()
+            .map(|t| t.subject.to_string());
+
+        let deleted = graph.delete(&triple_id)?;
+
+        // Record in DAG if enabled and deletion succeeded
+        #[cfg(feature = "dag")]
+        if deleted {
+            if let Some(dag_store) = graph.dag_store() {
+                let dag_author = state
+                    .dag_author
+                    .clone()
+                    .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
+                let dag_seq = state
+                    .dag_seq_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let parents = dag_store.tips().unwrap_or_default();
+
+                let mut action = aingle_graph::dag::DagAction {
+                    parents,
+                    author: dag_author,
+                    seq: dag_seq,
+                    timestamp: chrono::Utc::now(),
+                    payload: aingle_graph::dag::DagPayload::TripleDelete {
+                        triple_ids: vec![*triple_id.as_bytes()],
+                        subjects: subject_for_dag.into_iter().collect(),
+                    },
+                    signature: None,
+                };
+
+                if let Some(ref key) = state.dag_signing_key {
+                    key.sign(&mut action);
+                }
+
+                if let Err(e) = dag_store.put(&action) {
+                    tracing::warn!("Failed to record DAG action for triple delete: {e}");
+                }
+            }
+        }
+
+        deleted
     };
 
     if deleted {

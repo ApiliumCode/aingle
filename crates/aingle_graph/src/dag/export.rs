@@ -52,6 +52,13 @@ impl ExportFormat {
     }
 }
 
+/// Shorten a hex ID to at most 12 characters for display.
+/// Returns the full string if shorter than 12 characters.
+fn short_id(id: &str) -> &str {
+    let end = id.len().min(12);
+    &id[..end]
+}
+
 impl DagGraph {
     /// Build a graph from a list of actions and their tip status.
     pub fn from_actions(actions: &[DagAction], tips: &[DagActionHash]) -> Self {
@@ -63,13 +70,14 @@ impl DagGraph {
 
         for action in actions {
             let hash = action.compute_hash();
-            let short_id = hash.to_hex()[..12].to_string();
+            let hex = hash.to_hex();
+            let short_label = short_id(&hex).to_string();
 
             let payload_type = match &action.payload {
                 DagPayload::TripleInsert { triples } => {
                     format!("Insert({})", triples.len())
                 }
-                DagPayload::TripleDelete { triple_ids } => {
+                DagPayload::TripleDelete { triple_ids, .. } => {
                     format!("Delete({})", triple_ids.len())
                 }
                 DagPayload::MemoryOp { .. } => "MemoryOp".into(),
@@ -77,9 +85,12 @@ impl DagGraph {
                 DagPayload::Genesis { .. } => "Genesis".into(),
                 DagPayload::Compact { .. } => "Compact".into(),
                 DagPayload::Noop => "Noop".into(),
+                DagPayload::Custom { ref payload_type, .. } => {
+                    format!("Custom({})", payload_type)
+                }
             };
 
-            let label = format!("{}\\nseq={} {}", short_id, action.seq, payload_type);
+            let label = format!("{}\\nseq={} {}", short_label, action.seq, payload_type);
 
             nodes.push(DagNode {
                 id: hash.to_hex(),
@@ -116,7 +127,7 @@ impl DagGraph {
                     _ => "#2196F3",
                 }
             };
-            let short = &node.id[..12];
+            let short = short_id(&node.id);
             out.push_str(&format!(
                 "  \"{}\" [label=\"{}\\nseq={}  {}\", fillcolor=\"{}\", fontcolor=white];\n",
                 short, short, node.seq, node.payload_type, color
@@ -128,8 +139,8 @@ impl DagGraph {
         for edge in &self.edges {
             out.push_str(&format!(
                 "  \"{}\" -> \"{}\";\n",
-                &edge.from[..12],
-                &edge.to[..12]
+                short_id(&edge.from),
+                short_id(&edge.to)
             ));
         }
 
@@ -142,7 +153,7 @@ impl DagGraph {
         let mut out = String::from("graph BT\n");
 
         for node in &self.nodes {
-            let short = &node.id[..12];
+            let short = short_id(&node.id);
             let shape = if node.is_tip {
                 format!("{}([\"{}  seq={}\"])", short, node.payload_type, node.seq)
             } else {
@@ -154,15 +165,15 @@ impl DagGraph {
         for edge in &self.edges {
             out.push_str(&format!(
                 "  {} --> {}\n",
-                &edge.from[..12],
-                &edge.to[..12]
+                short_id(&edge.from),
+                short_id(&edge.to)
             ));
         }
 
         // Style tips
         for node in &self.nodes {
             if node.is_tip {
-                out.push_str(&format!("  style {} fill:#4CAF50,color:white\n", &node.id[..12]));
+                out.push_str(&format!("  style {} fill:#4CAF50,color:white\n", short_id(&node.id)));
             }
         }
 
@@ -170,16 +181,15 @@ impl DagGraph {
     }
 
     /// Export as JSON string.
-    pub fn to_json(&self) -> String {
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
-            .expect("DagGraph serialization must not fail")
     }
 
     /// Export in the given format.
-    pub fn export(&self, format: ExportFormat) -> String {
+    pub fn export(&self, format: ExportFormat) -> Result<String, serde_json::Error> {
         match format {
-            ExportFormat::Dot => self.to_dot(),
-            ExportFormat::Mermaid => self.to_mermaid(),
+            ExportFormat::Dot => Ok(self.to_dot()),
+            ExportFormat::Mermaid => Ok(self.to_mermaid()),
             ExportFormat::Json => self.to_json(),
         }
     }
@@ -259,7 +269,7 @@ mod tests {
     fn test_json_roundtrip() {
         let (actions, tips) = build_linear_chain();
         let graph = DagGraph::from_actions(&actions, &tips);
-        let json = graph.to_json();
+        let json = graph.to_json().unwrap();
         let back: DagGraph = serde_json::from_str(&json).unwrap();
 
         assert_eq!(back.nodes.len(), 3);

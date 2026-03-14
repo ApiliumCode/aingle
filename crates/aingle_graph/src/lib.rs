@@ -439,6 +439,7 @@ impl GraphDB {
             timestamp: chrono::Utc::now(),
             payload: dag::DagPayload::TripleDelete {
                 triple_ids: vec![*triple_id.as_bytes()],
+                subjects: vec![],
             },
             signature: None,
         };
@@ -475,6 +476,19 @@ impl GraphDB {
             .as_ref()
             .ok_or_else(|| Error::Config("DAG not enabled".into()))?
             .history(triple_id, limit)
+    }
+
+    /// Get mutation history for a specific subject string.
+    #[cfg(feature = "dag")]
+    pub fn dag_history_by_subject(
+        &self,
+        subject: &str,
+        limit: usize,
+    ) -> Result<Vec<dag::DagAction>> {
+        self.dag_store
+            .as_ref()
+            .ok_or_else(|| Error::Config("DAG not enabled".into()))?
+            .history_by_subject(subject, limit)
     }
 
     /// Get an author's action chain in sequence order.

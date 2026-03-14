@@ -107,7 +107,7 @@ impl Default for WebRtcConfig {
             turn_server: None,
             turn_username: None,
             turn_credential: None,
-            signaling_port: 8080,
+            signaling_port: 19080,
             ice_timeout: Duration::from_secs(30),
             channel_label: "aingle".to_string(),
         }
@@ -641,7 +641,7 @@ pub struct SignalingConfig {
 impl Default for SignalingConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "0.0.0.0:8080".to_string(),
+            bind_addr: "0.0.0.0:19080".to_string(),
             max_connections: 100,
             heartbeat_interval: Duration::from_secs(30),
             connection_timeout: Duration::from_secs(60),
@@ -975,7 +975,7 @@ impl SignalingServer {
 /// ```rust,ignore
 /// use aingle_minimal::SignalingClient;
 ///
-/// let mut client = SignalingClient::new("ws://localhost:8080", "my-peer-id");
+/// let mut client = SignalingClient::new("ws://localhost:19080", "my-peer-id");
 ///
 /// smol::block_on(async {
 ///     client.connect().await.unwrap();
@@ -1131,7 +1131,7 @@ mod tests {
         let config = WebRtcConfig::default();
         assert!(config.stun_server.contains("stun"));
         assert!(config.turn_server.is_none());
-        assert_eq!(config.signaling_port, 8080);
+        assert_eq!(config.signaling_port, 19080);
     }
 
     #[test]
@@ -1190,7 +1190,7 @@ mod tests {
     #[test]
     fn test_signaling_config_default() {
         let config = SignalingConfig::default();
-        assert_eq!(config.bind_addr, "0.0.0.0:8080");
+        assert_eq!(config.bind_addr, "0.0.0.0:19080");
         assert_eq!(config.max_connections, 100);
         assert_eq!(config.heartbeat_interval, Duration::from_secs(30));
     }

@@ -63,7 +63,7 @@ pub(crate) fn replay_payload(db: &crate::GraphDB, payload: &DagPayload) -> crate
                 let _ = db.insert(triple);
             }
         }
-        DagPayload::TripleDelete { triple_ids } => {
+        DagPayload::TripleDelete { triple_ids, .. } => {
             for tid_bytes in triple_ids {
                 let tid = crate::TripleId::new(*tid_bytes);
                 // Delete of nonexistent triple returns Err(NotFound) — expected after pruning.
@@ -139,6 +139,7 @@ mod tests {
 
         let payload = DagPayload::TripleDelete {
             triple_ids: vec![*tid.as_bytes()],
+            subjects: vec![],
         };
         replay_payload(&db, &payload).unwrap();
         assert_eq!(db.count(), 0);

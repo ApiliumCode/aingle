@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--port" | "-p" => {
                 if i + 1 < args.len() {
-                    config.port = args[i + 1].parse().unwrap_or(8080);
+                    config.port = args[i + 1].parse().unwrap_or(19090);
                     i += 1;
                 }
             }
@@ -344,7 +344,7 @@ fn print_help() {
     println!();
     println!("OPTIONS:");
     println!("    -h, --host <HOST>    Host to bind to (default: 127.0.0.1)");
-    println!("    -p, --port <PORT>    Port to listen on (default: 8080)");
+    println!("    -p, --port <PORT>    Port to listen on (default: 19090)");
     println!("    --public             Bind to all interfaces (0.0.0.0)");
     println!("    --db <PATH>          Path to graph database (default: ~/.aingle/cortex/graph.sled)");
     println!("    --memory             Use volatile in-memory storage (no persistence)");

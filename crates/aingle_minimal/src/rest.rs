@@ -24,7 +24,7 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut node = MinimalNode::new(Config::iot_mode())?;
 //!
-//! // Start REST server on port 8080
+//! // Start REST server on port 19080
 //! let rest_config = RestConfig::default();
 //! let server = RestServer::start(rest_config, &mut node)?;
 //!
@@ -47,7 +47,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 pub struct RestConfig {
     /// Address to bind the server to (default: "0.0.0.0")
     pub bind_addr: String,
-    /// Port to listen on (default: 8080)
+    /// Port to listen on (default: 19080)
     pub port: u16,
     /// Enable CORS headers for browser access (default: true)
     pub enable_cors: bool,
@@ -57,7 +57,7 @@ impl Default for RestConfig {
     fn default() -> Self {
         Self {
             bind_addr: "0.0.0.0".to_string(),
-            port: 8080,
+            port: 19080,
             enable_cors: true,
         }
     }
@@ -696,7 +696,7 @@ mod tests {
     fn test_rest_config_default() {
         let config = RestConfig::default();
         assert_eq!(config.bind_addr, "0.0.0.0");
-        assert_eq!(config.port, 8080);
+        assert_eq!(config.port, 19080);
         assert!(config.enable_cors);
     }
 
