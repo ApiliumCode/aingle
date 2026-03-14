@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn test_sync_manager_get_peer_state() {
         let mut manager = SyncManager::new(Duration::from_secs(60));
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
 
         let state = manager.get_peer_state(&addr);
         assert_eq!(state.successful_syncs, 0);
@@ -438,7 +438,7 @@ mod tests {
     #[test]
     fn test_sync_stats() {
         let mut manager = SyncManager::new(Duration::from_secs(60));
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
 
         manager.add_local_hash(Hash::from_bytes(&[1; 32]));
         manager.get_peer_state(&addr).record_success();
@@ -503,7 +503,7 @@ mod tests {
     #[test]
     fn test_sync_manager_peers_needing_sync_with_interval() {
         let mut manager = SyncManager::new(Duration::from_millis(10));
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         manager.get_peer_state(&addr);
 
         // Immediately after creation, should not need sync (just saw it)
@@ -517,7 +517,7 @@ mod tests {
     #[test]
     fn test_sync_manager_cleanup_inactive() {
         let mut manager = SyncManager::new(Duration::from_secs(60));
-        let addr1: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr1: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         let addr2: SocketAddr = "127.0.0.1:8081".parse().unwrap();
 
         manager.get_peer_state(&addr1);
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn test_sync_manager_cleanup_inactive_keeps_recent() {
         let mut manager = SyncManager::new(Duration::from_secs(60));
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
 
         manager.get_peer_state(&addr).record_success();
 
@@ -590,20 +590,20 @@ mod tests {
     #[test]
     fn test_sync_result_debug() {
         let result = SyncResult {
-            peer: "127.0.0.1:8080".parse().unwrap(),
+            peer: "127.0.0.1:19080".parse().unwrap(),
             sent_filter: true,
             records_sent: 5,
             records_received: 3,
         };
         let debug_str = format!("{:?}", result);
         assert!(debug_str.contains("SyncResult"));
-        assert!(debug_str.contains("127.0.0.1:8080"));
+        assert!(debug_str.contains("127.0.0.1:19080"));
     }
 
     #[test]
     fn test_sync_manager_stats_with_failures() {
         let mut manager = SyncManager::new(Duration::from_secs(60));
-        let addr1: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr1: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         let addr2: SocketAddr = "127.0.0.1:8081".parse().unwrap();
 
         manager.get_peer_state(&addr1).record_success();
@@ -771,7 +771,7 @@ mod tests {
         let mut manager = SyncManager::new(Duration::from_secs(60));
         assert_eq!(manager.peer_states.len(), 0);
 
-        let addr1: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr1: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         let addr2: SocketAddr = "127.0.0.1:8081".parse().unwrap();
 
         manager.get_peer_state(&addr1);
@@ -918,7 +918,7 @@ mod tests {
     fn test_sync_manager_cleanup_all_inactive() {
         let mut manager = SyncManager::new(Duration::from_secs(60));
 
-        let addr1: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr1: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         let addr2: SocketAddr = "127.0.0.1:8081".parse().unwrap();
 
         manager.get_peer_state(&addr1);

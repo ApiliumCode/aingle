@@ -480,7 +480,7 @@ cargo run --release
 ```
 
 ### 2. Open Browser
-Navigate to: `http://localhost:8080`
+Navigate to: `http://localhost:3000`
 
 ### 3. Try Features
 - **Click nodes** to see details

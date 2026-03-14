@@ -107,7 +107,7 @@ pub struct DiffQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct PullRequest {
-    /// The peer URL to pull from (e.g. "http://node2:8080").
+    /// The peer URL to pull from (e.g. "http://node2:19090").
     pub peer_url: String,
 }
 
@@ -332,7 +332,9 @@ pub async fn get_dag_export(
         .dag_export()
         .map_err(|e| Error::Internal(e.to_string()))?;
 
-    let body = dag_graph.export(format);
+    let body = dag_graph
+        .export(format)
+        .map_err(|e| Error::Internal(e.to_string()))?;
 
     let content_type = match format {
         aingle_graph::dag::ExportFormat::Dot => "text/vnd.graphviz",

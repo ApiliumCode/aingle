@@ -68,8 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Enable the `rest` feature to expose an HTTP API for SDK integration:
 
 ```bash
-# Run with REST API on port 8080
-aingle-minimal run --rest-port 8080
+# Run with REST API on port 19080
+aingle-minimal run --rest-port 19080
 ```
 
 ### Endpoints

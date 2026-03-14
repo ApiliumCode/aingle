@@ -284,7 +284,7 @@ use aingle_cortex::{CortexServer, CortexConfig};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CortexConfig::default()
-        .with_port(8080)
+        .with_port(19090)
         .with_rate_limit_rpm(100);
 
     let server = CortexServer::new(config)?;

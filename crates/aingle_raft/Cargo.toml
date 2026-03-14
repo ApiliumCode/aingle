@@ -1,6 +1,6 @@
 [package]
 name = "aingle_raft"
-version = "0.6.0"
+version = "0.6.2"
 description = "Raft consensus for AIngle clustering"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"

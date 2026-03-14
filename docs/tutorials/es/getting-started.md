@@ -182,7 +182,7 @@ let config = Config {
     node_id: Some("node-1".to_string()),
     transport: TransportConfig::Quic {
         bind_addr: "0.0.0.0".to_string(),
-        port: 8443,
+        port: 19081,
     },
     enable_mdns: true, // Habilitar descubrimiento automático
     // ... resto de configuración
@@ -205,8 +205,8 @@ use aingle_p2p::NetworkConfig;
 // Conectar a peers conocidos
 let network_config = NetworkConfig {
     bootstrap_nodes: vec![
-        "quic://192.168.1.100:8443".to_string(),
-        "quic://192.168.1.101:8443".to_string(),
+        "quic://192.168.1.100:19081".to_string(),
+        "quic://192.168.1.101:19081".to_string(),
     ],
     ..Default::default()
 };
@@ -383,7 +383,7 @@ config.transport = TransportConfig::Quic {
 config.enable_mdns = true; // Habilitar mDNS
 
 // O configurar peers manualmente
-let bootstrap_nodes = vec!["quic://192.168.1.100:8443"];
+let bootstrap_nodes = vec!["quic://192.168.1.100:19081"];
 ```
 
 ---
