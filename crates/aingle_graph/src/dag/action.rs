@@ -63,6 +63,10 @@ pub enum DagPayload {
     TripleDelete {
         /// Content-addressable IDs of the deleted triples.
         triple_ids: Vec<[u8; 32]>,
+        /// Subjects of the deleted triples (for subject-based indexing).
+        /// Empty for actions created before v0.6.2.
+        #[serde(default)]
+        subjects: Vec<String>,
     },
     /// A memory subsystem operation.
     MemoryOp {
@@ -92,6 +96,19 @@ pub enum DagPayload {
     },
     /// No-op action (e.g., for linearizable reads).
     Noop,
+    /// Custom user-defined action (audit annotations, checkpoints, decisions).
+    Custom {
+        /// A descriptive type tag (e.g., "checkpoint", "decision", "annotation").
+        payload_type: String,
+        /// A human-readable summary of the action.
+        payload_summary: String,
+        /// Optional arbitrary payload data.
+        #[serde(default)]
+        payload: Option<serde_json::Value>,
+        /// Optional subject for indexing in the DAG history.
+        #[serde(default)]
+        subject: Option<String>,
+    },
 }
 
 /// Wire format for a triple insert within a DAG action.
@@ -300,6 +317,7 @@ mod tests {
                     },
                     DagPayload::TripleDelete {
                         triple_ids: vec![[0u8; 32]],
+                        subjects: vec![],
                     },
                 ],
             },

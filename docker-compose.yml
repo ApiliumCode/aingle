@@ -67,16 +67,16 @@ services:
     container_name: aingle-cortex
     restart: unless-stopped
     ports:
-      - "4000:4000"   # REST/GraphQL API
+      - "19090:19090"   # REST/GraphQL API
     environment:
       - RUST_LOG=info
-      - CORTEX_PORT=4000
+      - CORTEX_PORT=19090
       - AINGLE_ADMIN_URL=ws://aingle:8888
     depends_on:
       - aingle
     networks:
       - aingle-network
-    command: ["aingle-cortex", "--port", "4000"]
+    command: ["aingle-cortex", "--port", "19090"]
 
   # ==========================================================================
   # Development Environment

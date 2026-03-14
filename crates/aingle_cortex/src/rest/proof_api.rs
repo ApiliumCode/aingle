@@ -380,7 +380,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_submit_and_get_proof() {
-        let state = AppState::new();
+        let state = AppState::new().unwrap();
 
         let request = SubmitProofRequest {
             proof_type: ProofType::Knowledge,
@@ -406,7 +406,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_proofs() {
-        let state = AppState::new();
+        let state = AppState::new().unwrap();
 
         // Submit multiple proofs
         for _ in 0..3 {
@@ -433,7 +433,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proof_stats() {
-        let state = AppState::new();
+        let state = AppState::new().unwrap();
 
         let request = SubmitProofRequest {
             proof_type: ProofType::Equality,

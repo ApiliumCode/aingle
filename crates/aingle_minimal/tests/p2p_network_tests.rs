@@ -316,7 +316,7 @@ fn test_production_p2p_config() {
     // Should use QUIC transport
     match config.transport {
         aingle_minimal::config::TransportConfig::Quic { port, .. } => {
-            assert_eq!(port, 8443);
+            assert_eq!(port, 19081);
         }
         _ => panic!("Expected QUIC transport for production mode"),
     }

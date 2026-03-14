@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for the Cortex internal client.
 #[derive(Debug, Clone)]
 pub struct CortexClientConfig {
-    /// Base URL of the Cortex REST API (e.g., "http://127.0.0.1:8080").
+    /// Base URL of the Cortex REST API (e.g., "http://127.0.0.1:19090").
     pub base_url: String,
     /// Optional authentication token.
     pub auth_token: Option<String>,
@@ -28,7 +28,7 @@ pub struct CortexClientConfig {
 impl Default for CortexClientConfig {
     fn default() -> Self {
         Self {
-            base_url: "http://127.0.0.1:8080".to_string(),
+            base_url: "http://127.0.0.1:19090".to_string(),
             auth_token: None,
             timeout_ms: 5000,
         }
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = CortexClientConfig::default();
-        assert_eq!(config.base_url, "http://127.0.0.1:8080");
+        assert_eq!(config.base_url, "http://127.0.0.1:19090");
         assert!(config.auth_token.is_none());
         assert_eq!(config.timeout_ms, 5000);
     }

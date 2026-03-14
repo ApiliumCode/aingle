@@ -290,7 +290,7 @@ impl CortexStateMachine {
                         }
                     }
                 }
-                DagPayload::TripleDelete { triple_ids } => {
+                DagPayload::TripleDelete { triple_ids, .. } => {
                     let graph = self.graph.read().await;
                     for tid in triple_ids {
                         let _ = graph.delete(&aingle_graph::TripleId::new(*tid));
@@ -339,7 +339,7 @@ impl CortexStateMachine {
                                     let _ = graph.insert(triple);
                                 }
                             }
-                            DagPayload::TripleDelete { triple_ids } => {
+                            DagPayload::TripleDelete { triple_ids, .. } => {
                                 for tid in triple_ids {
                                     let _ = graph.delete(&aingle_graph::TripleId::new(*tid));
                                 }
@@ -347,7 +347,8 @@ impl CortexStateMachine {
                             DagPayload::MemoryOp { .. }
                             | DagPayload::Genesis { .. }
                             | DagPayload::Compact { .. }
-                            | DagPayload::Noop => {
+                            | DagPayload::Noop
+                            | DagPayload::Custom { .. } => {
                                 // Audit-only: no graph mutation needed
                             }
                             DagPayload::Batch { .. } => {
@@ -367,6 +368,9 @@ impl CortexStateMachine {
                     tracing::info!(pruned_count, retained_count, policy, "Applied DagAction::Compact");
                 }
                 DagPayload::Noop => {}
+                DagPayload::Custom { ref payload_type, ref payload_summary, .. } => {
+                    tracing::info!(payload_type, payload_summary, "Applied DagAction::Custom (audit only)");
+                }
             }
 
             tracing::debug!(hash = %action_hash, "Applied DagAction");

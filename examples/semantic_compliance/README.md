@@ -601,7 +601,7 @@ docker build -t semantic-compliance .
 
 # Run container
 docker run -d \
-  -p 8080:8080 \
+  -p 19090:19090 \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/data:/app/data \
   semantic-compliance

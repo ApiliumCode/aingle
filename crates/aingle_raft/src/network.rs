@@ -165,10 +165,19 @@ impl RaftNetworkFactory<C> for CortexNetworkFactory {
 
     async fn new_client(&mut self, target: NodeId, node: &CortexNode) -> Self::Network {
         // Use REST address for HTTP-based Raft RPC routing.
+        // Fallback is constructed infallibly (no parse) to avoid panics.
         let addr: SocketAddr = node
             .rest_addr
             .parse()
-            .unwrap_or_else(|_| "127.0.0.1:8080".parse().unwrap());
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    target_node = target,
+                    addr = %node.rest_addr,
+                    error = %e,
+                    "Invalid REST address for Raft peer, falling back to localhost:19090"
+                );
+                SocketAddr::from(([127, 0, 0, 1], 19090))
+            });
 
         CortexNetworkConnection {
             target,
@@ -442,7 +451,7 @@ mod tests {
     fn test_cluster_join_roundtrip() {
         let msg = RaftMessage::ClusterJoin {
             node_id: 42,
-            rest_addr: "127.0.0.1:8080".into(),
+            rest_addr: "127.0.0.1:19090".into(),
             p2p_addr: "127.0.0.1:19091".into(),
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -454,7 +463,7 @@ mod tests {
                 p2p_addr,
             } => {
                 assert_eq!(node_id, 42);
-                assert_eq!(rest_addr, "127.0.0.1:8080");
+                assert_eq!(rest_addr, "127.0.0.1:19090");
                 assert_eq!(p2p_addr, "127.0.0.1:19091");
             }
             _ => panic!("wrong variant"),
@@ -466,7 +475,7 @@ mod tests {
         let msg = RaftMessage::ClusterJoinAck {
             accepted: true,
             leader_id: Some(1),
-            leader_addr: Some("127.0.0.1:8080".into()),
+            leader_addr: Some("127.0.0.1:19090".into()),
         };
         let json = serde_json::to_string(&msg).unwrap();
         let back: RaftMessage = serde_json::from_str(&json).unwrap();
@@ -491,7 +500,7 @@ mod tests {
             .register(
                 1,
                 CortexNode {
-                    rest_addr: "127.0.0.1:8080".into(),
+                    rest_addr: "127.0.0.1:19090".into(),
                     p2p_addr: "127.0.0.1:19091".into(),
                 },
             )
@@ -501,7 +510,7 @@ mod tests {
             .register(
                 2,
                 CortexNode {
-                    rest_addr: "127.0.0.1:8081".into(),
+                    rest_addr: "127.0.0.1:19092".into(),
                     p2p_addr: "127.0.0.1:19092".into(),
                 },
             )
@@ -511,7 +520,7 @@ mod tests {
 
         let node = resolver.resolve(&1).await;
         assert!(node.is_some());
-        assert_eq!(node.unwrap().rest_addr, "127.0.0.1:8080");
+        assert_eq!(node.unwrap().rest_addr, "127.0.0.1:19090");
 
         resolver.unregister(&1).await;
         assert_eq!(resolver.node_count().await, 1);
