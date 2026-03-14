@@ -69,7 +69,7 @@ impl DagGraph {
                 DagPayload::TripleInsert { triples } => {
                     format!("Insert({})", triples.len())
                 }
-                DagPayload::TripleDelete { triple_ids } => {
+                DagPayload::TripleDelete { triple_ids, .. } => {
                     format!("Delete({})", triple_ids.len())
                 }
                 DagPayload::MemoryOp { .. } => "MemoryOp".into(),
@@ -77,6 +77,9 @@ impl DagGraph {
                 DagPayload::Genesis { .. } => "Genesis".into(),
                 DagPayload::Compact { .. } => "Compact".into(),
                 DagPayload::Noop => "Noop".into(),
+                DagPayload::Custom { ref payload_type, .. } => {
+                    format!("Custom({})", payload_type)
+                }
             };
 
             let label = format!("{}\\nseq={} {}", short_id, action.seq, payload_type);
