@@ -57,7 +57,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Start server on localhost:8080
+//!     // Start server on localhost:19090
 //!     let config = CortexConfig::default();
 //!     let server = CortexServer::new(config)?;
 //!     server.run().await?;
@@ -80,7 +80,7 @@
 //! ### Add a Triple
 //!
 //! ```bash
-//! curl -X POST http://localhost:8080/api/v1/triples \
+//! curl -X POST http://localhost:19090/api/v1/triples \
 //!   -H "Content-Type: application/json" \
 //!   -H "Authorization: Bearer YOUR_TOKEN" \
 //!   -d '{
@@ -93,13 +93,13 @@
 //! ### Query Triples
 //!
 //! ```bash
-//! curl "http://localhost:8080/api/v1/triples?subject=alice"
+//! curl "http://localhost:19090/api/v1/triples?subject=alice"
 //! ```
 //!
 //! ### Validate Proof
 //!
 //! ```bash
-//! curl -X POST http://localhost:8080/api/v1/proofs/validate \
+//! curl -X POST http://localhost:19090/api/v1/proofs/validate \
 //!   -H "Content-Type: application/json" \
 //!   -d '{
 //!     "proof_type": "schnorr",
@@ -110,7 +110,7 @@
 //!
 //! ## GraphQL Examples
 //!
-//! Access the GraphQL playground at `http://localhost:8080/graphql`.
+//! Access the GraphQL playground at `http://localhost:19090/graphql`.
 //!
 //! ### Query
 //!
