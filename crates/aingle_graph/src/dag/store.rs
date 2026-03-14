@@ -66,6 +66,8 @@ pub struct DagStore {
     author_index: RwLock<HashMap<(String, u64), [u8; 32]>>,
     /// Affected triple index: triple_id → list of action hashes.
     affected_index: RwLock<HashMap<[u8; 32], Vec<[u8; 32]>>>,
+    /// Subject index: blake3(subject_string) → list of action hashes.
+    subject_index: RwLock<HashMap<[u8; 32], Vec<[u8; 32]>>>,
     /// Current DAG tips.
     tips: RwLock<DagTipSet>,
     /// Total action count (cached for fast stats).
@@ -88,6 +90,7 @@ impl DagStore {
             backend,
             author_index: RwLock::new(HashMap::new()),
             affected_index: RwLock::new(HashMap::new()),
+            subject_index: RwLock::new(HashMap::new()),
             tips: RwLock::new(DagTipSet::new()),
             count: RwLock::new(0),
         };
@@ -140,6 +143,10 @@ impl DagStore {
             .affected_index
             .write()
             .map_err(|_| crate::Error::Storage("DagStore affected index lock poisoned".into()))?;
+        let mut subject_idx = self
+            .subject_index
+            .write()
+            .map_err(|_| crate::Error::Storage("DagStore subject index lock poisoned".into()))?;
         let mut count = self
             .count
             .write()
@@ -147,6 +154,7 @@ impl DagStore {
 
         author_idx.clear();
         affected_idx.clear();
+        subject_idx.clear();
 
         let mut action_count = 0usize;
         for (key, value) in &entries {
@@ -163,6 +171,9 @@ impl DagStore {
                 for triple_id in extract_affected_triple_ids(&action.payload) {
                     affected_idx.entry(triple_id).or_default().push(hash_bytes);
                 }
+                for subject_hash in extract_subject_hashes(&action.payload) {
+                    subject_idx.entry(subject_hash).or_default().push(hash_bytes);
+                }
                 action_count += 1;
             }
         }
@@ -170,6 +181,7 @@ impl DagStore {
         *count = action_count;
         drop(author_idx);
         drop(affected_idx);
+        drop(subject_idx);
         drop(count);
 
         // Restore tips from backend
@@ -233,6 +245,17 @@ impl DagStore {
                 .map_err(|_| crate::Error::Storage("DagStore affected index lock poisoned".into()))?;
             for triple_id in extract_affected_triple_ids(&action.payload) {
                 idx.entry(triple_id).or_default().push(hash.0);
+            }
+        }
+
+        // Update subject index
+        {
+            let mut idx = self
+                .subject_index
+                .write()
+                .map_err(|_| crate::Error::Storage("DagStore subject index lock poisoned".into()))?;
+            for subject_hash in extract_subject_hashes(&action.payload) {
+                idx.entry(subject_hash).or_default().push(hash.0);
             }
         }
 
@@ -369,6 +392,39 @@ impl DagStore {
         Ok(result)
     }
 
+    /// Get the history of mutations affecting a specific subject.
+    ///
+    /// Looks up all DAG actions that contain the given subject string
+    /// (in TripleInsert, TripleDelete, or Custom payloads).
+    pub fn history_by_subject(&self, subject: &str, limit: usize) -> crate::Result<Vec<DagAction>> {
+        let subject_hash = *blake3::hash(subject.as_bytes()).as_bytes();
+
+        let idx = self
+            .subject_index
+            .read()
+            .map_err(|_| crate::Error::Storage("DagStore lock poisoned".into()))?;
+
+        let hashes = match idx.get(&subject_hash) {
+            Some(h) => h.clone(),
+            None => return Ok(vec![]),
+        };
+        drop(idx);
+
+        let mut result: Vec<DagAction> = Vec::new();
+        for hash in hashes.iter().rev().take(limit) {
+            if let Some(bytes) = self.backend.get(&action_key(hash))? {
+                if let Some(action) = DagAction::from_bytes(&bytes) {
+                    result.push(action);
+                }
+            }
+        }
+
+        result.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        result.truncate(limit);
+
+        Ok(result)
+    }
+
     /// Total number of stored actions.
     pub fn action_count(&self) -> usize {
         self.count.read().map(|c| *c).unwrap_or(0)
@@ -461,6 +517,17 @@ impl DagStore {
                 .map_err(|_| crate::Error::Storage("DagStore affected index lock poisoned".into()))?;
             for triple_id in extract_affected_triple_ids(&action.payload) {
                 idx.entry(triple_id).or_default().push(hash.0);
+            }
+        }
+
+        // Update subject index
+        {
+            let mut idx = self
+                .subject_index
+                .write()
+                .map_err(|_| crate::Error::Storage("DagStore subject index lock poisoned".into()))?;
+            for subject_hash in extract_subject_hashes(&action.payload) {
+                idx.entry(subject_hash).or_default().push(hash.0);
             }
         }
 
@@ -778,6 +845,16 @@ impl DagStore {
             !hashes.is_empty()
         });
 
+        // Clean subject index
+        let mut subject_idx = self
+            .subject_index
+            .write()
+            .map_err(|_| crate::Error::Storage("DagStore subject index lock poisoned".into()))?;
+        subject_idx.retain(|_, hashes| {
+            hashes.retain(|h| !to_remove.contains(h));
+            !hashes.is_empty()
+        });
+
         // Update count
         let mut count = self
             .count
@@ -947,8 +1024,30 @@ fn extract_affected_triple_ids(payload: &DagPayload) -> Vec<[u8; 32]> {
             .iter()
             .map(|t| compute_triple_id_from_payload(t))
             .collect(),
-        DagPayload::TripleDelete { triple_ids } => triple_ids.clone(),
+        DagPayload::TripleDelete { triple_ids, .. } => triple_ids.clone(),
         DagPayload::Batch { ops } => ops.iter().flat_map(extract_affected_triple_ids).collect(),
+        _ => vec![],
+    }
+}
+
+/// Extract subject hashes from a payload (for the subject index).
+///
+/// Returns `blake3(subject_string)` for each subject mentioned in the payload.
+fn extract_subject_hashes(payload: &DagPayload) -> Vec<[u8; 32]> {
+    match payload {
+        DagPayload::TripleInsert { triples } => triples
+            .iter()
+            .map(|t| *blake3::hash(t.subject.as_bytes()).as_bytes())
+            .collect(),
+        DagPayload::TripleDelete { subjects, .. } => subjects
+            .iter()
+            .map(|s| *blake3::hash(s.as_bytes()).as_bytes())
+            .collect(),
+        DagPayload::Custom { subject, .. } => subject
+            .iter()
+            .map(|s| *blake3::hash(s.as_bytes()).as_bytes())
+            .collect(),
+        DagPayload::Batch { ops } => ops.iter().flat_map(extract_subject_hashes).collect(),
         _ => vec![],
     }
 }
