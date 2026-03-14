@@ -144,6 +144,32 @@ pub struct VerifyQuery {
     pub public_key: String,
 }
 
+/// Request body for POST /api/v1/dag/actions.
+#[derive(Debug, Deserialize)]
+pub struct CreateDagActionRequest {
+    /// Author identity. Defaults to the node's configured DAG author.
+    pub author: Option<String>,
+    /// A descriptive type tag (e.g., "checkpoint", "decision", "annotation").
+    pub payload_type: String,
+    /// A human-readable summary.
+    pub payload_summary: String,
+    /// Optional arbitrary payload data.
+    pub payload: Option<serde_json::Value>,
+    /// Optional subject for indexing in DAG history.
+    pub subject: Option<String>,
+    /// Whether to sign the action. Defaults to true if a signing key is configured.
+    pub sign: Option<bool>,
+}
+
+/// Response for POST /api/v1/dag/actions.
+#[derive(Debug, Serialize)]
+pub struct CreateDagActionResponse {
+    pub hash: String,
+    pub seq: u64,
+    pub timestamp: String,
+    pub signed: bool,
+}
+
 fn default_limit() -> usize {
     50
 }
@@ -196,12 +222,17 @@ pub async fn get_dag_history(
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<DagActionDto>>> {
     let graph = state.graph.read().await;
-    let dag_store = graph
-        .dag_store()
-        .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
 
-    // If triple_id is provided directly, use it
-    let triple_id_bytes: [u8; 32] = if let Some(ref tid_hex) = query.triple_id {
+    // Subject-based lookup uses the dedicated subject index
+    if let Some(ref subject) = query.subject {
+        let actions = graph
+            .dag_history_by_subject(subject, query.limit)
+            .map_err(|e| Error::Internal(e.to_string()))?;
+        return Ok(Json(actions.iter().map(action_to_dto).collect()));
+    }
+
+    // Triple-ID-based lookup uses the affected index
+    if let Some(ref tid_hex) = query.triple_id {
         let mut bytes = [0u8; 32];
         if tid_hex.len() != 64 {
             return Err(Error::InvalidInput("triple_id must be 64 hex chars".into()));
@@ -210,23 +241,16 @@ pub async fn get_dag_history(
             bytes[i] = u8::from_str_radix(&tid_hex[i * 2..i * 2 + 2], 16)
                 .map_err(|_| Error::InvalidInput("Invalid hex in triple_id".into()))?;
         }
-        bytes
-    } else if let Some(ref subject) = query.subject {
-        // Compute a lookup key from subject — returns actions mentioning this subject
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(subject.as_bytes());
-        *hasher.finalize().as_bytes()
-    } else {
-        return Err(Error::InvalidInput(
-            "Either 'subject' or 'triple_id' query parameter is required".into(),
-        ));
-    };
 
-    let actions = dag_store
-        .history(&triple_id_bytes, query.limit)
-        .map_err(|e| Error::Internal(e.to_string()))?;
+        let actions = graph
+            .dag_history(&bytes, query.limit)
+            .map_err(|e| Error::Internal(e.to_string()))?;
+        return Ok(Json(actions.iter().map(action_to_dto).collect()));
+    }
 
-    Ok(Json(actions.iter().map(action_to_dto).collect()))
+    Err(Error::InvalidInput(
+        "Either 'subject' or 'triple_id' query parameter is required".into(),
+    ))
 }
 
 /// GET /api/v1/dag/chain?author=X&limit=N
@@ -518,6 +542,74 @@ pub async fn get_dag_diff(
     }))
 }
 
+/// POST /api/v1/dag/actions — create an explicit DAG action with arbitrary payload
+pub async fn post_create_dag_action(
+    State(state): State<AppState>,
+    Json(req): Json<CreateDagActionRequest>,
+) -> Result<(axum::http::StatusCode, Json<CreateDagActionResponse>)> {
+    if req.payload_type.is_empty() {
+        return Err(Error::InvalidInput("payload_type cannot be empty".into()));
+    }
+
+    let dag_author = if let Some(ref author) = req.author {
+        aingle_graph::NodeId::named(author)
+    } else {
+        state
+            .dag_author
+            .clone()
+            .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"))
+    };
+
+    let dag_seq = state
+        .dag_seq_counter
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+    let graph = state.graph.read().await;
+    let dag_store = graph
+        .dag_store()
+        .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
+
+    let parents = dag_store.tips().map_err(|e| Error::Internal(e.to_string()))?;
+
+    let timestamp = chrono::Utc::now();
+    let mut action = aingle_graph::dag::DagAction {
+        parents,
+        author: dag_author,
+        seq: dag_seq,
+        timestamp,
+        payload: aingle_graph::dag::DagPayload::Custom {
+            payload_type: req.payload_type,
+            payload_summary: req.payload_summary,
+            payload: req.payload,
+            subject: req.subject,
+        },
+        signature: None,
+    };
+
+    // Sign unless explicitly disabled
+    let should_sign = req.sign.unwrap_or(true);
+    if should_sign {
+        if let Some(ref key) = state.dag_signing_key {
+            key.sign(&mut action);
+        }
+    }
+
+    let signed = action.signature.is_some();
+    let hash = dag_store
+        .put(&action)
+        .map_err(|e| Error::Internal(e.to_string()))?;
+
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(CreateDagActionResponse {
+            hash: hash.to_hex(),
+            seq: dag_seq,
+            timestamp: timestamp.to_rfc3339(),
+            signed,
+        }),
+    ))
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -534,7 +626,8 @@ pub fn dag_router() -> Router<AppState> {
         .route("/api/v1/dag/diff", get(get_dag_diff))
         .route("/api/v1/dag/export", get(get_dag_export))
         .route("/api/v1/dag/sync", post(post_dag_sync))
-        .route("/api/v1/dag/sync/pull", post(post_dag_pull));
+        .route("/api/v1/dag/sync/pull", post(post_dag_pull))
+        .route("/api/v1/dag/actions", post(post_create_dag_action));
 
     #[cfg(feature = "dag")]
     let router = router.route("/api/v1/dag/verify/{hash}", get(get_dag_verify));
@@ -551,14 +644,23 @@ fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionDto {
     let parents: Vec<String> = action.parents.iter().map(|h| h.to_hex()).collect();
 
     let (payload_type, payload_summary) = match &action.payload {
-        aingle_graph::dag::DagPayload::TripleInsert { triples } => (
-            "TripleInsert".to_string(),
-            format!("{} triple(s)", triples.len()),
-        ),
-        aingle_graph::dag::DagPayload::TripleDelete { triple_ids } => (
-            "TripleDelete".to_string(),
-            format!("{} triple(s)", triple_ids.len()),
-        ),
+        aingle_graph::dag::DagPayload::TripleInsert { triples } => {
+            let summary = if triples.len() == 1 {
+                let t = &triples[0];
+                format!("{} -> {} -> {}", t.subject, t.predicate, t.object)
+            } else {
+                format!("{} triple(s)", triples.len())
+            };
+            ("triple:create".to_string(), summary)
+        }
+        aingle_graph::dag::DagPayload::TripleDelete { triple_ids, subjects } => {
+            let summary = if !subjects.is_empty() {
+                format!("{} triple(s) [{}]", triple_ids.len(), subjects.join(", "))
+            } else {
+                format!("{} triple(s)", triple_ids.len())
+            };
+            ("triple:delete".to_string(), summary)
+        }
         aingle_graph::dag::DagPayload::MemoryOp { kind } => {
             let summary = match kind {
                 aingle_graph::dag::MemoryOpKind::Store { entry_type, .. } => {
@@ -569,17 +671,17 @@ fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionDto {
                 }
                 aingle_graph::dag::MemoryOpKind::Consolidate => "Consolidate".to_string(),
             };
-            ("MemoryOp".to_string(), summary)
+            ("memory:op".to_string(), summary)
         }
         aingle_graph::dag::DagPayload::Batch { ops } => (
-            "Batch".to_string(),
+            "batch".to_string(),
             format!("{} ops", ops.len()),
         ),
         aingle_graph::dag::DagPayload::Genesis {
             triple_count,
             description,
         } => (
-            "Genesis".to_string(),
+            "genesis".to_string(),
             format!("{} triples: {}", triple_count, description),
         ),
         aingle_graph::dag::DagPayload::Compact {
@@ -587,10 +689,15 @@ fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionDto {
             retained_count,
             ref policy,
         } => (
-            "Compact".to_string(),
+            "compact".to_string(),
             format!("pruned {} / retained {} ({})", pruned_count, retained_count, policy),
         ),
-        aingle_graph::dag::DagPayload::Noop => ("Noop".to_string(), String::new()),
+        aingle_graph::dag::DagPayload::Noop => ("noop".to_string(), String::new()),
+        aingle_graph::dag::DagPayload::Custom {
+            payload_type,
+            payload_summary,
+            ..
+        } => (payload_type.clone(), payload_summary.clone()),
     };
 
     DagActionDto {
