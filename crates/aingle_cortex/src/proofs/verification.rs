@@ -89,6 +89,61 @@ impl VerificationResult {
     }
 }
 
+/// Reconstruct a `ZkProof` from a `StoredProof` whose `data` field contains
+/// only the raw `proof_data` JSON (without the ZkProof envelope).
+fn reconstruct_zk_proof(proof: &StoredProof) -> Result<aingle_zk::ZkProof, VerificationError> {
+    let mut proof_data: serde_json::Value = serde_json::from_slice(&proof.data)
+        .map_err(|e| VerificationError::DeserializationError(e.to_string()))?;
+
+    // Inject the ProofData serde tag ("type") if the client omitted it.
+    // ProofData uses #[serde(tag = "type")] so deserialisation requires it.
+    if let serde_json::Value::Object(ref mut map) = proof_data {
+        if !map.contains_key("type") {
+            let tag = cortex_to_proof_data_tag(&proof.proof_type);
+            map.insert("type".into(), serde_json::Value::String(tag.into()));
+        }
+    }
+
+    let zk_type = cortex_to_zk_proof_type(&proof.proof_type);
+
+    let envelope = serde_json::json!({
+        "proof_type": serde_json::to_value(&zk_type)
+            .map_err(|e| VerificationError::DeserializationError(e.to_string()))?,
+        "proof_data": proof_data,
+        "timestamp": proof.created_at.timestamp() as u64,
+        "metadata": null
+    });
+
+    serde_json::from_value(envelope)
+        .map_err(|e| VerificationError::DeserializationError(
+            format!("Failed to reconstruct ZkProof envelope: {e}")
+        ))
+}
+
+/// Map Cortex `ProofType` → `aingle_zk::ProofType`.
+fn cortex_to_zk_proof_type(pt: &ProofType) -> aingle_zk::ProofType {
+    match pt {
+        ProofType::Schnorr | ProofType::Knowledge | ProofType::HashOpening => {
+            aingle_zk::ProofType::KnowledgeProof
+        }
+        ProofType::Equality => aingle_zk::ProofType::EqualityProof,
+        ProofType::Membership => aingle_zk::ProofType::MembershipProof,
+        ProofType::NonMembership => aingle_zk::ProofType::NonMembershipProof,
+        ProofType::Range => aingle_zk::ProofType::RangeProof,
+    }
+}
+
+/// Map Cortex `ProofType` → `ProofData` serde tag value.
+fn cortex_to_proof_data_tag(pt: &ProofType) -> &'static str {
+    match pt {
+        ProofType::Schnorr | ProofType::Knowledge => "Knowledge",
+        ProofType::HashOpening => "HashOpening",
+        ProofType::Equality => "Equality",
+        ProofType::Membership | ProofType::NonMembership => "Membership",
+        ProofType::Range => "Knowledge",
+    }
+}
+
 /// Proof verifier that integrates with aingle_zk
 pub struct ProofVerifier {
     /// Configuration for verification
@@ -143,9 +198,13 @@ impl ProofVerifier {
             )));
         }
 
-        // Deserialize the proof data into aingle_zk::ZkProof
+        // Deserialize the proof data into aingle_zk::ZkProof.
+        // The stored data may be just the raw proof_data (without the ZkProof
+        // envelope) when submitted via the REST API, since submit() only
+        // persists request.proof_data. Try full envelope first, then
+        // reconstruct from StoredProof.proof_type + raw proof data.
         let zk_proof: aingle_zk::ZkProof = serde_json::from_slice(&proof.data)
-            .map_err(|e| VerificationError::DeserializationError(e.to_string()))?;
+            .or_else(|_| reconstruct_zk_proof(proof))?;
 
         // Verify based on proof type
         let valid = match proof.proof_type {
@@ -431,6 +490,54 @@ mod tests {
         assert_eq!(verifier.config.max_proof_size, 1024);
         assert_eq!(verifier.config.timeout_seconds, 10);
         assert!(verifier.config.strict_mode);
+    }
+
+    /// Simulates the real REST API path: submit() stores only proof_data
+    /// (without the ZkProof envelope), and verify() must reconstruct it.
+    #[tokio::test]
+    async fn test_verify_proof_stored_without_envelope() {
+        let verifier = ProofVerifier::new();
+
+        // Create a valid hash-opening proof via aingle_zk
+        let commitment = aingle_zk::HashCommitment::commit(b"test data");
+        let zk_proof = aingle_zk::ZkProof::hash_opening(&commitment);
+
+        // Store ONLY the proof_data portion (what submit() actually does)
+        let proof_data_only = serde_json::to_vec(&zk_proof.proof_data).unwrap();
+        let stored = StoredProof::new(
+            ProofType::HashOpening,
+            proof_data_only,
+            ProofMetadata::default(),
+        );
+
+        // This is the exact path that was failing with 422
+        let result = verifier.verify(&stored).await;
+        assert!(result.is_ok(), "verify() should reconstruct ZkProof envelope: {:?}", result.err());
+        assert!(result.unwrap().valid);
+    }
+
+    /// Verify reconstruction works when client sends raw fields without serde tag.
+    #[tokio::test]
+    async fn test_verify_proof_without_type_tag() {
+        let verifier = ProofVerifier::new();
+
+        // Client sends proof_data as raw JSON without the ProofData "type" tag
+        let commitment = aingle_zk::HashCommitment::commit(b"test data");
+        let raw = serde_json::json!({
+            "commitment": commitment.hash,
+            "salt": commitment.salt,
+        });
+        let raw_bytes = serde_json::to_vec(&raw).unwrap();
+
+        let stored = StoredProof::new(
+            ProofType::HashOpening,
+            raw_bytes,
+            ProofMetadata::default(),
+        );
+
+        let result = verifier.verify(&stored).await;
+        assert!(result.is_ok(), "verify() should inject type tag: {:?}", result.err());
+        assert!(result.unwrap().valid);
     }
 
     #[tokio::test]
