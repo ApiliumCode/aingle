@@ -998,7 +998,7 @@ mod tests {
         config.port = 0; // OS-assigned
         config.data_dir = tempfile::TempDir::new().unwrap().into_path();
 
-        let state = AppState::new();
+        let state = AppState::new().unwrap();
         let manager = P2pManager::start(config, state).await.unwrap();
         assert!(!manager.node_id().is_empty());
 

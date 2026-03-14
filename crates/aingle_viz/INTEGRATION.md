@@ -377,7 +377,7 @@ cargo build --release --bin aingle_viz
 
 ```bash
 export VIZ_HOST=0.0.0.0  # Allow external connections
-export VIZ_PORT=8080     # Port number
+export VIZ_PORT=3000     # Port number
 ```
 
 ### HTTPS Setup
@@ -393,7 +393,7 @@ server {
     ssl_certificate_key /path/to/key.pem;
 
     location / {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -414,14 +414,14 @@ RUN cargo build --release --bin aingle_viz
 
 FROM debian:bookworm-slim
 COPY --from=builder /app/target/release/aingle_viz /usr/local/bin/
-EXPOSE 8080
+EXPOSE 3000
 CMD ["aingle_viz"]
 ```
 
 Build and run:
 ```bash
 docker build -t aingle-viz .
-docker run -p 8080:8080 aingle-viz
+docker run -p 3000:3000 aingle-viz
 ```
 
 ## Support and Troubleshooting

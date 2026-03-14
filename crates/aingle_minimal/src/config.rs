@@ -90,7 +90,7 @@ impl Default for PowerMode {
 /// // Use QUIC for production
 /// let quic = TransportConfig::Quic {
 ///     bind_addr: "0.0.0.0".to_string(),
-///     port: 8443,
+///     port: 19081,
 /// };
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -704,7 +704,7 @@ impl Config {
             power_mode: PowerMode::Full,
             transport: TransportConfig::Quic {
                 bind_addr: "0.0.0.0".to_string(),
-                port: 8443,
+                port: 19081,
             },
             gossip: GossipConfig::default(),
             storage: StorageConfig::rocksdb(db_path),

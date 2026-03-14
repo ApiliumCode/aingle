@@ -72,8 +72,8 @@ pub struct AppState {
 impl AppState {
     /// Creates a new `AppState` with an in-memory graph database.
     /// This is useful for testing or development environments.
-    pub fn new() -> Self {
-        let graph = GraphDB::memory().expect("Failed to create in-memory graph");
+    pub fn new() -> crate::error::Result<Self> {
+        let graph = GraphDB::memory()?;
         let logic = RuleEngine::new();
         let memory = IneruMemory::agent_mode();
 
@@ -85,7 +85,7 @@ impl AppState {
             store
         };
 
-        Self {
+        Ok(Self {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
@@ -113,7 +113,7 @@ impl AppState {
             dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
-        }
+        })
     }
 
     /// Creates a new `AppState` with a pre-configured `GraphDB` instance.
@@ -161,8 +161,8 @@ impl AppState {
     }
 
     /// Creates a new `AppState` with a file-backed audit log.
-    pub fn with_audit_path(path: std::path::PathBuf) -> Self {
-        let graph = GraphDB::memory().expect("Failed to create in-memory graph");
+    pub fn with_audit_path(path: std::path::PathBuf) -> crate::error::Result<Self> {
+        let graph = GraphDB::memory()?;
         let logic = RuleEngine::new();
         let memory = IneruMemory::agent_mode();
 
@@ -173,7 +173,7 @@ impl AppState {
             store
         };
 
-        Self {
+        Ok(Self {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
@@ -201,7 +201,7 @@ impl AppState {
             dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
-        }
+        })
     }
 
     /// Creates a new `AppState` with a configurable database path and optional audit log.
@@ -342,7 +342,7 @@ impl AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("Failed to create default AppState with in-memory graph")
     }
 }
 

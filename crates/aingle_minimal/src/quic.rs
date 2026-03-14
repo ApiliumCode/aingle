@@ -53,7 +53,7 @@ impl Default for QuicConfig {
     fn default() -> Self {
         Self {
             bind_addr: "0.0.0.0".to_string(),
-            port: 8443,
+            port: 19081,
             keep_alive: Duration::from_secs(10),
             idle_timeout: Duration::from_secs(30),
             max_concurrent_streams: 100,
@@ -67,7 +67,7 @@ impl QuicConfig {
     pub fn iot_mode() -> Self {
         Self {
             bind_addr: "0.0.0.0".to_string(),
-            port: 8443,
+            port: 19081,
             keep_alive: Duration::from_secs(30),
             idle_timeout: Duration::from_secs(60),
             max_concurrent_streams: 10,
@@ -79,7 +79,7 @@ impl QuicConfig {
     pub fn production() -> Self {
         Self {
             bind_addr: "0.0.0.0".to_string(),
-            port: 8443,
+            port: 19081,
             keep_alive: Duration::from_secs(5),
             idle_timeout: Duration::from_secs(30),
             max_concurrent_streams: 1000,
@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn test_quic_config_default() {
         let config = QuicConfig::default();
-        assert_eq!(config.port, 8443);
+        assert_eq!(config.port, 19081);
         assert_eq!(config.max_concurrent_streams, 100);
     }
 
@@ -454,7 +454,7 @@ mod tests {
     fn test_quic_server_is_connected() {
         let config = QuicConfig::default();
         let server = QuicServer::new(config, "test-node".to_string());
-        let addr: SocketAddr = "127.0.0.1:8443".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19081".parse().unwrap();
         assert!(!server.is_connected(&addr));
     }
 }

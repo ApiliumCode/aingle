@@ -375,7 +375,7 @@ Official SDKs for integrating AIngle into your applications:
 ```javascript
 import { AIngleClient } from '@apilium/aingle-sdk';
 
-const client = new AIngleClient('http://localhost:8080');
+const client = new AIngleClient('http://localhost:19090');
 
 // Create an entry
 const hash = await client.createEntry({ sensor: 'temp', value: 23.5 });
@@ -390,7 +390,7 @@ client.subscribe((entry) => {
 
 ```bash
 # Start node with REST API enabled
-aingle-minimal run --rest-port 8080
+aingle-minimal run --rest-port 19080
 ```
 
 ---

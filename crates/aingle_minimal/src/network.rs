@@ -895,7 +895,7 @@ mod tests {
         let gossip = GossipConfig::default();
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         network.add_peer(addr);
         assert_eq!(network.peer_count(), 1);
 
@@ -1095,7 +1095,7 @@ mod tests {
         let gossip = GossipConfig::default();
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         network.add_peer(addr);
 
         // Update peer with new seq
@@ -1114,7 +1114,7 @@ mod tests {
         let gossip = GossipConfig::default();
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         // Update peer that doesn't exist - should not panic
         network.update_peer(addr, 100);
         assert_eq!(network.peer_count(), 0);
@@ -1126,7 +1126,7 @@ mod tests {
         let gossip = GossipConfig::default();
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         network.add_peer(addr);
 
         let initial_quality = network.active_peers()[0].quality;
@@ -1144,7 +1144,7 @@ mod tests {
         let gossip = GossipConfig::default();
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         // Mark peer that doesn't exist - should not panic
         network.mark_peer_failed(&addr);
     }
@@ -1155,7 +1155,7 @@ mod tests {
         let gossip = GossipConfig::default();
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         network.add_peer(addr);
 
         // Active peers should include the just-added peer
@@ -1279,7 +1279,7 @@ mod tests {
         let gossip = GossipConfig::default();
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         network.add_peer(addr);
 
         // Update many times to try to exceed 100
@@ -1297,7 +1297,7 @@ mod tests {
         let gossip = GossipConfig::default();
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         network.add_peer(addr);
 
         // Mark failed many times to try to go below 0
@@ -1316,7 +1316,7 @@ mod tests {
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
         let addrs: Vec<SocketAddr> = vec![
-            "127.0.0.1:8080".parse().unwrap(),
+            "127.0.0.1:19080".parse().unwrap(),
             "127.0.0.1:8081".parse().unwrap(),
             "127.0.0.1:8082".parse().unwrap(),
         ];
@@ -1509,7 +1509,7 @@ mod tests {
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
         // Add some peers
-        let addr1: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr1: SocketAddr = "127.0.0.1:19080".parse().unwrap();
         let addr2: SocketAddr = "127.0.0.1:8081".parse().unwrap();
         network.add_peer(addr1);
         network.add_peer(addr2);

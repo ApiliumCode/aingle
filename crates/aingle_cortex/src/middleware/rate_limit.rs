@@ -65,10 +65,10 @@ impl IntoResponse for RateLimitError {
                 )
                     .into_response();
 
-                // Add Retry-After header
+                // Add Retry-After header (infallible: From<u64> for HeaderValue)
                 response.headers_mut().insert(
                     "Retry-After",
-                    HeaderValue::from_str(&secs.to_string()).unwrap(),
+                    HeaderValue::from(*secs),
                 );
 
                 // Add rate limit headers
@@ -303,15 +303,15 @@ where
                     // Call inner service
                     let mut response = inner.call(req).await?;
 
-                    // Add rate limit headers
+                    // Add rate limit headers (infallible: From<u64>/From<u32>)
                     let headers = response.headers_mut();
                     headers.insert(
                         "X-RateLimit-Limit",
-                        HeaderValue::from_str(&limiter.requests_per_minute.to_string()).unwrap(),
+                        HeaderValue::from(limiter.requests_per_minute),
                     );
                     headers.insert(
                         "X-RateLimit-Remaining",
-                        HeaderValue::from_str(&remaining.to_string()).unwrap(),
+                        HeaderValue::from(remaining),
                     );
 
                     Ok(response)

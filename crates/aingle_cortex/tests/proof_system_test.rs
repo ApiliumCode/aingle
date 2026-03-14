@@ -307,7 +307,7 @@ async fn test_schnorr_proof_verification() {
 
 #[tokio::test]
 async fn test_app_state_integration() {
-    let state = AppState::new();
+    let state = AppState::new().unwrap();
 
     // Test that proof store is accessible
     let count = state.proof_store.count().await;
