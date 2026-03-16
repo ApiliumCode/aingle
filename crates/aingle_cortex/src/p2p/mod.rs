@@ -7,6 +7,8 @@
 //! bloom filter gossip, and optional mDNS discovery.
 
 pub mod config;
+#[cfg(feature = "dag")]
+pub mod dag_sync;
 pub mod discovery;
 pub mod gossip;
 pub mod identity;
