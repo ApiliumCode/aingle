@@ -102,6 +102,7 @@ openraft = { version = "0.10.0-alpha.17", features = ["serde", "type-alias"], op
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"], optional = true }
 rustls-pemfile = { version = "2", optional = true }
 
+sled = "0.34"
 dirs = "6"
 mdns-sd = { version = "0.18", optional = true }
 if-addrs = { version = "0.13", optional = true }
