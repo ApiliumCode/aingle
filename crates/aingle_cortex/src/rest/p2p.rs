@@ -38,7 +38,13 @@ async fn p2p_status(State(state): State<AppState>) -> impl IntoResponse {
         }
     };
     let status = p2p.status().await;
-    (StatusCode::OK, Json(serde_json::to_value(status).unwrap())).into_response()
+    match serde_json::to_value(status) {
+        Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("serialize p2p status: {e}")})),
+        ).into_response(),
+    }
 }
 
 async fn list_peers(State(state): State<AppState>) -> impl IntoResponse {
@@ -53,11 +59,13 @@ async fn list_peers(State(state): State<AppState>) -> impl IntoResponse {
         }
     };
     let status = p2p.status().await;
-    (
-        StatusCode::OK,
-        Json(serde_json::to_value(&status.connected_peers).unwrap()),
-    )
-        .into_response()
+    match serde_json::to_value(&status.connected_peers) {
+        Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("serialize peers: {e}")})),
+        ).into_response(),
+    }
 }
 
 async fn add_peer(
