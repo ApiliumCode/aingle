@@ -83,28 +83,44 @@ impl GraphStore {
     /// Inserts a batch of `Triple`s into the store.
     ///
     /// In batch mode, duplicates are silently skipped instead of returning an error.
+    /// Uses an atomic batch write when supported by the backend (e.g., Sled).
     pub fn insert_batch(&self, triples: Vec<Triple>) -> Result<Vec<TripleId>> {
-        let mut ids = Vec::with_capacity(triples.len());
-        let mut index = self
-            .index
-            .write()
-            .map_err(|_| Error::Index("lock poisoned".into()))?;
+        // Phase 1: Collect non-duplicate triples and their IDs
+        let mut new_triples: Vec<(TripleId, Triple)> = Vec::with_capacity(triples.len());
+        let mut all_ids = Vec::with_capacity(triples.len());
 
         for triple in triples {
             let id = triple.id();
-
-            // Skip duplicates silently in batch mode
             if self.backend.get(&id)?.is_some() {
-                ids.push(id);
-                continue;
+                // Duplicate — keep the ID but don't re-insert
+                all_ids.push((id, true));
+            } else {
+                all_ids.push((id.clone(), false));
+                new_triples.push((id, triple));
             }
-
-            self.backend.put(&id, &triple)?;
-            index.insert(&triple, id.clone());
-            ids.push(id);
         }
 
-        Ok(ids)
+        // Phase 2: Atomic batch write to backend
+        if !new_triples.is_empty() {
+            let batch_items: Vec<(&TripleId, &Triple)> = new_triples
+                .iter()
+                .map(|(id, triple)| (id, triple))
+                .collect();
+            self.backend.apply_batch(&batch_items)?;
+        }
+
+        // Phase 3: Update indexes only after successful backend write
+        if !new_triples.is_empty() {
+            let mut index = self
+                .index
+                .write()
+                .map_err(|_| Error::Index("lock poisoned".into()))?;
+            for (id, triple) in &new_triples {
+                index.insert(triple, id.clone());
+            }
+        }
+
+        Ok(all_ids.into_iter().map(|(id, _)| id).collect())
     }
 
     /// Retrieves a `Triple` by its `TripleId`.
