@@ -227,19 +227,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         {
                             use std::io::Write;
                             use std::os::unix::fs::OpenOptionsExt;
-                            if let Ok(mut f) = std::fs::OpenOptions::new()
+                            match std::fs::OpenOptions::new()
                                 .create(true)
                                 .write(true)
                                 .truncate(true)
                                 .mode(0o600)
                                 .open(&key_path)
                             {
-                                let _ = f.write_all(&seed);
+                                Ok(mut f) => {
+                                    if let Err(e) = f.write_all(&seed).and_then(|_| f.sync_all()) {
+                                        tracing::error!("Failed to persist DAG signing key: {e}");
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to open DAG key file {}: {e}", key_path.display());
+                                }
                             }
                         }
                         #[cfg(not(unix))]
                         {
-                            let _ = std::fs::write(&key_path, &seed);
+                            if let Err(e) = std::fs::write(&key_path, &seed) {
+                                tracing::error!("Failed to persist DAG signing key: {e}");
+                            }
                         }
                         Some(key)
                     }
