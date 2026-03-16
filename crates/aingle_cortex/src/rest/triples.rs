@@ -370,9 +370,11 @@ pub async fn create_triple(
                 key.sign(&mut action);
             }
 
-            if let Err(e) = dag_store.put(&action) {
-                tracing::warn!("Failed to record DAG action for triple insert: {e}");
-            }
+            dag_store.put(&action).map_err(|e| {
+                Error::Internal(format!(
+                    "DAG action failed for triple insert — data integrity at risk: {e}"
+                ))
+            })?;
         }
 
         id
@@ -635,9 +637,11 @@ pub async fn delete_triple(
                     key.sign(&mut action);
                 }
 
-                if let Err(e) = dag_store.put(&action) {
-                    tracing::warn!("Failed to record DAG action for triple delete: {e}");
-                }
+                dag_store.put(&action).map_err(|e| {
+                    Error::Internal(format!(
+                        "DAG action failed for triple delete — data integrity at risk: {e}"
+                    ))
+                })?;
             }
         }
 

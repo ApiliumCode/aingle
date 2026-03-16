@@ -175,6 +175,13 @@ impl DagStore {
                     subject_idx.entry(subject_hash).or_default().push(hash_bytes);
                 }
                 action_count += 1;
+            } else {
+                let hex: String = hash_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                log::warn!(
+                    "Skipping corrupted DAG action {} ({} bytes) during index rebuild",
+                    &hex[..12],
+                    value.len()
+                );
             }
         }
 
@@ -220,7 +227,20 @@ impl DagStore {
 
     /// Store a DagAction. Computes its hash, updates all indexes and tips.
     /// Returns the action's content-addressable hash.
+    ///
+    /// Validates that all parent hashes exist in the backend (except for
+    /// genesis actions with no parents).
     pub fn put(&self, action: &DagAction) -> crate::Result<DagActionHash> {
+        // Validate parent hashes exist (skip for genesis with no parents)
+        for parent in &action.parents {
+            if self.backend.get(&action_key(&parent.0))?.is_none() {
+                return Err(crate::Error::Storage(format!(
+                    "DAG action references non-existent parent {}",
+                    parent.to_hex()
+                )));
+            }
+        }
+
         let hash = action.compute_hash();
         let bytes = action.to_bytes();
 

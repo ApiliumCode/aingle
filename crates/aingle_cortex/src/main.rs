@@ -154,15 +154,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut graph = state.graph.write().await;
             match &db_path {
                 Some(p) if p != ":memory:" => {
-                    if let Err(e) = graph.enable_dag_persistent(p) {
-                        tracing::error!(
-                            "Failed to enable persistent DAG: {e}. \
-                             Falling back to in-memory DAG — data will NOT survive restarts!"
+                    graph.enable_dag_persistent(p).unwrap_or_else(|e| {
+                        panic!(
+                            "Failed to enable persistent DAG at '{}': {e}. \
+                             Refusing to start with volatile DAG — fix the storage path or permissions.",
+                            p
                         );
-                        graph.enable_dag();
-                    } else {
-                        tracing::info!("DAG persistence enabled (Sled)");
-                    }
+                    });
+                    tracing::info!("DAG persistence enabled (Sled)");
                 }
                 _ => {
                     tracing::warn!("DAG using in-memory backend — data will NOT survive restarts");
