@@ -87,13 +87,27 @@ impl AuditLog {
     pub fn record(&mut self, entry: AuditEntry) {
         // Append to file if file-backed
         if let Some(ref path) = self.log_path {
-            if let Ok(json) = serde_json::to_string(&entry) {
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                {
-                    let _ = writeln!(file, "{}", json);
+            match serde_json::to_string(&entry) {
+                Ok(json) => {
+                    match std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                    {
+                        Ok(mut file) => {
+                            if let Err(e) = writeln!(file, "{}", json) {
+                                log::error!("Audit log write failed: {e}");
+                            } else if let Err(e) = file.sync_all() {
+                                log::warn!("Audit log fsync failed: {e}");
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Audit log open failed ({}): {e}", path.display());
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("Audit entry serialization failed: {e}");
                 }
             }
         }
