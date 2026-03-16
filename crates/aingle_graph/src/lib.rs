@@ -918,7 +918,12 @@ impl GraphDB {
     /// # }
     /// ```
     pub fn flush(&self) -> Result<()> {
-        self.store.flush()
+        self.store.flush()?;
+        #[cfg(feature = "dag")]
+        if let Some(dag) = &self.dag_store {
+            dag.flush()?;
+        }
+        Ok(())
     }
 
     /// Returns the total number of triples in the graph.

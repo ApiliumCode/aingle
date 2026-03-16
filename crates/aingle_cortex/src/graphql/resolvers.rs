@@ -153,7 +153,7 @@ pub struct MutationRoot;
 
 #[Object]
 impl MutationRoot {
-    /// Create a new triple
+    /// Create a new triple (routed through the same path as REST for DAG/Raft consistency)
     async fn create_triple(&self, ctx: &Context<'_>, input: TripleInput) -> Result<Triple> {
         let state = ctx.data::<AppState>()?;
 
@@ -165,9 +165,45 @@ impl MutationRoot {
             object,
         );
 
+        // Insert triple + record DAG action (same path as REST API)
         {
             let graph = state.graph.read().await;
             graph.insert(triple.clone())?;
+
+            #[cfg(feature = "dag")]
+            if let Some(dag_store) = graph.dag_store() {
+                let dag_author = state
+                    .dag_author
+                    .clone()
+                    .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
+                let dag_seq = state
+                    .dag_seq_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let parents = dag_store.tips().unwrap_or_default();
+
+                let mut action = aingle_graph::dag::DagAction {
+                    parents,
+                    author: dag_author,
+                    seq: dag_seq,
+                    timestamp: chrono::Utc::now(),
+                    payload: aingle_graph::dag::DagPayload::TripleInsert {
+                        triples: vec![aingle_graph::dag::TripleInsertPayload {
+                            subject: input.subject.clone(),
+                            predicate: input.predicate.clone(),
+                            object: serde_json::json!({}),
+                        }],
+                    },
+                    signature: None,
+                };
+
+                if let Some(ref key) = state.dag_signing_key {
+                    key.sign(&mut action);
+                }
+
+                dag_store.put(&action).map_err(|e| {
+                    Error::new(format!("DAG action failed: {e}"))
+                })?;
+            }
         }
 
         // Broadcast event
@@ -183,7 +219,7 @@ impl MutationRoot {
         Ok(triple.into())
     }
 
-    /// Delete a triple by ID
+    /// Delete a triple by ID (routed through the same path as REST for DAG/Raft consistency)
     async fn delete_triple(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
         let state = ctx.data::<AppState>()?;
 
@@ -192,7 +228,43 @@ impl MutationRoot {
 
         let deleted = {
             let graph = state.graph.read().await;
-            graph.delete(&triple_id)?
+            let result = graph.delete(&triple_id)?;
+
+            #[cfg(feature = "dag")]
+            if result {
+                if let Some(dag_store) = graph.dag_store() {
+                    let dag_author = state
+                        .dag_author
+                        .clone()
+                        .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
+                    let dag_seq = state
+                        .dag_seq_counter
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let parents = dag_store.tips().unwrap_or_default();
+
+                    let mut action = aingle_graph::dag::DagAction {
+                        parents,
+                        author: dag_author,
+                        seq: dag_seq,
+                        timestamp: chrono::Utc::now(),
+                        payload: aingle_graph::dag::DagPayload::TripleDelete {
+                            triple_ids: vec![*triple_id.as_bytes()],
+                            subjects: vec![],
+                        },
+                        signature: None,
+                    };
+
+                    if let Some(ref key) = state.dag_signing_key {
+                        key.sign(&mut action);
+                    }
+
+                    dag_store.put(&action).map_err(|e| {
+                        Error::new(format!("DAG action failed: {e}"))
+                    })?;
+                }
+            }
+
+            result
         };
 
         if deleted {
