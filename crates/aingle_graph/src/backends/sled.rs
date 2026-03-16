@@ -85,6 +85,18 @@ impl StorageBackend for SledBackend {
         Ok(triples)
     }
 
+    fn apply_batch(&self, items: &[(&TripleId, &Triple)]) -> Result<()> {
+        let mut batch = ::sled::Batch::default();
+        for (id, triple) in items {
+            let bytes = triple.to_bytes();
+            batch.insert(id.as_bytes().as_slice(), bytes);
+        }
+        self.triples
+            .apply_batch(batch)
+            .map_err(|e| Error::Storage(format!("sled batch insert error: {}", e)))?;
+        Ok(())
+    }
+
     fn count(&self) -> usize {
         self.triples.len()
     }
