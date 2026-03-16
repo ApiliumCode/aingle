@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use super::backend::{MemoryProofBackend, ProofBackend, SledProofBackend};
 use super::verification::{VerificationError, VerificationResult};
 use super::ProofVerifier;
 
@@ -132,8 +133,8 @@ pub struct SubmitProofResponse {
 
 /// Proof storage with verification cache
 pub struct ProofStore {
-    /// Stored proofs (proof_id -> proof)
-    proofs: Arc<RwLock<HashMap<ProofId, StoredProof>>>,
+    /// Pluggable storage backend (memory or sled)
+    backend: Arc<dyn ProofBackend>,
     /// Verification cache (proof_id -> result)
     verification_cache: Arc<RwLock<LruCache<ProofId, VerificationResult>>>,
     /// Proof verifier
@@ -217,15 +218,48 @@ pub struct ProofStoreStats {
 }
 
 impl ProofStore {
-    /// Create a new proof store
+    /// Create a new proof store with in-memory backend
     pub fn new() -> Self {
-        Self::with_cache_size(1000)
+        Self::with_backend(Arc::new(MemoryProofBackend::new()), 1000)
     }
 
-    /// Create a new proof store with custom cache size
+    /// Create a new proof store with custom cache size (in-memory backend)
     pub fn with_cache_size(cache_size: usize) -> Self {
+        Self::with_backend(Arc::new(MemoryProofBackend::new()), cache_size)
+    }
+
+    /// Create a persistent proof store backed by Sled at the given path.
+    pub fn with_sled(path: &str) -> Result<Self, String> {
+        let backend = Arc::new(SledProofBackend::open(path)?);
+
+        // Rebuild stats from persisted data before constructing the store,
+        // so we don't need to acquire the tokio RwLock from sync context.
+        let mut initial_stats = ProofStoreStats::default();
+        if let Ok(all) = backend.list_all() {
+            initial_stats.total_proofs = all.len();
+            for (_, bytes) in &all {
+                if let Ok(proof) = serde_json::from_slice::<StoredProof>(bytes) {
+                    *initial_stats
+                        .proofs_by_type
+                        .entry(proof.proof_type.to_string())
+                        .or_insert(0) += 1;
+                    initial_stats.total_size_bytes += proof.size_bytes();
+                }
+            }
+        }
+
+        Ok(Self {
+            backend,
+            verification_cache: Arc::new(RwLock::new(LruCache::new(1000))),
+            verifier: ProofVerifier::new(),
+            stats: Arc::new(RwLock::new(initial_stats)),
+        })
+    }
+
+    /// Create a proof store with a custom backend.
+    pub fn with_backend(backend: Arc<dyn ProofBackend>, cache_size: usize) -> Self {
         Self {
-            proofs: Arc::new(RwLock::new(HashMap::new())),
+            backend,
             verification_cache: Arc::new(RwLock::new(LruCache::new(cache_size))),
             verifier: ProofVerifier::new(),
             stats: Arc::new(RwLock::new(ProofStoreStats::default())),
@@ -243,16 +277,16 @@ impl ProofStore {
         let stored_proof = StoredProof::new(request.proof_type.clone(), proof_bytes, metadata);
         let proof_id = stored_proof.id.clone();
 
-        // Store proof, then drop the lock before acquiring stats.
-        let proofs_len = {
-            let mut proofs = self.proofs.write().await;
-            proofs.insert(proof_id.clone(), stored_proof);
-            proofs.len()
-        };
+        // Serialize and store via backend
+        let serialized = serde_json::to_vec(&stored_proof)
+            .map_err(|e| VerificationError::InvalidProofData(e.to_string()))?;
+        self.backend
+            .put(&proof_id, &serialized)
+            .map_err(|e| VerificationError::InvalidProofData(e))?;
 
-        // Update stats (separate lock scope)
+        // Update stats
         let mut stats = self.stats.write().await;
-        stats.total_proofs = proofs_len;
+        stats.total_proofs += 1;
         *stats
             .proofs_by_type
             .entry(request.proof_type.to_string())
@@ -276,17 +310,21 @@ impl ProofStore {
 
     /// Retrieve a proof by ID
     pub async fn get(&self, proof_id: &ProofId) -> Option<StoredProof> {
-        let proofs = self.proofs.read().await;
-        proofs.get(proof_id).cloned()
+        match self.backend.get(proof_id) {
+            Ok(Some(bytes)) => serde_json::from_slice(&bytes).ok(),
+            _ => None,
+        }
     }
 
     /// List all proofs (with optional type filter)
     pub async fn list(&self, proof_type: Option<ProofType>) -> Vec<StoredProof> {
-        let proofs = self.proofs.read().await;
-        proofs
-            .values()
+        let all = match self.backend.list_all() {
+            Ok(items) => items,
+            Err(_) => return Vec::new(),
+        };
+        all.into_iter()
+            .filter_map(|(_, bytes)| serde_json::from_slice::<StoredProof>(&bytes).ok())
             .filter(|p| proof_type.as_ref().is_none_or(|t| &p.proof_type == t))
-            .cloned()
             .collect()
     }
 
@@ -320,11 +358,13 @@ impl ProofStore {
         // Verify using the verifier
         let result = self.verifier.verify(&proof).await?;
 
-        // Update proof's verified status
-        {
-            let mut proofs = self.proofs.write().await;
-            if let Some(stored) = proofs.get_mut(proof_id) {
+        // Update proof's verified status in backend
+        if let Ok(Some(bytes)) = self.backend.get(proof_id) {
+            if let Ok(mut stored) = serde_json::from_slice::<StoredProof>(&bytes) {
                 stored.mark_verified(result.valid);
+                if let Ok(updated) = serde_json::to_vec(&stored) {
+                    let _ = self.backend.put(proof_id, &updated);
+                }
             }
         }
 
@@ -360,18 +400,19 @@ impl ProofStore {
 
     /// Delete a proof
     pub async fn delete(&self, proof_id: &ProofId) -> bool {
-        // Remove from proofs, then drop the lock.
-        let removed = {
-            let mut proofs = self.proofs.write().await;
-            let removed = proofs.remove(proof_id);
-            removed.map(|p| (p, proofs.len()))
+        // Get proof data for stats update before deleting
+        let proof = match self.backend.get(proof_id) {
+            Ok(Some(bytes)) => serde_json::from_slice::<StoredProof>(&bytes).ok(),
+            _ => None,
         };
 
-        if let Some((proof, proofs_len)) = removed {
-            // Update stats (separate lock scope)
-            {
+        let removed = self.backend.delete(proof_id).unwrap_or(false);
+
+        if removed {
+            if let Some(proof) = proof {
+                // Update stats
                 let mut stats = self.stats.write().await;
-                stats.total_proofs = proofs_len;
+                stats.total_proofs = stats.total_proofs.saturating_sub(1);
                 let type_key = proof.proof_type.to_string();
                 if let Some(count) = stats.proofs_by_type.get_mut(&type_key) {
                     *count = count.saturating_sub(1);
@@ -379,7 +420,7 @@ impl ProofStore {
                 stats.total_size_bytes = stats.total_size_bytes.saturating_sub(proof.size_bytes());
             }
 
-            // Remove from cache (separate lock scope)
+            // Remove from cache
             {
                 let mut cache = self.verification_cache.write().await;
                 cache.map.remove(proof_id);
@@ -400,9 +441,11 @@ impl ProofStore {
 
     /// Clear all proofs
     pub async fn clear(&self) {
-        {
-            let mut proofs = self.proofs.write().await;
-            proofs.clear();
+        // Delete all from backend
+        if let Ok(all) = self.backend.list_all() {
+            for (id, _) in all {
+                let _ = self.backend.delete(&id);
+            }
         }
         {
             let mut cache = self.verification_cache.write().await;
@@ -417,8 +460,79 @@ impl ProofStore {
 
     /// Get count of proofs
     pub async fn count(&self) -> usize {
-        let proofs = self.proofs.read().await;
-        proofs.len()
+        self.backend
+            .list_all()
+            .map(|all| all.len())
+            .unwrap_or(0)
+    }
+
+    /// Flush proof backend to durable storage.
+    pub fn flush(&self) -> Result<(), String> {
+        self.backend.flush()
+    }
+
+    /// Export all proofs as snapshot entries (sync, for Raft snapshots).
+    #[cfg(feature = "cluster")]
+    pub fn export_proofs_sync(&self) -> Vec<aingle_raft::state_machine::ProofSnapshot> {
+        let all = match self.backend.list_all() {
+            Ok(items) => items,
+            Err(_) => return Vec::new(),
+        };
+        all.into_iter()
+            .filter_map(|(_, bytes)| {
+                let proof: StoredProof = serde_json::from_slice(&bytes).ok()?;
+                Some(aingle_raft::state_machine::ProofSnapshot {
+                    id: proof.id,
+                    proof_type: proof.proof_type.to_string(),
+                    data: proof.data,
+                    created_at: proof.created_at.to_rfc3339(),
+                    verified: proof.verified,
+                    verified_at: proof.verified_at.map(|dt| dt.to_rfc3339()),
+                    metadata: serde_json::to_value(&proof.metadata).unwrap_or_default(),
+                })
+            })
+            .collect()
+    }
+
+    /// Import proofs from a snapshot, replacing existing data (sync, for Raft snapshots).
+    #[cfg(feature = "cluster")]
+    pub fn import_proofs_sync(&self, proofs: &[aingle_raft::state_machine::ProofSnapshot]) {
+        // Clear existing proofs
+        if let Ok(all) = self.backend.list_all() {
+            for (id, _) in all {
+                let _ = self.backend.delete(&id);
+            }
+        }
+
+        for snap in proofs {
+            let metadata: ProofMetadata =
+                serde_json::from_value(snap.metadata.clone()).unwrap_or_default();
+            let proof_type: ProofType =
+                serde_json::from_value(serde_json::Value::String(snap.proof_type.clone()))
+                    .unwrap_or(ProofType::Knowledge);
+            let created_at = chrono::DateTime::parse_from_rfc3339(&snap.created_at)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now());
+            let verified_at = snap.verified_at.as_ref().and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            });
+
+            let stored = StoredProof {
+                id: snap.id.clone(),
+                proof_type,
+                data: snap.data.clone(),
+                created_at,
+                verified: snap.verified,
+                verified_at,
+                metadata,
+            };
+
+            if let Ok(bytes) = serde_json::to_vec(&stored) {
+                let _ = self.backend.put(&snap.id, &bytes);
+            }
+        }
     }
 }
 
@@ -587,5 +701,52 @@ mod tests {
         assert_eq!(proof.size_bytes(), 4);
         assert!(!proof.verified);
         assert!(proof.verified_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sled_proof_store_persistence() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap();
+        let proof_id;
+        {
+            let store = ProofStore::with_sled(path).unwrap();
+            let request = SubmitProofRequest {
+                proof_type: ProofType::Schnorr,
+                proof_data: serde_json::json!({"key": "value"}),
+                metadata: None,
+            };
+            proof_id = store.submit(request).await.unwrap();
+            assert_eq!(store.count().await, 1);
+            store.flush().unwrap();
+        }
+        {
+            let store = ProofStore::with_sled(path).unwrap();
+            assert_eq!(store.count().await, 1);
+            let proof = store.get(&proof_id).await.unwrap();
+            assert_eq!(proof.proof_type, ProofType::Schnorr);
+            let stats = store.stats().await;
+            assert_eq!(stats.total_proofs, 1);
+            assert_eq!(stats.proofs_by_type.get("schnorr"), Some(&1));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sled_proof_store_delete_persists() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap();
+        {
+            let store = ProofStore::with_sled(path).unwrap();
+            let request = SubmitProofRequest {
+                proof_type: ProofType::Membership,
+                proof_data: serde_json::json!({"proof": true}),
+                metadata: None,
+            };
+            let id = store.submit(request).await.unwrap();
+            store.delete(&id).await;
+            store.flush().unwrap();
+        }
+        // Reopen — deletion should persist
+        let store2 = ProofStore::with_sled(path).unwrap();
+        assert_eq!(store2.count().await, 0);
     }
 }
