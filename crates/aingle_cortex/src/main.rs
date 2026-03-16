@@ -61,6 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--memory" => {
                 config.db_path = Some(":memory:".to_string());
             }
+            "--flush-interval" => {
+                if i + 1 < args.len() {
+                    config.flush_interval_secs = args[i + 1].parse().unwrap_or(300);
+                    i += 1;
+                }
+            }
             "--help" => {
                 print_help();
                 return Ok(());
@@ -111,6 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind_port = config.port;
     #[allow(unused_variables)]
     let db_path = config.db_path.clone();
+    let flush_interval_secs = config.flush_interval_secs;
 
     // Create and run server
     #[allow(unused_mut)]
@@ -255,6 +262,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("Semantic DAG v0.6.0 enabled");
     }
 
+    // Spawn periodic flush task if enabled
+    if flush_interval_secs > 0 {
+        let flush_state = server.state().clone();
+        let flush_dir = snapshot_dir.clone();
+        let interval_secs = flush_interval_secs;
+        tokio::spawn(async move {
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            interval.tick().await; // skip immediate tick
+            loop {
+                interval.tick().await;
+                if let Err(e) = flush_state.flush(flush_dir.as_deref()).await {
+                    tracing::warn!("Periodic flush failed: {e}");
+                } else {
+                    tracing::debug!("Periodic flush completed");
+                }
+            }
+        });
+        tracing::info!(
+            interval_secs = interval_secs,
+            "Periodic auto-flush enabled"
+        );
+    }
+
     // Keep a reference to the state for shutdown flush
     let state_for_shutdown = server.state().clone();
     let snapshot_dir_for_shutdown = snapshot_dir.clone();
@@ -347,6 +378,7 @@ fn print_help() {
     println!("    --public             Bind to all interfaces (0.0.0.0)");
     println!("    --db <PATH>          Path to graph database (default: ~/.aingle/cortex/graph.sled)");
     println!("    --memory             Use volatile in-memory storage (no persistence)");
+    println!("    --flush-interval <S> Periodic flush interval in seconds (default: 300, 0=off)");
     println!("    -V, --version        Print version and exit");
     println!("    --help               Print this help message");
     println!();
