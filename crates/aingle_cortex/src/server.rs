@@ -37,6 +37,8 @@ pub struct CortexConfig {
     pub audit_log_path: Option<PathBuf>,
     /// Maximum request body size in bytes (default: 1MB).
     pub max_body_size: usize,
+    /// Periodic flush interval in seconds (0 = disabled, default: 300).
+    pub flush_interval_secs: u64,
     /// Path to the graph database directory.
     ///
     /// - `Some(":memory:")` — volatile in-memory storage (no persistence).
@@ -58,6 +60,7 @@ impl Default for CortexConfig {
             rate_limit_rpm: 100,
             audit_log_path: None,
             max_body_size: 1024 * 1024, // 1MB
+            flush_interval_secs: 300,
             db_path: None,
         }
     }
