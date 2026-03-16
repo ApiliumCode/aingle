@@ -12,6 +12,23 @@ use crate::error::Error;
 #[cfg(feature = "cluster")]
 use crate::server::CortexServer;
 
+#[cfg(feature = "cluster")]
+use aingle_raft::state_machine::{ProofSnapshot, ProofSnapshotProvider};
+
+#[cfg(feature = "cluster")]
+use crate::proofs::ProofStore;
+
+#[cfg(feature = "cluster")]
+impl ProofSnapshotProvider for ProofStore {
+    fn export_proofs(&self) -> Vec<ProofSnapshot> {
+        self.export_proofs_sync()
+    }
+
+    fn import_proofs(&self, proofs: &[ProofSnapshot]) {
+        self.import_proofs_sync(proofs);
+    }
+}
+
 /// Configuration for cluster mode.
 #[cfg(feature = "cluster")]
 #[derive(Debug, Clone)]
@@ -362,12 +379,14 @@ pub async fn init_cluster(
     server.state_mut().wal = Some(log_store.wal().clone());
     server.state_mut().cluster_secret = config.secret.clone();
 
-    let state_machine = std::sync::Arc::new(
-        aingle_raft::state_machine::CortexStateMachine::new(
+    let state_machine = {
+        let mut sm = aingle_raft::state_machine::CortexStateMachine::new(
             server.state().graph.clone(),
             server.state().memory.clone(),
-        ),
-    );
+        );
+        sm.set_proof_provider(server.state().proof_store.clone());
+        std::sync::Arc::new(sm)
+    };
 
     let resolver = std::sync::Arc::new(aingle_raft::network::NodeResolver::new());
     let node_id = config.node_id;
