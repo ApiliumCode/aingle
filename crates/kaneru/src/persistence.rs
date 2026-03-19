@@ -205,6 +205,7 @@ impl AgentPersistence for KaneruAgent {
 
         let mut file = fs::File::create(path)?;
         file.write_all(&bytes)?;
+        file.sync_all()?;
 
         log::info!("Saved agent state to {:?}", path);
         Ok(())
@@ -275,6 +276,7 @@ impl AgentPersistence for LearningEngine {
 
         let mut file = fs::File::create(path)?;
         file.write_all(&bytes)?;
+        file.sync_all()?;
 
         log::info!("Saved learning engine to {:?}", path);
         Ok(())

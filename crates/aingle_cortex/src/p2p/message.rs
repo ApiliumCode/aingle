@@ -67,6 +67,23 @@ pub enum P2pMessage {
     TombstoneSync {
         tombstones: Vec<TombstoneWire>,
     },
+    // ── DAG sync messages (feature: dag) ────────────────────────
+    /// Exchange of DAG tip hashes for sync.
+    #[cfg(feature = "dag")]
+    DagTipSync {
+        tips: Vec<String>,
+        action_count: u64,
+    },
+    /// Request specific DAG actions by hash.
+    #[cfg(feature = "dag")]
+    RequestDagActions {
+        hashes: Vec<String>,
+    },
+    /// Batch of serialized DAG actions.
+    #[cfg(feature = "dag")]
+    SendDagActions {
+        actions: Vec<Vec<u8>>,
+    },
     // ── Raft / Cluster messages (feature: cluster) ──────────────
     /// Raft AppendEntries RPC (serialized openraft request).
     #[cfg(feature = "cluster")]

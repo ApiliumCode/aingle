@@ -107,19 +107,29 @@ pub async fn verify_proof_by_id(
     State(state): State<AppState>,
     Path(proof_id): Path<ProofId>,
 ) -> Result<Json<VerifyProofResponse>> {
-    let result = state
-        .proof_store
-        .verify(&proof_id)
-        .await
-        .map_err(|e| Error::ValidationError(e.to_string()))?;
-
-    Ok(Json(VerifyProofResponse {
-        proof_id: proof_id.clone(),
-        valid: result.valid,
-        verified_at: result.verified_at,
-        details: result.details,
-        verification_time_us: result.verification_time_us,
-    }))
+    match state.proof_store.verify(&proof_id).await {
+        Ok(result) => Ok(Json(VerifyProofResponse {
+            proof_id: proof_id.clone(),
+            valid: result.valid,
+            verified_at: result.verified_at,
+            details: result.details,
+            verification_time_us: result.verification_time_us,
+        })),
+        Err(crate::proofs::VerificationError::ProofNotFound(_)) => {
+            Err(Error::NotFound(format!("Proof {} not found", proof_id)))
+        }
+        Err(e) => {
+            // Verification infrastructure error (bad proof data format, ZK error, etc.)
+            // Return 200 with valid=false + error details instead of 422
+            Ok(Json(VerifyProofResponse {
+                proof_id: proof_id.clone(),
+                valid: false,
+                verified_at: chrono::Utc::now(),
+                details: vec![format!("Verification error: {}", e)],
+                verification_time_us: 0,
+            }))
+        }
+    }
 }
 
 /// Batch verify multiple proofs

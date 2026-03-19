@@ -47,6 +47,15 @@ pub trait StorageBackend: Send + Sync {
     /// Get storage size in bytes (approximate)
     fn size_bytes(&self) -> usize;
 
+    /// Atomically insert a batch of triples. Default implementation falls back
+    /// to individual puts (non-atomic).
+    fn apply_batch(&self, items: &[(&TripleId, &Triple)]) -> Result<()> {
+        for (id, triple) in items {
+            self.put(id, triple)?;
+        }
+        Ok(())
+    }
+
     /// Flush pending writes to disk
     fn flush(&self) -> Result<()> {
         Ok(())

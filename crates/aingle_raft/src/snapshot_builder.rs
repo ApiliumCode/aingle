@@ -3,7 +3,7 @@
 
 //! Snapshot builder for the Raft state machine.
 
-use crate::state_machine::{ClusterSnapshot, TripleSnapshot};
+use crate::state_machine::{ClusterSnapshot, ProofSnapshotProvider, TripleSnapshot};
 use crate::types::CortexTypeConfig;
 use aingle_graph::GraphDB;
 use ineru::IneruMemory;
@@ -24,6 +24,7 @@ pub struct CortexSnapshotBuilder {
     pub memory: Arc<RwLock<IneruMemory>>,
     pub last_applied: Option<LogId>,
     pub last_membership: StoredMembershipOf<C>,
+    pub proof_provider: Option<Arc<dyn ProofSnapshotProvider>>,
 }
 
 impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
@@ -75,12 +76,20 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
             }
         };
 
+        // Export proofs if provider is available
+        let proofs = self
+            .proof_provider
+            .as_ref()
+            .map(|p| p.export_proofs())
+            .unwrap_or_default();
+
         let snapshot = ClusterSnapshot {
             triples,
             ineru_ltm,
             last_applied_index,
             last_applied_term,
             dag_tips,
+            proofs,
             checksum: String::new(),
         };
 
@@ -148,6 +157,7 @@ mod tests {
                 5,
             )),
             last_membership: openraft::StoredMembership::default(),
+            proof_provider: None,
         };
 
         let snap = builder.build_snapshot().await.unwrap();

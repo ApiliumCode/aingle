@@ -387,11 +387,16 @@ impl IneruMemory {
         Ok(memory)
     }
 
-    /// Saves the current memory state to a file.
+    /// Saves the current memory state to a file (with fsync for durability).
     pub fn save_to_file(&self, path: &std::path::Path) -> Result<()> {
+        use std::io::Write;
         let data = self.export_snapshot()?;
-        std::fs::write(path, data)
-            .map_err(|e| Error::internal(format!("snapshot write: {}", e)))
+        let mut file = std::fs::File::create(path)
+            .map_err(|e| Error::internal(format!("snapshot create: {}", e)))?;
+        file.write_all(&data)
+            .map_err(|e| Error::internal(format!("snapshot write: {}", e)))?;
+        file.sync_all()
+            .map_err(|e| Error::internal(format!("snapshot fsync: {}", e)))
     }
 
     /// Loads a memory state from a file.

@@ -57,8 +57,12 @@ impl PeerStore {
         }
         let json = serde_json::to_string_pretty(&self.peers)
             .map_err(|e| format!("serialize peers: {}", e))?;
-        std::fs::write(&self.path, json)
+        let mut file = std::fs::File::create(&self.path)
+            .map_err(|e| format!("create peer store: {}", e))?;
+        std::io::Write::write_all(&mut file, json.as_bytes())
             .map_err(|e| format!("write peer store: {}", e))?;
+        file.sync_all()
+            .map_err(|e| format!("fsync peer store: {}", e))?;
         Ok(())
     }
 

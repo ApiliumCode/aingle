@@ -407,12 +407,14 @@ impl P2pManager {
             }));
         }
 
-        // ── Task 2: Gossip loop + tombstone sync ─────────────
+        // ── Task 2: Gossip loop + tombstone sync + DAG tip sync ─
         {
             let sync = sync.clone();
             let transport = transport.clone();
             let running = running.clone();
             let interval = config.gossip_interval_ms;
+            #[cfg(feature = "dag")]
+            let graph2 = app_state.graph.clone();
 
             tasks.push(tokio::spawn(async move {
                 loop {
@@ -433,6 +435,21 @@ impl P2pManager {
                         let t = transport.read().await;
                         if let Err(e) = t.send(&peer_addr, &msg).await {
                             tracing::debug!("gossip send to {}: {}", peer_addr, e);
+                        }
+
+                        // DAG tip sync: exchange tips with each peer
+                        #[cfg(feature = "dag")]
+                        {
+                            let g = graph2.read().await;
+                            let (tips, action_count) =
+                                crate::p2p::dag_sync::collect_local_tips(&g);
+                            if !tips.is_empty() {
+                                let dag_msg = P2pMessage::DagTipSync {
+                                    tips,
+                                    action_count,
+                                };
+                                let _ = t.send(&peer_addr, &dag_msg).await;
+                            }
                         }
 
                         // A1: Also send active tombstones
@@ -670,6 +687,50 @@ impl P2pManager {
                                     timestamp_ms,
                                 })
                                 .await;
+                        }
+                        // DAG sync message handlers
+                        #[cfg(feature = "dag")]
+                        P2pMessage::DagTipSync { tips, action_count } => {
+                            let g = graph.read().await;
+                            let actions =
+                                crate::p2p::dag_sync::compute_missing_from_tips(&g, &tips);
+                            if !actions.is_empty() {
+                                tracing::debug!(
+                                    "DAG tip sync from {} — {} tips, sending {} actions",
+                                    addr,
+                                    tips.len(),
+                                    actions.len()
+                                );
+                                let send_msg = P2pMessage::SendDagActions { actions };
+                                let t = transport.read().await;
+                                let _ = t.send(&addr, &send_msg).await;
+                            }
+                            let _ = action_count; // reserved for future adaptive sync
+                        }
+                        #[cfg(feature = "dag")]
+                        P2pMessage::RequestDagActions { hashes } => {
+                            let g = graph.read().await;
+                            let actions =
+                                crate::p2p::dag_sync::fetch_actions_by_hash(&g, &hashes);
+                            if !actions.is_empty() {
+                                let send_msg = P2pMessage::SendDagActions { actions };
+                                let t = transport.read().await;
+                                let _ = t.send(&addr, &send_msg).await;
+                            }
+                        }
+                        #[cfg(feature = "dag")]
+                        P2pMessage::SendDagActions { actions } => {
+                            let g = graph.read().await;
+                            let (ingested, errors) =
+                                crate::p2p::dag_sync::ingest_actions(&g, &actions);
+                            if ingested > 0 {
+                                tracing::info!(
+                                    "P2P DAG synced {} actions from {} ({} errors)",
+                                    ingested,
+                                    addr,
+                                    errors
+                                );
+                            }
                         }
                         other => {
                             // Raft RPC is routed over HTTP, not P2P QUIC.

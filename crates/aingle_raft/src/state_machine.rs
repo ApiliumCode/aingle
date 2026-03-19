@@ -35,6 +35,8 @@ pub struct CortexStateMachine {
     current_snapshot: RwLock<Option<(SnapshotMetaOf<C>, Vec<u8>)>>,
     /// Count of applied mutations (for metrics).
     applied_count: RwLock<u64>,
+    /// Optional provider for proof snapshot export/import.
+    proof_provider: Option<Arc<dyn ProofSnapshotProvider>>,
 }
 
 impl CortexStateMachine {
@@ -47,7 +49,13 @@ impl CortexStateMachine {
             last_membership: RwLock::new(StoredMembership::default()),
             current_snapshot: RwLock::new(None),
             applied_count: RwLock::new(0),
+            proof_provider: None,
         }
+    }
+
+    /// Set the proof snapshot provider for snapshot export/import.
+    pub fn set_proof_provider(&mut self, provider: Arc<dyn ProofSnapshotProvider>) {
+        self.proof_provider = Some(provider);
     }
 
     /// Apply a mutation from the WAL entry kind to the real stores.
@@ -482,6 +490,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
             memory: Arc::clone(&self.memory),
             last_applied: la.clone(),
             last_membership: membership.clone(),
+            proof_provider: self.proof_provider.clone(),
         }
     }
 
@@ -559,6 +568,17 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
         drop(memory);
         drop(graph);
 
+        // Import proofs if provider is available and snapshot has proofs
+        if !cluster_snap.proofs.is_empty() {
+            if let Some(ref provider) = self.proof_provider {
+                provider.import_proofs(&cluster_snap.proofs);
+                tracing::info!(
+                    proofs = cluster_snap.proofs.len(),
+                    "Restored proofs from snapshot"
+                );
+            }
+        }
+
         // Update metadata
         {
             let mut la = self.last_applied.write().await;
@@ -597,6 +617,26 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
 // Snapshot types
 // ============================================================================
 
+/// Trait for exporting/importing proofs into Raft snapshots.
+pub trait ProofSnapshotProvider: Send + Sync {
+    /// Export all proofs as snapshot entries.
+    fn export_proofs(&self) -> Vec<ProofSnapshot>;
+    /// Import proofs from a snapshot, replacing existing data.
+    fn import_proofs(&self, proofs: &[ProofSnapshot]);
+}
+
+/// A single proof entry in a Raft snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProofSnapshot {
+    pub id: String,
+    pub proof_type: String,
+    pub data: Vec<u8>,
+    pub created_at: String,
+    pub verified: bool,
+    pub verified_at: Option<String>,
+    pub metadata: serde_json::Value,
+}
+
 /// A serializable cluster snapshot for state transfer.
 ///
 /// When a new node joins the cluster, it receives this snapshot
@@ -615,7 +655,10 @@ pub struct ClusterSnapshot {
     /// DAG tip hashes (empty if DAG not enabled). Backward compatible via serde(default).
     #[serde(default)]
     pub dag_tips: Vec<[u8; 32]>,
-    /// Blake3 integrity checksum over triples + ineru_ltm.
+    /// Proof snapshots. Backward compatible via serde(default).
+    #[serde(default)]
+    pub proofs: Vec<ProofSnapshot>,
+    /// Blake3 integrity checksum over triples + ineru_ltm + proofs.
     #[serde(default)]
     pub checksum: String,
 }
@@ -637,6 +680,7 @@ impl ClusterSnapshot {
             last_applied_index: 0,
             last_applied_term: 0,
             dag_tips: Vec::new(),
+            proofs: Vec::new(),
             checksum: String::new(),
         }
     }
@@ -645,13 +689,14 @@ impl ClusterSnapshot {
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
         // Serialize everything except checksum first, then patch checksum in
         // to avoid cloning the entire snapshot (triples + LTM can be large).
-        let checksum = compute_checksum(&self.triples, &self.ineru_ltm);
+        let checksum = compute_checksum(&self.triples, &self.ineru_ltm, &self.proofs);
         let wrapper = ClusterSnapshotRef {
             triples: &self.triples,
             ineru_ltm: &self.ineru_ltm,
             last_applied_index: self.last_applied_index,
             last_applied_term: self.last_applied_term,
             dag_tips: &self.dag_tips,
+            proofs: &self.proofs,
             checksum: &checksum,
         };
         serde_json::to_vec(&wrapper).map_err(|e| format!("Snapshot serialization failed: {e}"))
@@ -661,7 +706,7 @@ impl ClusterSnapshot {
     pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
         let snap: Self = serde_json::from_slice(data)
             .map_err(|e| format!("Snapshot deserialization failed: {e}"))?;
-        let expected = compute_checksum(&snap.triples, &snap.ineru_ltm);
+        let expected = compute_checksum(&snap.triples, &snap.ineru_ltm, &snap.proofs);
         if !snap.checksum.is_empty() && snap.checksum != expected {
             return Err(format!(
                 "Snapshot checksum mismatch: expected {expected}, got {}",
@@ -684,15 +729,24 @@ struct ClusterSnapshotRef<'a> {
     last_applied_index: u64,
     last_applied_term: u64,
     dag_tips: &'a [[u8; 32]],
+    proofs: &'a [ProofSnapshot],
     checksum: &'a str,
 }
 
 /// Compute a blake3 checksum over snapshot content for integrity verification.
-fn compute_checksum(triples: &[TripleSnapshot], ineru_ltm: &[u8]) -> String {
+fn compute_checksum(
+    triples: &[TripleSnapshot],
+    ineru_ltm: &[u8],
+    proofs: &[ProofSnapshot],
+) -> String {
     let mut hasher = blake3::Hasher::new();
     let triples_bytes = serde_json::to_vec(triples).unwrap_or_default();
     hasher.update(&triples_bytes);
     hasher.update(ineru_ltm);
+    if !proofs.is_empty() {
+        let proofs_bytes = serde_json::to_vec(proofs).unwrap_or_default();
+        hasher.update(&proofs_bytes);
+    }
     hasher.finalize().to_hex().to_string()
 }
 
@@ -878,6 +932,7 @@ mod tests {
             last_applied_index: 10,
             last_applied_term: 2,
             dag_tips: vec![],
+            proofs: vec![],
             checksum: String::new(),
         };
         let data = snap.to_bytes().unwrap();
@@ -928,6 +983,7 @@ mod tests {
             last_applied_index: 42,
             last_applied_term: 5,
             dag_tips: vec![],
+            proofs: vec![],
             checksum: String::new(),
         };
 
@@ -961,6 +1017,7 @@ mod tests {
             last_applied_index: 7,
             last_applied_term: 2,
             dag_tips: vec![],
+            proofs: vec![],
             checksum: String::new(),
         };
         let bytes = snap.to_bytes().unwrap();
@@ -986,6 +1043,7 @@ mod tests {
             last_applied_index: 1,
             last_applied_term: 1,
             dag_tips: vec![],
+            proofs: vec![],
             checksum: String::new(),
         };
         let mut bytes = snap.to_bytes().unwrap();
@@ -1012,6 +1070,7 @@ mod tests {
             last_applied_index: 0,
             last_applied_term: 0,
             dag_tips: vec![],
+            proofs: vec![],
             checksum: "deadbeef".to_string(),
         };
         // Serialize directly (bypassing to_bytes which would compute correct checksum)
@@ -1033,6 +1092,7 @@ mod tests {
             last_applied_index: 0,
             last_applied_term: 0,
             dag_tips: vec![],
+            proofs: vec![],
             checksum: String::new(),
         };
         let bytes = serde_json::to_vec(&snap).unwrap();
