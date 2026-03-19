@@ -50,10 +50,13 @@ impl NodeIdentity {
                     .mode(0o600)
                     .open(&key_path)?;
                 f.write_all(&seed)?;
+                f.sync_all()?;
             }
             #[cfg(not(unix))]
             {
-                std::fs::write(&key_path, &seed)?;
+                let mut f = std::fs::File::create(&key_path)?;
+                std::io::Write::write_all(&mut f, &seed)?;
+                f.sync_all()?;
             }
 
             Ok(Self {

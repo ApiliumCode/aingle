@@ -61,6 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--memory" => {
                 config.db_path = Some(":memory:".to_string());
             }
+            "--flush-interval" => {
+                if i + 1 < args.len() {
+                    config.flush_interval_secs = args[i + 1].parse().unwrap_or(300);
+                    i += 1;
+                }
+            }
             "--help" => {
                 print_help();
                 return Ok(());
@@ -111,6 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind_port = config.port;
     #[allow(unused_variables)]
     let db_path = config.db_path.clone();
+    let flush_interval_secs = config.flush_interval_secs;
 
     // Create and run server
     #[allow(unused_mut)]
@@ -154,15 +161,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut graph = state.graph.write().await;
             match &db_path {
                 Some(p) if p != ":memory:" => {
-                    if let Err(e) = graph.enable_dag_persistent(p) {
-                        tracing::error!(
-                            "Failed to enable persistent DAG: {e}. \
-                             Falling back to in-memory DAG — data will NOT survive restarts!"
+                    graph.enable_dag_persistent(p).unwrap_or_else(|e| {
+                        panic!(
+                            "Failed to enable persistent DAG at '{}': {e}. \
+                             Refusing to start with volatile DAG — fix the storage path or permissions.",
+                            p
                         );
-                        graph.enable_dag();
-                    } else {
-                        tracing::info!("DAG persistence enabled (Sled)");
-                    }
+                    });
+                    tracing::info!("DAG persistence enabled (Sled)");
                 }
                 _ => {
                     tracing::warn!("DAG using in-memory backend — data will NOT survive restarts");
@@ -221,19 +227,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         {
                             use std::io::Write;
                             use std::os::unix::fs::OpenOptionsExt;
-                            if let Ok(mut f) = std::fs::OpenOptions::new()
+                            match std::fs::OpenOptions::new()
                                 .create(true)
                                 .write(true)
                                 .truncate(true)
                                 .mode(0o600)
                                 .open(&key_path)
                             {
-                                let _ = f.write_all(&seed);
+                                Ok(mut f) => {
+                                    if let Err(e) = f.write_all(&seed).and_then(|_| f.sync_all()) {
+                                        tracing::error!("Failed to persist DAG signing key: {e}");
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to open DAG key file {}: {e}", key_path.display());
+                                }
                             }
                         }
                         #[cfg(not(unix))]
                         {
-                            let _ = std::fs::write(&key_path, &seed);
+                            if let Err(e) = std::fs::write(&key_path, &seed) {
+                                tracing::error!("Failed to persist DAG signing key: {e}");
+                            }
                         }
                         Some(key)
                     }
@@ -254,6 +269,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         tracing::info!("Semantic DAG v0.6.0 enabled");
+    }
+
+    // Spawn periodic flush task if enabled
+    if flush_interval_secs > 0 {
+        let flush_state = server.state().clone();
+        let flush_dir = snapshot_dir.clone();
+        let interval_secs = flush_interval_secs;
+        tokio::spawn(async move {
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            interval.tick().await; // skip immediate tick
+            loop {
+                interval.tick().await;
+                if let Err(e) = flush_state.flush(flush_dir.as_deref()).await {
+                    tracing::warn!("Periodic flush failed: {e}");
+                } else {
+                    tracing::debug!("Periodic flush completed");
+                }
+            }
+        });
+        tracing::info!(
+            interval_secs = interval_secs,
+            "Periodic auto-flush enabled"
+        );
     }
 
     // Keep a reference to the state for shutdown flush
@@ -348,6 +387,7 @@ fn print_help() {
     println!("    --public             Bind to all interfaces (0.0.0.0)");
     println!("    --db <PATH>          Path to graph database (default: ~/.aingle/cortex/graph.sled)");
     println!("    --memory             Use volatile in-memory storage (no persistence)");
+    println!("    --flush-interval <S> Periodic flush interval in seconds (default: 300, 0=off)");
     println!("    -V, --version        Print version and exit");
     println!("    --help               Print this help message");
     println!();

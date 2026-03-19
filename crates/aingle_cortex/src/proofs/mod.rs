@@ -53,9 +53,11 @@
 //! assert!(result.valid);
 //! ```
 
+pub mod backend;
 pub mod store;
 pub mod verification;
 
+pub use backend::ProofBackend;
 pub use store::{ProofId, ProofMetadata, ProofStore, ProofType, StoredProof, SubmitProofRequest};
 pub use verification::{ProofVerifier, VerificationError, VerificationResult};
 

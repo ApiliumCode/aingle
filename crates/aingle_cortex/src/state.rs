@@ -254,6 +254,28 @@ impl AppState {
             AuditLog::default()
         };
 
+        // Create ProofStore — persistent if using Sled, in-memory otherwise.
+        // Uses a separate sled DB path (sibling to graph) to avoid lock contention.
+        let proof_store = if db_path != ":memory:" {
+            let proof_db_path = Path::new(db_path)
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join("proofs.sled");
+            let proof_db_str = proof_db_path.to_string_lossy();
+            match ProofStore::with_sled(&proof_db_str) {
+                Ok(ps) => {
+                    log::info!("ProofStore using Sled backend at {}", proof_db_str);
+                    Arc::new(ps)
+                }
+                Err(e) => {
+                    log::warn!("Failed to open Sled ProofStore: {}. Falling back to in-memory.", e);
+                    Arc::new(ProofStore::new())
+                }
+            }
+        } else {
+            Arc::new(ProofStore::new())
+        };
+
         #[cfg(feature = "auth")]
         let user_store = {
             let store = Arc::new(UserStore::new());
@@ -266,7 +288,7 @@ impl AppState {
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
             broadcaster: Arc::new(EventBroadcaster::new()),
-            proof_store: Arc::new(ProofStore::new()),
+            proof_store,
             sandbox_manager: Arc::new(SandboxManager::new()),
             audit_log: Arc::new(RwLock::new(audit_log)),
             #[cfg(feature = "auth")]
@@ -302,6 +324,11 @@ impl AppState {
         {
             let graph = self.graph.read().await;
             graph.flush()?;
+        }
+
+        // Flush proof store
+        if let Err(e) = self.proof_store.flush() {
+            log::warn!("Failed to flush proof store: {}", e);
         }
 
         // Save Ineru memory snapshot

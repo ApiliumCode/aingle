@@ -7,6 +7,7 @@
 //!
 //! ### Triples
 //! - `POST   /api/v1/triples` - Create triple
+//! - `POST   /api/v1/triples/batch` - Batch insert triples (atomic)
 //! - `GET    /api/v1/triples/:id` - Get triple by hash
 //! - `DELETE /api/v1/triples/:id` - Delete triple
 //! - `GET    /api/v1/triples` - List triples (with filters)
@@ -80,6 +81,10 @@ pub fn router() -> Router<AppState> {
         // Triple CRUD
         .route("/api/v1/triples", post(triples::create_triple))
         .route("/api/v1/triples", get(triples::list_triples))
+        .route(
+            "/api/v1/triples/batch",
+            post(triples::batch_insert_triples),
+        )
         .route("/api/v1/triples/{id}", get(triples::get_triple))
         .route("/api/v1/triples/{id}", delete(triples::delete_triple))
         // Query endpoints

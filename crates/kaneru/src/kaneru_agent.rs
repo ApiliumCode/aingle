@@ -301,7 +301,13 @@ impl KaneruAgent {
     /// * `outcome` - An `Outcome` struct containing the action, result, reward,
     ///   and new observation.
     pub fn learn(&mut self, outcome: Outcome) {
-        let prev_state = self.current_state.as_ref().unwrap();
+        let prev_state = match self.current_state.as_ref() {
+            Some(s) => s,
+            None => {
+                log::warn!("learn() called before any observation — skipping");
+                return;
+            }
+        };
         let action_id = ActionId::from_action(&outcome.action);
 
         // Update to new state
@@ -321,8 +327,18 @@ impl KaneruAgent {
         self.episode_reward += outcome.reward;
 
         // 2. Update predictive model
+        let prev_obs = match self.observation_history.back() {
+            Some(obs) => obs,
+            None => {
+                log::warn!("learn() called with empty observation history — skipping predictive update");
+                // Still update goal progress below
+                self.current_state = Some(new_state);
+                self.observation_history.push_back(outcome.new_observation);
+                return;
+            }
+        };
         self.predictive.record_transition(
-            self.observation_history.back().unwrap(),
+            prev_obs,
             &outcome.action,
             outcome.reward,
             &outcome.new_observation,
