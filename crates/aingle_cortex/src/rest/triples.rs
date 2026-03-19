@@ -759,6 +759,150 @@ pub struct ListTriplesResponse {
     pub offset: usize,
 }
 
+/// Request to batch-insert multiple triples
+#[derive(Debug, Deserialize)]
+pub struct BatchInsertRequest {
+    pub triples: Vec<CreateTripleRequest>,
+}
+
+/// Response for batch insert
+#[derive(Debug, Serialize)]
+pub struct BatchInsertResponse {
+    pub inserted: Vec<TripleDto>,
+    pub total: usize,
+    pub duplicates: usize,
+}
+
+/// Insert multiple triples atomically
+///
+/// POST /api/v1/triples/batch
+pub async fn batch_insert_triples(
+    State(state): State<AppState>,
+    ns_ext: Option<axum::Extension<RequestNamespace>>,
+    Json(req): Json<BatchInsertRequest>,
+) -> Result<(StatusCode, Json<BatchInsertResponse>)> {
+    if req.triples.is_empty() {
+        return Ok((
+            StatusCode::OK,
+            Json(BatchInsertResponse {
+                inserted: vec![],
+                total: 0,
+                duplicates: 0,
+            }),
+        ));
+    }
+
+    // Validate all inputs first
+    for (i, t) in req.triples.iter().enumerate() {
+        if t.subject.is_empty() {
+            return Err(Error::InvalidInput(format!(
+                "Triple [{}]: subject cannot be empty",
+                i
+            )));
+        }
+        if t.predicate.is_empty() {
+            return Err(Error::InvalidInput(format!(
+                "Triple [{}]: predicate cannot be empty",
+                i
+            )));
+        }
+        // Enforce namespace scoping
+        if let Some(axum::Extension(RequestNamespace(Some(ref ns)))) = ns_ext {
+            if !is_in_namespace(&t.subject, ns) {
+                return Err(Error::Forbidden(format!(
+                    "Triple [{}]: subject \"{}\" is not in namespace \"{}\"",
+                    i, t.subject, ns
+                )));
+            }
+        }
+    }
+
+    // Build Triple objects
+    let triples: Vec<Triple> = req
+        .triples
+        .iter()
+        .map(|t| {
+            let object: Value = t.object.clone().into();
+            Triple::new(
+                NodeId::named(&t.subject),
+                Predicate::named(&t.predicate),
+                object,
+            )
+        })
+        .collect();
+
+    let count_before = {
+        let graph = state.graph.read().await;
+        graph.count()
+    };
+
+    // Atomic batch insert
+    let ids = {
+        let graph = state.graph.read().await;
+        graph.insert_batch(triples)?
+    };
+
+    let count_after = {
+        let graph = state.graph.read().await;
+        graph.count()
+    };
+
+    let actually_inserted = count_after - count_before;
+    let duplicates = ids.len() - actually_inserted;
+
+    // Build response DTOs
+    let inserted: Vec<TripleDto> = ids
+        .iter()
+        .zip(req.triples.iter())
+        .map(|(id, t)| TripleDto {
+            id: Some(id.to_hex()),
+            subject: format!("<{}>", t.subject),
+            predicate: format!("<{}>", t.predicate),
+            object: t.object.clone(),
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+        })
+        .collect();
+
+    // Record audit entry
+    {
+        let namespace = ns_ext
+            .as_ref()
+            .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
+        let mut audit = state.audit_log.write().await;
+        audit.record(AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
+            namespace,
+            action: "batch_create".to_string(),
+            resource: "/api/v1/triples/batch".to_string(),
+            details: Some(format!(
+                "inserted={}, duplicates={}",
+                actually_inserted, duplicates
+            )),
+            request_id: None,
+        });
+    }
+
+    // Broadcast events for new triples
+    for (id, t) in ids.iter().zip(req.triples.iter()) {
+        state.broadcaster.broadcast(Event::TripleAdded {
+            hash: id.to_hex(),
+            subject: t.subject.clone(),
+            predicate: t.predicate.clone(),
+            object: serde_json::to_value(&t.object).unwrap_or_default(),
+        });
+    }
+
+    Ok((
+        StatusCode::CREATED,
+        Json(BatchInsertResponse {
+            total: inserted.len(),
+            duplicates,
+            inserted,
+        }),
+    ))
+}
+
 /// Re-export shared Raft write error handler for this module.
 #[cfg(feature = "cluster")]
 use crate::rest::cluster_utils::handle_raft_write_error;
