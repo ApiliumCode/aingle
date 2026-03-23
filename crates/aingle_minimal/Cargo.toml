@@ -107,7 +107,7 @@ ledger-transport = { version = "0.11", optional = true }
 ledger-transport-hid = { version = "0.11", optional = true }
 
 # CLI argument parsing
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 
 # Logging - lightweight
 log = "0.4"
