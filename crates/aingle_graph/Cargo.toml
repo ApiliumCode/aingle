@@ -68,7 +68,7 @@ rand = { version = "0.9", default-features = false, features = ["std", "thread_r
 
 [dev-dependencies]
 criterion = "0.5"
-tempfile = "3.26"
+tempfile = "3.27"
 
 [[bench]]
 name = "graph_bench"
