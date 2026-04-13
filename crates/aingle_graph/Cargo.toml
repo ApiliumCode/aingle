@@ -39,7 +39,7 @@ bincode = { version = "2.0.1", features = ["serde"] }
 blake3 = "1.8"
 
 # Collections
-indexmap = { version = "2.13", features = ["serde"] }
+indexmap = { version = "2.14", features = ["serde"] }
 
 # Error handling
 thiserror = "2.0"
@@ -68,7 +68,7 @@ rand = { version = "0.9", default-features = false, features = ["std", "thread_r
 
 [dev-dependencies]
 criterion = "0.5"
-tempfile = "3.26"
+tempfile = "3.27"
 
 [[bench]]
 name = "graph_bench"
