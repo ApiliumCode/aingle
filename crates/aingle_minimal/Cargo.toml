@@ -97,7 +97,7 @@ rcgen = { version = "0.13", optional = true }
 
 # Bluetooth LE for IoT mesh
 btleplug = { version = "0.11", optional = true }
-uuid = { version = "1.21", optional = true }
+uuid = { version = "1.23", optional = true }
 
 # ESP32 NimBLE for embedded BLE (requires ESP-IDF)
 esp32-nimble = { version = "0.8", optional = true }
@@ -107,7 +107,7 @@ ledger-transport = { version = "0.11", optional = true }
 ledger-transport-hid = { version = "0.11", optional = true }
 
 # CLI argument parsing
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 
 # Logging - lightweight
 log = "0.4"
