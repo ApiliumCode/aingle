@@ -28,7 +28,7 @@ curve25519-dalek-ng = { version = "4.1", optional = true }
 merlin = { version = "3.0", optional = true }
 
 # Hashing
-sha2 = "0.10"
+sha2 = "0.11"
 blake3 = "1.8"
 
 # Randomness
@@ -36,7 +36,7 @@ blake3 = "1.8"
 rand = "0.8"
 
 # Parallelization for batch verification
-rayon = "1.8"
+rayon = "1.12"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
