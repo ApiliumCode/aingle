@@ -12,9 +12,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::middleware::{is_in_namespace, RequestNamespace};
-use crate::rest::audit::AuditEntry;
-use crate::state::{AppState, Event};
+use crate::state::AppState;
 use aingle_graph::{NodeId, Triple, TripleId, Value};
+
+// `AuditEntry` and `Event` are only referenced from the DAG/cluster write paths
+// below; the non-cluster direct-write path delegates those side-effects to the
+// service layer. Gate the imports so the `rest`-only (no dag/cluster) build is
+// warning-free.
+#[cfg(any(feature = "dag", feature = "cluster"))]
+use crate::rest::audit::AuditEntry;
+#[cfg(any(feature = "dag", feature = "cluster"))]
+use crate::state::Event;
 
 #[cfg(feature = "cluster")]
 use axum::http::HeaderMap;

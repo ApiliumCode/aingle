@@ -88,7 +88,7 @@ pub async fn list_subjects(
     let mut subjects: Vec<String> = triples
         .into_iter()
         .map(|t| t.subject.to_string())
-        .filter(|s| namespace.as_ref().map_or(true, |ns| is_in_namespace(s, ns)))
+        .filter(|s| namespace.as_ref().is_none_or(|ns| is_in_namespace(s, ns)))
         .collect();
     subjects.sort();
     subjects.dedup();
@@ -121,7 +121,7 @@ pub async fn list_predicates(
         .filter(|t| {
             namespace
                 .as_ref()
-                .map_or(true, |ns| is_in_namespace(&t.subject.to_string(), ns))
+                .is_none_or(|ns| is_in_namespace(&t.subject.to_string(), ns))
         })
         .map(|t| t.predicate.to_string())
         .collect();
