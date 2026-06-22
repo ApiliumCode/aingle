@@ -30,6 +30,12 @@ impl SledBackend {
         Ok(Self { db, triples })
     }
 
+    /// Returns a handle to the underlying Sled database (cheaply clonable;
+    /// shares the same instance). Used to open the DAG tree on the same Db.
+    pub fn db(&self) -> &sled::Db {
+        &self.db
+    }
+
     /// Open a temporary database (for testing)
     pub fn temp() -> Result<Self> {
         let db = sled::Config::new()
@@ -114,6 +120,10 @@ impl StorageBackend for SledBackend {
 
     fn close(&self) -> Result<()> {
         self.flush()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

@@ -1769,4 +1769,30 @@ mod tests {
             assert_eq!(ver, vec![SCHEMA_VERSION]);
         }
     }
+
+    /// Regression test: enabling the persistent DAG on a Sled-backed GraphDB
+    /// must NOT open a second `sled::Db` at the same path. Before the fix this
+    /// failed with "could not acquire lock on ...; another process has it
+    /// locked" because the triple store already held the file lock.
+    #[cfg(feature = "sled-backend")]
+    #[test]
+    fn enable_dag_persistent_shares_sled_db_no_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("g.sled");
+        let p = path.to_str().unwrap();
+
+        // Sled-backed GraphDB (holds the file lock on `p`).
+        let mut graph = crate::GraphDB::sled(p).unwrap();
+
+        // This must NOT error/panic (the bug was a sled lock self-conflict here).
+        graph
+            .enable_dag_persistent(p)
+            .expect("enable_dag_persistent must succeed on persistent sled");
+        assert!(graph.dag_store().is_some());
+
+        // Exercise the shared Db: genesis + a DAG round-trip.
+        let genesis = graph.dag_store().unwrap().init_or_migrate(0).unwrap();
+        let fetched = graph.dag_store().unwrap().get(&genesis).unwrap();
+        assert!(fetched.is_some(), "genesis action must be readable back");
+    }
 }
