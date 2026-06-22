@@ -94,8 +94,7 @@ pub async fn get_agent_consistency(
     let namespace = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
 
     // Delegate the shared scoring logic (graph + logic engine read-only).
-    let resp =
-        crate::service::reputation::agent_consistency(&state, &agent_id, namespace).await;
+    let resp = crate::service::reputation::agent_consistency(&state, &agent_id, namespace).await;
     Json(resp)
 }
 
@@ -112,8 +111,7 @@ pub async fn batch_verify_assertions(
     let namespace = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
 
     // Delegate the shared verification logic (graph + logic engine read-only).
-    let resp =
-        crate::service::reputation::batch_verify_assertions(&state, req, namespace).await;
+    let resp = crate::service::reputation::batch_verify_assertions(&state, req, namespace).await;
     Json(resp)
 }
 
