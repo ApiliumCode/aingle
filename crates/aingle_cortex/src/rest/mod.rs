@@ -61,7 +61,7 @@ pub use proof::{
 pub use proof_api::{
     BatchSubmitRequest, BatchSubmitResponse, BatchVerifyRequest, BatchVerifyResponse,
     DeleteProofResponse, ListProofsQuery, ListProofsResponse, ProofResponse, ProofStatsResponse,
-    SubmitProofResponse,
+    SubmitProofResponse, VerifyProofByIdRequest, VerifyProofResponse,
 };
 
 // Re-export from other modules

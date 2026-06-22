@@ -103,33 +103,16 @@ pub async fn get_proof(
 /// Verify a proof
 ///
 /// GET /api/v1/proofs/:id/verify
+///
+/// Delegates to [`crate::service::proof::verify_proof`]; the invalid-proof ->
+/// 200 + `valid:false` contract (commit 53cca2c) lives in the service layer.
 pub async fn verify_proof_by_id(
     State(state): State<AppState>,
     Path(proof_id): Path<ProofId>,
 ) -> Result<Json<VerifyProofResponse>> {
-    match state.proof_store.verify(&proof_id).await {
-        Ok(result) => Ok(Json(VerifyProofResponse {
-            proof_id: proof_id.clone(),
-            valid: result.valid,
-            verified_at: result.verified_at,
-            details: result.details,
-            verification_time_us: result.verification_time_us,
-        })),
-        Err(crate::proofs::VerificationError::ProofNotFound(_)) => {
-            Err(Error::NotFound(format!("Proof {} not found", proof_id)))
-        }
-        Err(e) => {
-            // Verification infrastructure error (bad proof data format, ZK error, etc.)
-            // Return 200 with valid=false + error details instead of 422
-            Ok(Json(VerifyProofResponse {
-                proof_id: proof_id.clone(),
-                valid: false,
-                verified_at: chrono::Utc::now(),
-                details: vec![format!("Verification error: {}", e)],
-                verification_time_us: 0,
-            }))
-        }
-    }
+    let resp = crate::service::proof::verify_proof(&state, VerifyProofByIdRequest { proof_id })
+        .await?;
+    Ok(Json(resp))
 }
 
 /// Batch verify multiple proofs
@@ -326,6 +309,18 @@ impl From<StoredProof> for ProofResponse {
             size_bytes,
         }
     }
+}
+
+/// Request to verify a stored proof by its ID.
+///
+/// Tool/handler INPUT: the path parameter of `GET /api/v1/proofs/:id/verify`
+/// modeled as a struct so it can be shared with the MCP `aingle_verify_proof`
+/// tool.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct VerifyProofByIdRequest {
+    /// Identifier of the stored proof to verify.
+    pub proof_id: ProofId,
 }
 
 #[derive(Debug, Serialize)]
