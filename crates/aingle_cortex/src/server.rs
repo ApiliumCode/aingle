@@ -119,11 +119,6 @@ impl CortexServer {
         Self { config, state }
     }
 
-    /// Returns a reference to the server configuration.
-    pub fn config(&self) -> &CortexConfig {
-        &self.config
-    }
-
     /// Returns a reference to the shared `AppState`.
     pub fn state(&self) -> &AppState {
         &self.state
@@ -132,6 +127,11 @@ impl CortexServer {
     /// Returns a mutable reference to the shared `AppState`.
     pub fn state_mut(&mut self) -> &mut AppState {
         &mut self.state
+    }
+
+    /// Returns a reference to the server configuration.
+    pub fn config(&self) -> &CortexConfig {
+        &self.config
     }
 
     /// Builds the `axum` router, combining all API routes and middleware.
