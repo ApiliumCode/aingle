@@ -261,7 +261,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::error!("Failed to open DAG key file {}: {e}", key_path.display());
+                                    tracing::error!(
+                                        "Failed to open DAG key file {}: {e}",
+                                        key_path.display()
+                                    );
                                 }
                             }
                         }
@@ -306,8 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let flush_dir = snapshot_dir.clone();
         let interval_secs = flush_interval_secs;
         tokio::spawn(async move {
-            let mut interval =
-                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
             interval.tick().await; // skip immediate tick
             loop {
                 interval.tick().await;
@@ -318,10 +320,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         });
-        tracing::info!(
-            interval_secs = interval_secs,
-            "Periodic auto-flush enabled"
-        );
+        tracing::info!(interval_secs = interval_secs, "Periodic auto-flush enabled");
     }
 
     // Keep a reference to the state for shutdown flush
@@ -376,12 +375,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "cluster")]
         if let Some(ref raft) = state_for_shutdown.raft {
             tracing::info!("Shutting down Raft...");
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                raft.shutdown(),
-            )
-            .await
-            {
+            match tokio::time::timeout(std::time::Duration::from_secs(10), raft.shutdown()).await {
                 Ok(Ok(())) => tracing::info!("Raft shut down gracefully"),
                 Ok(Err(e)) => tracing::error!("Raft shutdown error: {e}"),
                 Err(_) => tracing::error!("Raft shutdown timed out after 10s"),
@@ -414,7 +408,9 @@ fn print_help() {
     println!("    -h, --host <HOST>    Host to bind to (default: 127.0.0.1)");
     println!("    -p, --port <PORT>    Port to listen on (default: 19090)");
     println!("    --public             Bind to all interfaces (0.0.0.0)");
-    println!("    --db <PATH>          Path to graph database (default: ~/.aingle/cortex/graph.sled)");
+    println!(
+        "    --db <PATH>          Path to graph database (default: ~/.aingle/cortex/graph.sled)"
+    );
     println!("    --memory             Use volatile in-memory storage (no persistence)");
     println!("    --flush-interval <S> Periodic flush interval in seconds (default: 300, 0=off)");
     println!("    --mcp                Serve MCP over stdio (requires --features mcp)");
@@ -433,7 +429,9 @@ fn print_help() {
     println!("    --cluster-node-id <ID>          Unique node ID (u64, required)");
     println!("    --cluster-peers <ADDRS>         Comma-separated peer REST addresses");
     println!("    --cluster-wal-dir <DIR>         WAL directory (default: wal/)");
-    println!("    --cluster-secret <SECRET>       Shared secret for internal RPC auth (min 16 bytes)");
+    println!(
+        "    --cluster-secret <SECRET>       Shared secret for internal RPC auth (min 16 bytes)"
+    );
     println!("    --cluster-tls                   Enable TLS for inter-node communication");
     println!("    --cluster-tls-cert <PATH>       TLS certificate PEM file");
     println!("    --cluster-tls-key <PATH>        TLS private key PEM file");

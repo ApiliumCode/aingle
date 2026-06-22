@@ -148,7 +148,11 @@ pub async fn list_predicates(
     let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
     let mut predicates: Vec<String> = triples
         .into_iter()
-        .filter(|t| ns_filter.as_ref().map_or(true, |ns| is_in_namespace(&t.subject.to_string(), ns)))
+        .filter(|t| {
+            ns_filter
+                .as_ref()
+                .map_or(true, |ns| is_in_namespace(&t.subject.to_string(), ns))
+        })
         .map(|t| t.predicate.to_string())
         .collect();
     predicates.sort();

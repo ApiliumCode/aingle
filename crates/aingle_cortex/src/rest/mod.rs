@@ -35,8 +35,6 @@ pub mod audit;
 pub mod cluster;
 #[cfg(feature = "cluster")]
 pub(crate) mod cluster_utils;
-#[cfg(feature = "cluster")]
-pub mod raft_rpc;
 #[cfg(feature = "dag")]
 pub mod dag;
 mod memory;
@@ -46,6 +44,8 @@ mod p2p;
 mod proof;
 mod proof_api;
 mod query;
+#[cfg(feature = "cluster")]
+pub mod raft_rpc;
 mod reputation;
 mod skill_verification;
 mod stats;
@@ -81,10 +81,7 @@ pub fn router() -> Router<AppState> {
         // Triple CRUD
         .route("/api/v1/triples", post(triples::create_triple))
         .route("/api/v1/triples", get(triples::list_triples))
-        .route(
-            "/api/v1/triples/batch",
-            post(triples::batch_insert_triples),
-        )
+        .route("/api/v1/triples/batch", post(triples::batch_insert_triples))
         .route("/api/v1/triples/{id}", get(triples::get_triple))
         .route("/api/v1/triples/{id}", delete(triples::delete_triple))
         // Query endpoints
