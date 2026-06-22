@@ -45,6 +45,8 @@ pub struct CortexConfig {
     /// - `Some(path)` — persist to the given directory.
     /// - `None` — persist to the default `~/.aingle/cortex/graph.sled`.
     pub db_path: Option<String>,
+    /// If `true`, serve MCP over stdio instead of binding a TCP listener.
+    pub mcp_mode: bool,
 }
 
 impl Default for CortexConfig {
@@ -62,6 +64,7 @@ impl Default for CortexConfig {
             max_body_size: 1024 * 1024, // 1MB
             flush_interval_secs: 300,
             db_path: None,
+            mcp_mode: false,
         }
     }
 }
@@ -114,6 +117,11 @@ impl CortexServer {
     /// Creates a new `CortexServer` with a given configuration and a pre-existing `AppState`.
     pub fn with_state(config: CortexConfig, state: AppState) -> Self {
         Self { config, state }
+    }
+
+    /// Returns a reference to the server configuration.
+    pub fn config(&self) -> &CortexConfig {
+        &self.config
     }
 
     /// Returns a reference to the shared `AppState`.

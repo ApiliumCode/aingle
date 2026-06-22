@@ -6,17 +6,27 @@
 //! REST/GraphQL/SPARQL interface for AIngle semantic graphs.
 
 use aingle_cortex::{CortexConfig, CortexServer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // In MCP mode, stdout is reserved for the JSON-RPC stream, so all logging
+    // must be redirected to stderr. Detect the flag before subscriber init.
+    let mcp_mode = std::env::args().any(|a| a == "--mcp");
+
     // Initialize logging
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "aingle_cortex=info,tower_http=debug".into());
+    let fmt_layer = if mcp_mode {
+        tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stderr)
+            .boxed()
+    } else {
+        tracing_subscriber::fmt::layer().boxed()
+    };
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "aingle_cortex=info,tower_http=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
+        .with(fmt_layer)
         .init();
 
     // Parse command line arguments
@@ -60,6 +70,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--memory" => {
                 config.db_path = Some(":memory:".to_string());
+            }
+            "--mcp" => {
+                config.mcp_mode = true;
             }
             "--flush-interval" => {
                 if i + 1 < args.len() {
@@ -271,6 +284,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("Semantic DAG v0.6.0 enabled");
     }
 
+    // MCP mode: serve over stdio instead of binding a TCP listener.
+    #[cfg(feature = "mcp")]
+    if server.config().mcp_mode {
+        let state = server.state().clone();
+        aingle_cortex::mcp::serve_stdio(state).await?;
+        return Ok(());
+    }
+
     // Spawn periodic flush task if enabled
     if flush_interval_secs > 0 {
         let flush_state = server.state().clone();
@@ -388,6 +409,7 @@ fn print_help() {
     println!("    --db <PATH>          Path to graph database (default: ~/.aingle/cortex/graph.sled)");
     println!("    --memory             Use volatile in-memory storage (no persistence)");
     println!("    --flush-interval <S> Periodic flush interval in seconds (default: 300, 0=off)");
+    println!("    --mcp                Serve MCP over stdio (requires --features mcp)");
     println!("    -V, --version        Print version and exit");
     println!("    --help               Print this help message");
     println!();
