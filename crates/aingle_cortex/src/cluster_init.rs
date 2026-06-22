@@ -77,8 +77,10 @@ impl ClusterConfig {
                 }
                 "--cluster-peers" => {
                     if i + 1 < args.len() {
-                        cfg.peers =
-                            args[i + 1].split(',').map(|s| s.trim().to_string()).collect();
+                        cfg.peers = args[i + 1]
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .collect();
                         i += 1;
                     }
                 }
@@ -353,6 +355,134 @@ pub fn build_tls_server_config(
     Ok(config)
 }
 
+/// Ensure the Semantic DAG is enabled and ready for *signed* writes.
+///
+/// Enables the DAG on the graph (persistent when `db_path` is a real path,
+/// in-memory otherwise), initializes genesis, sets the DAG author from the
+/// cluster node id when present, and loads/generates the Ed25519 signing key.
+///
+/// This lives in the library (not only in `main.rs`) so that library consumers
+/// and the cluster integration tests — which call [`init_cluster`] directly,
+/// bypassing `main()` — get a fully-initialized, signable DAG. Without it,
+/// cluster DAG writes are emitted unsigned and rejected with
+/// "DagAction rejected: missing Ed25519 signature".
+#[cfg(feature = "dag")]
+pub async fn ensure_dag_ready(state: &mut crate::state::AppState, db_path: Option<&str>) {
+    // Enable DAG on the GraphDB (persistent for Sled, in-memory otherwise).
+    {
+        let mut graph = state.graph.write().await;
+        match db_path {
+            Some(p) if p != ":memory:" => {
+                graph.enable_dag_persistent(p).unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to enable persistent DAG at '{}': {e}. \
+                         Refusing to start with volatile DAG — fix the storage path or permissions.",
+                        p
+                    );
+                });
+                tracing::info!("DAG persistence enabled (Sled)");
+            }
+            _ => {
+                tracing::warn!("DAG using in-memory backend — data will NOT survive restarts");
+                graph.enable_dag();
+            }
+        }
+        let triple_count = graph.count();
+        if let Some(dag_store) = graph.dag_store() {
+            match dag_store.init_or_migrate(triple_count) {
+                Ok(genesis_hash) => {
+                    tracing::info!(
+                        hash = %genesis_hash,
+                        triples = triple_count,
+                        "DAG initialized (genesis)"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("DAG initialization failed: {e}");
+                }
+            }
+        }
+    }
+
+    // Set DAG author from cluster node ID (no-op when not in cluster mode).
+    if let Some(node_id) = state.cluster_node_id {
+        state.dag_author = Some(aingle_graph::NodeId::named(&format!("node:{}", node_id)));
+    }
+
+    // Initialize the Ed25519 signing key for DAG actions.
+    // Persistent nodes reuse the `node.key` seed next to the DB; in-memory
+    // nodes generate an ephemeral key.
+    let key = match db_path {
+        Some(p) if p != ":memory:" => {
+            let key_path = std::path::Path::new(p)
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("node.key");
+            if key_path.exists() {
+                match std::fs::read(&key_path) {
+                    Ok(seed) if seed.len() == 32 => {
+                        let mut arr = [0u8; 32];
+                        arr.copy_from_slice(&seed);
+                        Some(aingle_graph::dag::DagSigningKey::from_seed(&arr))
+                    }
+                    _ => None,
+                }
+            } else {
+                let key = aingle_graph::dag::DagSigningKey::generate();
+                let seed = key.seed();
+                if let Some(parent) = key_path.parent() {
+                    std::fs::create_dir_all(parent).ok();
+                }
+                #[cfg(unix)]
+                {
+                    use std::io::Write;
+                    use std::os::unix::fs::OpenOptionsExt;
+                    match std::fs::OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .mode(0o600)
+                        .open(&key_path)
+                    {
+                        Ok(mut f) => {
+                            if let Err(e) = f.write_all(&seed).and_then(|_| f.sync_all()) {
+                                tracing::error!("Failed to persist DAG signing key: {e}");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to open DAG key file {}: {e}",
+                                key_path.display()
+                            );
+                        }
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    if let Err(e) = std::fs::write(&key_path, &seed) {
+                        tracing::error!("Failed to persist DAG signing key: {e}");
+                    }
+                }
+                Some(key)
+            }
+        }
+        _ => {
+            // In-memory mode: generate ephemeral key.
+            Some(aingle_graph::dag::DagSigningKey::generate())
+        }
+    };
+
+    if let Some(ref k) = key {
+        tracing::info!(
+            public_key = %k.public_key_hex(),
+            "DAG signing key loaded (Ed25519)"
+        );
+    }
+    state.dag_signing_key = key.map(std::sync::Arc::new);
+
+    tracing::info!("Semantic DAG v0.6.0 enabled");
+}
+
 /// Initialize the Raft cluster on a `CortexServer`.
 ///
 /// This sets up the WAL, state machine, network factory, and Raft instance.
@@ -401,10 +531,7 @@ pub async fn init_cluster(
         )
         .await;
 
-    let rpc_sender = std::sync::Arc::new(HttpRaftRpcSender::new(
-        config.secret.clone(),
-        config.tls,
-    ));
+    let rpc_sender = std::sync::Arc::new(HttpRaftRpcSender::new(config.secret.clone(), config.tls));
     let network = aingle_raft::network::CortexNetworkFactory::new(resolver, rpc_sender);
 
     let raft_config = openraft::Config {
@@ -525,8 +652,7 @@ pub async fn init_cluster(
                     break;
                 }
                 let base = std::time::Duration::from_secs(2u64.pow(attempt.min(5)));
-                let jitter =
-                    std::time::Duration::from_millis(rand::random::<u64>() % 1000);
+                let jitter = std::time::Duration::from_millis(rand::random::<u64>() % 1000);
                 let backoff = base + jitter;
                 tracing::warn!(attempt, "Join failed, retrying in {:?}", backoff);
                 tokio::time::sleep(backoff).await;
@@ -536,18 +662,25 @@ pub async fn init_cluster(
 
     // Set up TLS server config if cluster TLS is enabled
     if config.tls {
-        let tls_config = build_tls_server_config(
-            config.tls_cert.as_deref(),
-            config.tls_key.as_deref(),
-        )?;
-        server.state_mut().tls_server_config =
-            Some(std::sync::Arc::new(tls_config));
+        let tls_config =
+            build_tls_server_config(config.tls_cert.as_deref(), config.tls_key.as_deref())?;
+        server.state_mut().tls_server_config = Some(std::sync::Arc::new(tls_config));
         tracing::info!("Cluster TLS enabled for inter-node communication");
     }
 
     server.state_mut().raft = Some(raft);
     server.state_mut().cluster_node_id = Some(node_id);
     tracing::info!(node_id, "Raft consensus initialized");
+
+    // Enable + sign the DAG on this node. The binary's `main()` does this for
+    // standalone mode; cluster nodes (including library/test callers that reach
+    // here without going through `main()`) must do it too, otherwise DAG writes
+    // are unsigned and rejected by the Raft state machine.
+    #[cfg(feature = "dag")]
+    {
+        let db_path = server.config().db_path.clone();
+        ensure_dag_ready(server.state_mut(), db_path.as_deref()).await;
+    }
 
     Ok(())
 }

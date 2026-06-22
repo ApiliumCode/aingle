@@ -172,7 +172,10 @@ impl DagStore {
                     affected_idx.entry(triple_id).or_default().push(hash_bytes);
                 }
                 for subject_hash in extract_subject_hashes(&action.payload) {
-                    subject_idx.entry(subject_hash).or_default().push(hash_bytes);
+                    subject_idx
+                        .entry(subject_hash)
+                        .or_default()
+                        .push(hash_bytes);
                 }
                 action_count += 1;
             } else {
@@ -259,10 +262,9 @@ impl DagStore {
 
         // Update affected triple index
         {
-            let mut idx = self
-                .affected_index
-                .write()
-                .map_err(|_| crate::Error::Storage("DagStore affected index lock poisoned".into()))?;
+            let mut idx = self.affected_index.write().map_err(|_| {
+                crate::Error::Storage("DagStore affected index lock poisoned".into())
+            })?;
             for triple_id in extract_affected_triple_ids(&action.payload) {
                 idx.entry(triple_id).or_default().push(hash.0);
             }
@@ -270,10 +272,9 @@ impl DagStore {
 
         // Update subject index
         {
-            let mut idx = self
-                .subject_index
-                .write()
-                .map_err(|_| crate::Error::Storage("DagStore subject index lock poisoned".into()))?;
+            let mut idx = self.subject_index.write().map_err(|_| {
+                crate::Error::Storage("DagStore subject index lock poisoned".into())
+            })?;
             for subject_hash in extract_subject_hashes(&action.payload) {
                 idx.entry(subject_hash).or_default().push(hash.0);
             }
@@ -461,12 +462,21 @@ impl DagStore {
             return Ok(tips.into_iter().next().unwrap_or(DagActionHash([0; 32])));
         }
 
-        // Create genesis action
+        // Create genesis action.
+        //
+        // The genesis is intentionally DETERMINISTIC: fixed author, seq, payload
+        // and a fixed (epoch) timestamp. This guarantees that every fresh node
+        // computes the *same* genesis hash, which is required for cluster
+        // replication — a follower must be able to validate that a replicated
+        // action's parent (the leader's genesis) exists in its own DAG. A
+        // wall-clock `now()` timestamp here would make each node's genesis hash
+        // diverge, so cross-node parent validation in `put` would fail.
         let genesis = DagAction {
             parents: vec![],
             author: NodeId::named("aingle:system"),
             seq: 0,
-            timestamp: chrono::Utc::now(),
+            timestamp: chrono::DateTime::from_timestamp(0, 0)
+                .expect("unix epoch is a valid timestamp"),
             payload: DagPayload::Genesis {
                 triple_count,
                 description: "Migration from v0.5.0".into(),
@@ -531,10 +541,9 @@ impl DagStore {
 
         // Update affected triple index
         {
-            let mut idx = self
-                .affected_index
-                .write()
-                .map_err(|_| crate::Error::Storage("DagStore affected index lock poisoned".into()))?;
+            let mut idx = self.affected_index.write().map_err(|_| {
+                crate::Error::Storage("DagStore affected index lock poisoned".into())
+            })?;
             for triple_id in extract_affected_triple_ids(&action.payload) {
                 idx.entry(triple_id).or_default().push(hash.0);
             }
@@ -542,10 +551,9 @@ impl DagStore {
 
         // Update subject index
         {
-            let mut idx = self
-                .subject_index
-                .write()
-                .map_err(|_| crate::Error::Storage("DagStore subject index lock poisoned".into()))?;
+            let mut idx = self.subject_index.write().map_err(|_| {
+                crate::Error::Storage("DagStore subject index lock poisoned".into())
+            })?;
             for subject_hash in extract_subject_hashes(&action.payload) {
                 idx.entry(subject_hash).or_default().push(hash.0);
             }
@@ -568,10 +576,7 @@ impl DagStore {
     /// Given the remote's tips, finds all actions in our DAG that are
     /// ancestors of our tips but NOT ancestors of the remote's tips.
     /// Returns them in topological order (roots first).
-    pub fn compute_missing(
-        &self,
-        remote_tips: &[DagActionHash],
-    ) -> crate::Result<Vec<DagAction>> {
+    pub fn compute_missing(&self, remote_tips: &[DagActionHash]) -> crate::Result<Vec<DagAction>> {
         // Our full ancestor set (from our tips)
         let our_tips = self.tips()?;
         let mut our_ancestors: HashSet<[u8; 32]> = HashSet::new();
@@ -887,8 +892,7 @@ impl DagStore {
 
     /// Collect action hashes older than `seconds` ago (excluding tips).
     fn collect_older_than(&self, seconds: u64) -> crate::Result<HashSet<[u8; 32]>> {
-        let cutoff = chrono::Utc::now()
-            - chrono::Duration::seconds(seconds as i64);
+        let cutoff = chrono::Utc::now() - chrono::Duration::seconds(seconds as i64);
         let entries = self.backend.scan_prefix(ACTION_PREFIX)?;
         let tips = self
             .tips
@@ -1199,7 +1203,10 @@ mod tests {
         assert!(genesis.is_genesis());
         assert!(matches!(
             genesis.payload,
-            DagPayload::Genesis { triple_count: 100, .. }
+            DagPayload::Genesis {
+                triple_count: 100,
+                ..
+            }
         ));
 
         // Second call returns existing tip
@@ -1243,7 +1250,7 @@ mod tests {
         // CRITICAL: the triple ID computed from a DagPayload must match
         // the TripleId::from_triple() in the graph's triple store.
         // If these diverge, history lookups by triple ID silently fail.
-        use crate::{Triple, TripleId, Predicate, Value};
+        use crate::{Predicate, Triple, TripleId, Value};
 
         let subject = "user:alice";
         let predicate = "knows";
@@ -1274,7 +1281,7 @@ mod tests {
     fn test_history_matches_real_triple_id() {
         // End-to-end: insert via DagStore, then look up history using
         // the same triple ID that GraphDB.insert() would produce.
-        use crate::{Triple, TripleId, Predicate, Value};
+        use crate::{Predicate, Triple, TripleId, Value};
 
         let store = DagStore::new();
         let action = make_action(1, vec![]);
@@ -1300,7 +1307,11 @@ mod tests {
     // Pruning tests
     // =======================================================================
 
-    fn make_action_at(seq: u64, parents: Vec<DagActionHash>, ts: chrono::DateTime<Utc>) -> DagAction {
+    fn make_action_at(
+        seq: u64,
+        parents: Vec<DagActionHash>,
+        ts: chrono::DateTime<Utc>,
+    ) -> DagAction {
         DagAction {
             parents,
             author: NodeId::named("node:1"),
@@ -1451,7 +1462,10 @@ mod tests {
         assert!(result.checkpoint_hash.is_some());
 
         // Checkpoint action was created
-        let cp = store.get(&result.checkpoint_hash.unwrap()).unwrap().unwrap();
+        let cp = store
+            .get(&result.checkpoint_hash.unwrap())
+            .unwrap()
+            .unwrap();
         assert!(matches!(cp.payload, DagPayload::Compact { .. }));
         // +1 for the checkpoint
         assert_eq!(store.action_count(), 2); // 1 retained + 1 checkpoint
@@ -1694,7 +1708,10 @@ mod tests {
             assert!(genesis.is_genesis());
             assert!(matches!(
                 genesis.payload,
-                DagPayload::Genesis { triple_count: 42, .. }
+                DagPayload::Genesis {
+                    triple_count: 42,
+                    ..
+                }
             ));
         }
     }
