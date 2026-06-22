@@ -5,3 +5,4 @@
 
 pub mod query;
 pub mod stats;
+pub mod triples;

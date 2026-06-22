@@ -99,6 +99,7 @@ impl From<Triple> for TripleDto {
 }
 
 /// Request to create a triple
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Deserialize)]
 pub struct CreateTripleRequest {
     pub subject: String,
@@ -152,8 +153,6 @@ pub async fn create_triple(
             )));
         }
     }
-
-    let object: Value = req.object.clone().into();
 
     // DAG + Cluster mode: create DagAction and route through Raft
     #[cfg(feature = "dag")]
@@ -328,97 +327,41 @@ pub async fn create_triple(
         return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
     }
 
-    // Non-cluster mode: direct write
-    // Create the triple
-    let triple = Triple::new(
-        NodeId::named(&req.subject),
-        Predicate::named(&req.predicate),
-        object,
+    // Non-cluster mode: direct write.
+    // Delegate the shared insert + audit + event side-effects to the service
+    // layer; the cluster-only WAL replication below remains a transport concern.
+    let namespace = ns_ext
+        .as_ref()
+        .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
+
+    // Capture data needed for the legacy WAL append before the request is moved.
+    #[cfg(feature = "cluster")]
+    let wal_payload = (
+        req.subject.clone(),
+        req.predicate.clone(),
+        serde_json::to_value(&req.object).unwrap_or_default(),
     );
 
-    // Add triple to graph (and record DAG action if enabled)
-    let triple_id = {
-        let graph = state.graph.read().await;
-        let id = graph.insert(triple.clone())?;
+    let dto = crate::service::triples::create_triple(&state, req, namespace).await?;
 
-        // Record in DAG if enabled
-        #[cfg(feature = "dag")]
-        if let Some(dag_store) = graph.dag_store() {
-            let dag_author = state
-                .dag_author
-                .clone()
-                .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
-            let dag_seq = state
-                .dag_seq_counter
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let parents = dag_store.tips().unwrap_or_default();
-
-            let mut action = aingle_graph::dag::DagAction {
-                parents,
-                author: dag_author,
-                seq: dag_seq,
-                timestamp: chrono::Utc::now(),
-                payload: aingle_graph::dag::DagPayload::TripleInsert {
-                    triples: vec![aingle_graph::dag::TripleInsertPayload {
-                        subject: req.subject.clone(),
-                        predicate: req.predicate.clone(),
-                        object: serde_json::to_value(&req.object).unwrap_or_default(),
-                    }],
-                },
-                signature: None,
-            };
-
-            if let Some(ref key) = state.dag_signing_key {
-                key.sign(&mut action);
-            }
-
-            dag_store.put(&action).map_err(|e| {
-                Error::Internal(format!(
-                    "DAG action failed for triple insert — data integrity at risk: {e}"
-                ))
-            })?;
-        }
-
-        id
-    };
-
-    // Append to WAL (cluster mode without Raft — legacy path)
+    // Append to WAL (cluster mode without Raft — legacy path).
     #[cfg(feature = "cluster")]
     if let Some(ref wal) = state.wal {
+        let triple_id = dto
+            .id
+            .as_deref()
+            .and_then(TripleId::from_hex)
+            .ok_or_else(|| Error::Internal("Created triple is missing its ID".into()))?;
+        let (subject, predicate, object) = wal_payload;
         wal.append(aingle_wal::WalEntryKind::TripleInsert {
-            subject: req.subject.clone(),
-            predicate: req.predicate.clone(),
-            object: serde_json::to_value(&req.object).unwrap_or_default(),
+            subject,
+            predicate,
+            object,
             triple_id: *triple_id.as_bytes(),
         }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
     }
 
-    // Record audit entry
-    {
-        let namespace = ns_ext
-            .as_ref()
-            .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
-        let mut audit = state.audit_log.write().await;
-        audit.record(AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
-            namespace,
-            action: "create".to_string(),
-            resource: format!("/api/v1/triples/{}", triple_id.to_hex()),
-            details: Some(format!("subject={}", req.subject)),
-            request_id: None,
-        });
-    }
-
-    // Broadcast event
-    state.broadcaster.broadcast(Event::TripleAdded {
-        hash: triple_id.to_hex(),
-        subject: req.subject,
-        predicate: req.predicate,
-        object: serde_json::to_value(&req.object).unwrap_or_default(),
-    });
-
-    Ok((StatusCode::CREATED, Json(triple.into())))
+    Ok((StatusCode::CREATED, Json(dto)))
 }
 
 /// Parse X-Consistency header into a ConsistencyLevel.

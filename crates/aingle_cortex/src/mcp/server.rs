@@ -52,6 +52,26 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// Insert a triple (subject, predicate, object) into the graph.
+    ///
+    /// Mutation: not read-only. Idempotent because the graph keys triples by
+    /// content hash, so re-inserting the same triple is a no-op. Non-destructive
+    /// (it never removes or overwrites existing data).
+    #[tool(
+        description = "Insert a triple into the semantic graph. Mutates the graph.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn aingle_create_triple(
+        &self,
+        params: Parameters<crate::rest::CreateTripleRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let dto = crate::service::triples::create_triple(&self.state, req, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(dto)?]))
+    }
+
     /// Return graph statistics (triple count and related metrics).
     #[tool(description = "Return graph statistics: triple count and related metrics.")]
     async fn aingle_graph_stats(&self) -> Result<CallToolResult, ErrorData> {
