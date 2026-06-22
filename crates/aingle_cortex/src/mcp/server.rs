@@ -104,6 +104,89 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(dto)?]))
     }
 
+    /// Atomically bulk-insert triples into the graph.
+    ///
+    /// Mutation: not read-only. Non-destructive (only adds rows; never removes or
+    /// overwrites). Idempotent: batch insert silently skips triples whose content
+    /// hash already exists (see `GraphStore::insert_batch`), so retrying the same
+    /// batch converges to the same state without error.
+    #[tool(
+        description = "Atomically bulk-insert triples into the semantic graph. Duplicates are skipped silently.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
+    )]
+    async fn aingle_batch_insert(
+        &self,
+        params: Parameters<crate::rest::BatchInsertRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::triples::batch_insert(&self.state, req, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Fetch a single triple by its hex hash id.
+    #[tool(
+        description = "Fetch a single triple by its hex hash id.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_get_triple(
+        &self,
+        params: Parameters<crate::rest::TripleIdRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let dto = crate::service::triples::get_triple(&self.state, &req.id)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(dto)?]))
+    }
+
+    /// Delete a triple by its hex hash id.
+    ///
+    /// Mutation: not read-only. Destructive (removes data). Idempotent: deleting
+    /// an absent id is reported as not-found, but the resulting state (the triple
+    /// no longer present) is the same on retry.
+    #[tool(
+        description = "Delete a triple from the semantic graph by its hex hash id.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
+    )]
+    async fn aingle_delete_triple(
+        &self,
+        params: Parameters<crate::rest::TripleIdRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        crate::service::triples::delete_triple(&self.state, &req.id, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(
+            serde_json::json!({ "deleted": true, "id": req.id }),
+        )?]))
+    }
+
+    /// List triples with optional subject/predicate filters and pagination.
+    #[tool(
+        description = "List triples with optional subject/predicate filters and pagination.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_list_triples(
+        &self,
+        params: Parameters<crate::rest::ListTriplesQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::triples::list_triples(&self.state, req, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// Return graph statistics (triple count and related metrics).
     #[tool(
         description = "Return graph statistics: triple count and related metrics.",

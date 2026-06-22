@@ -14,7 +14,7 @@ use crate::error::{Error, Result};
 use crate::middleware::{is_in_namespace, RequestNamespace};
 use crate::rest::audit::AuditEntry;
 use crate::state::{AppState, Event};
-use aingle_graph::{NodeId, Predicate, Triple, TripleId, TriplePattern, Value};
+use aingle_graph::{NodeId, Triple, TripleId, Value};
 
 #[cfg(feature = "cluster")]
 use axum::http::HeaderMap;
@@ -107,7 +107,19 @@ pub struct CreateTripleRequest {
     pub object: ValueDto,
 }
 
+/// Request identifying a single triple by its hex hash id.
+///
+/// Used as the MCP input for the get/delete triple tools. (REST extracts the id
+/// from the path, so this struct is MCP-only.)
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[derive(Debug, Deserialize)]
+pub struct TripleIdRequest {
+    /// The triple's hex hash id.
+    pub id: String,
+}
+
 /// Query parameters for listing triples
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Deserialize)]
 pub struct ListTriplesQuery {
     /// Filter by subject
@@ -404,15 +416,8 @@ pub async fn get_triple(
         }
     }
 
-    let triple_id = TripleId::from_hex(&id)
-        .ok_or_else(|| Error::InvalidInput(format!("Invalid triple ID: {}", id)))?;
-
-    let graph = state.graph.read().await;
-    let triple = graph
-        .get(&triple_id)?
-        .ok_or_else(|| Error::NotFound(format!("Triple {} not found", id)))?;
-
-    Ok(Json(triple.into()))
+    let dto = crate::service::triples::get_triple(&state, &id).await?;
+    Ok(Json(dto))
 }
 
 /// Delete a triple
@@ -538,94 +543,28 @@ pub async fn delete_triple(
         ));
     }
 
-    // Non-cluster mode: direct delete
-    let deleted = {
-        let graph = state.graph.read().await;
+    // Non-cluster mode: direct delete.
+    // Delegate the shared delete + DAG action + audit + event side-effects to the
+    // service layer; the cluster-only WAL replication below remains a transport
+    // concern.
+    let namespace = ns_ext
+        .as_ref()
+        .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
 
-        // Look up subject before deleting (for DAG indexing)
-        #[cfg(feature = "dag")]
-        let subject_for_dag = graph
-            .get(&triple_id)
-            .ok()
-            .flatten()
-            .map(|t| t.subject.to_string());
+    crate::service::triples::delete_triple(&state, &id, namespace).await?;
 
-        let deleted = graph.delete(&triple_id)?;
-
-        // Record in DAG if enabled and deletion succeeded
-        #[cfg(feature = "dag")]
-        if deleted {
-            if let Some(dag_store) = graph.dag_store() {
-                let dag_author = state
-                    .dag_author
-                    .clone()
-                    .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
-                let dag_seq = state
-                    .dag_seq_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let parents = dag_store.tips().unwrap_or_default();
-
-                let mut action = aingle_graph::dag::DagAction {
-                    parents,
-                    author: dag_author,
-                    seq: dag_seq,
-                    timestamp: chrono::Utc::now(),
-                    payload: aingle_graph::dag::DagPayload::TripleDelete {
-                        triple_ids: vec![*triple_id.as_bytes()],
-                        subjects: subject_for_dag.into_iter().collect(),
-                    },
-                    signature: None,
-                };
-
-                if let Some(ref key) = state.dag_signing_key {
-                    key.sign(&mut action);
-                }
-
-                dag_store.put(&action).map_err(|e| {
-                    Error::Internal(format!(
-                        "DAG action failed for triple delete — data integrity at risk: {e}"
-                    ))
-                })?;
-            }
-        }
-
-        deleted
-    };
-
-    if deleted {
-        // Append to WAL (legacy cluster path)
-        #[cfg(feature = "cluster")]
-        if let Some(ref wal) = state.wal {
-            wal.append(aingle_wal::WalEntryKind::TripleDelete {
-                triple_id: *triple_id.as_bytes(),
-            })
-            .map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
-        }
-
-        // Record audit entry
-        {
-            let namespace = ns_ext
-                .as_ref()
-                .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
-            let mut audit = state.audit_log.write().await;
-            audit.record(AuditEntry {
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
-                namespace,
-                action: "delete".to_string(),
-                resource: format!("/api/v1/triples/{}", id),
-                details: None,
-                request_id: None,
-            });
-        }
-
-        state
-            .broadcaster
-            .broadcast(Event::TripleDeleted { hash: id });
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(Error::NotFound(format!("Triple {} not found", id)))
+    // Append to WAL (legacy cluster path). The service call above already
+    // performed the graph delete and side-effects; a WAL failure here happens
+    // after those and cannot roll them back.
+    #[cfg(feature = "cluster")]
+    if let Some(ref wal) = state.wal {
+        wal.append(aingle_wal::WalEntryKind::TripleDelete {
+            triple_id: *triple_id.as_bytes(),
+        })
+        .map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
     }
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// List triples with filters
@@ -656,46 +595,9 @@ pub async fn list_triples(
         }
     }
 
-    let graph = state.graph.read().await;
-
-    // Build pattern based on provided filters
-    let mut pattern = TriplePattern::any();
-
-    if let Some(ref subject) = query.subject {
-        pattern = pattern.with_subject(NodeId::named(subject));
-    }
-    if let Some(ref predicate) = query.predicate {
-        pattern = pattern.with_predicate(Predicate::named(predicate));
-    }
-
-    let triples = graph.find(pattern)?;
-
-    // Filter by namespace if present
-    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
-    let triples: Vec<Triple> = if let Some(ref ns) = ns_filter {
-        triples
-            .into_iter()
-            .filter(|t| is_in_namespace(&t.subject.to_string(), ns))
-            .collect()
-    } else {
-        triples
-    };
-
-    // Apply pagination
-    let total = triples.len();
-    let triples: Vec<TripleDto> = triples
-        .into_iter()
-        .skip(query.offset)
-        .take(query.limit)
-        .map(|t| t.into())
-        .collect();
-
-    Ok(Json(ListTriplesResponse {
-        triples,
-        total,
-        limit: query.limit,
-        offset: query.offset,
-    }))
+    let namespace = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+    let resp = crate::service::triples::list_triples(&state, query, namespace).await?;
+    Ok(Json(resp))
 }
 
 /// Response for listing triples
@@ -708,6 +610,7 @@ pub struct ListTriplesResponse {
 }
 
 /// Request to batch-insert multiple triples
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Deserialize)]
 pub struct BatchInsertRequest {
     pub triples: Vec<CreateTripleRequest>,
@@ -729,34 +632,12 @@ pub async fn batch_insert_triples(
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(req): Json<BatchInsertRequest>,
 ) -> Result<(StatusCode, Json<BatchInsertResponse>)> {
-    if req.triples.is_empty() {
-        return Ok((
-            StatusCode::OK,
-            Json(BatchInsertResponse {
-                inserted: vec![],
-                total: 0,
-                duplicates: 0,
-            }),
-        ));
-    }
+    let empty = req.triples.is_empty();
 
-    // Validate all inputs first
-    for (i, t) in req.triples.iter().enumerate() {
-        if t.subject.is_empty() {
-            return Err(Error::InvalidInput(format!(
-                "Triple [{}]: subject cannot be empty",
-                i
-            )));
-        }
-        if t.predicate.is_empty() {
-            return Err(Error::InvalidInput(format!(
-                "Triple [{}]: predicate cannot be empty",
-                i
-            )));
-        }
-        // Enforce namespace scoping
-        if let Some(axum::Extension(RequestNamespace(Some(ref ns)))) = ns_ext {
-            if !is_in_namespace(&t.subject, ns) {
+    // Enforce namespace scoping (transport concern — stays in REST).
+    if let Some(axum::Extension(RequestNamespace(Some(ref ns)))) = ns_ext {
+        for (i, t) in req.triples.iter().enumerate() {
+            if !t.subject.is_empty() && !is_in_namespace(&t.subject, ns) {
                 return Err(Error::Forbidden(format!(
                     "Triple [{}]: subject \"{}\" is not in namespace \"{}\"",
                     i, t.subject, ns
@@ -765,90 +646,20 @@ pub async fn batch_insert_triples(
         }
     }
 
-    // Build Triple objects
-    let triples: Vec<Triple> = req
-        .triples
-        .iter()
-        .map(|t| {
-            let object: Value = t.object.clone().into();
-            Triple::new(
-                NodeId::named(&t.subject),
-                Predicate::named(&t.predicate),
-                object,
-            )
-        })
-        .collect();
+    let namespace = ns_ext
+        .as_ref()
+        .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
 
-    let count_before = {
-        let graph = state.graph.read().await;
-        graph.count()
+    // Delegate the shared validate + atomic insert + audit + event side-effects.
+    let resp = crate::service::triples::batch_insert(&state, req, namespace).await?;
+
+    // An empty batch is a no-op success (parity with the prior handler).
+    let status = if empty {
+        StatusCode::OK
+    } else {
+        StatusCode::CREATED
     };
-
-    // Atomic batch insert
-    let ids = {
-        let graph = state.graph.read().await;
-        graph.insert_batch(triples)?
-    };
-
-    let count_after = {
-        let graph = state.graph.read().await;
-        graph.count()
-    };
-
-    let actually_inserted = count_after - count_before;
-    let duplicates = ids.len() - actually_inserted;
-
-    // Build response DTOs
-    let inserted: Vec<TripleDto> = ids
-        .iter()
-        .zip(req.triples.iter())
-        .map(|(id, t)| TripleDto {
-            id: Some(id.to_hex()),
-            subject: format!("<{}>", t.subject),
-            predicate: format!("<{}>", t.predicate),
-            object: t.object.clone(),
-            created_at: Some(chrono::Utc::now().to_rfc3339()),
-        })
-        .collect();
-
-    // Record audit entry
-    {
-        let namespace = ns_ext
-            .as_ref()
-            .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
-        let mut audit = state.audit_log.write().await;
-        audit.record(AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            user_id: namespace.clone().unwrap_or_else(|| "anonymous".to_string()),
-            namespace,
-            action: "batch_create".to_string(),
-            resource: "/api/v1/triples/batch".to_string(),
-            details: Some(format!(
-                "inserted={}, duplicates={}",
-                actually_inserted, duplicates
-            )),
-            request_id: None,
-        });
-    }
-
-    // Broadcast events for new triples
-    for (id, t) in ids.iter().zip(req.triples.iter()) {
-        state.broadcaster.broadcast(Event::TripleAdded {
-            hash: id.to_hex(),
-            subject: t.subject.clone(),
-            predicate: t.predicate.clone(),
-            object: serde_json::to_value(&t.object).unwrap_or_default(),
-        });
-    }
-
-    Ok((
-        StatusCode::CREATED,
-        Json(BatchInsertResponse {
-            total: inserted.len(),
-            duplicates,
-            inserted,
-        }),
-    ))
+    Ok((status, Json(resp)))
 }
 
 /// Re-export shared Raft write error handler for this module.
