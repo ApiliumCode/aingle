@@ -66,6 +66,7 @@ pub struct ChainQuery {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct PruneRequest {
     /// "keep_all", "keep_since", "keep_last", or "keep_depth"
     pub policy: String,
@@ -181,21 +182,7 @@ fn default_limit() -> usize {
 
 /// GET /api/v1/dag/tips
 pub async fn get_dag_tips(State(state): State<AppState>) -> Result<Json<DagTipsResponse>> {
-    let graph = state.graph.read().await;
-    let dag_store = graph
-        .dag_store()
-        .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
-
-    let tips = dag_store
-        .tips()
-        .map_err(|e| Error::Internal(e.to_string()))?;
-    let tip_strings: Vec<String> = tips.iter().map(|h| h.to_hex()).collect();
-    let count = tip_strings.len();
-
-    Ok(Json(DagTipsResponse {
-        tips: tip_strings,
-        count,
-    }))
+    Ok(Json(crate::service::dag::tips(&state).await?))
 }
 
 /// GET /api/v1/dag/action/:hash
@@ -203,20 +190,7 @@ pub async fn get_dag_action(
     State(state): State<AppState>,
     Path(hash): Path<String>,
 ) -> Result<Json<DagActionDto>> {
-    let action_hash = aingle_graph::dag::DagActionHash::from_hex(&hash)
-        .ok_or_else(|| Error::InvalidInput(format!("Invalid DAG action hash: {}", hash)))?;
-
-    let graph = state.graph.read().await;
-    let dag_store = graph
-        .dag_store()
-        .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
-
-    let action = dag_store
-        .get(&action_hash)
-        .map_err(|e| Error::Internal(e.to_string()))?
-        .ok_or_else(|| Error::NotFound(format!("DAG action {} not found", hash)))?;
-
-    Ok(Json(action_to_dto(&action)))
+    Ok(Json(crate::service::dag::action(&state, &hash).await?))
 }
 
 /// GET /api/v1/dag/history?subject=X&triple_id=X&limit=N
@@ -259,36 +233,14 @@ pub async fn get_dag_chain(
     State(state): State<AppState>,
     Query(query): Query<ChainQuery>,
 ) -> Result<Json<Vec<DagActionDto>>> {
-    let author = aingle_graph::NodeId::named(&query.author);
-
-    let graph = state.graph.read().await;
-    let dag_store = graph
-        .dag_store()
-        .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
-
-    let actions = dag_store
-        .chain(&author, query.limit)
-        .map_err(|e| Error::Internal(e.to_string()))?;
-
-    Ok(Json(actions.iter().map(action_to_dto).collect()))
+    Ok(Json(
+        crate::service::dag::chain(&state, &query.author, query.limit).await?,
+    ))
 }
 
 /// GET /api/v1/dag/stats
 pub async fn get_dag_stats(State(state): State<AppState>) -> Result<Json<DagStatsResponse>> {
-    let graph = state.graph.read().await;
-    let dag_store = graph
-        .dag_store()
-        .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
-
-    let action_count = dag_store.action_count();
-    let tip_count = dag_store
-        .tip_count()
-        .map_err(|e| Error::Internal(e.to_string()))?;
-
-    Ok(Json(DagStatsResponse {
-        action_count,
-        tip_count,
-    }))
+    Ok(Json(crate::service::dag::stats(&state).await?))
 }
 
 /// POST /api/v1/dag/prune
@@ -296,24 +248,7 @@ pub async fn post_dag_prune(
     State(state): State<AppState>,
     Json(req): Json<PruneRequest>,
 ) -> Result<Json<PruneResponse>> {
-    let policy = match req.policy.as_str() {
-        "keep_all" => aingle_graph::dag::RetentionPolicy::KeepAll,
-        "keep_since" => aingle_graph::dag::RetentionPolicy::KeepSince { seconds: req.value },
-        "keep_last" => aingle_graph::dag::RetentionPolicy::KeepLast(req.value as usize),
-        "keep_depth" => aingle_graph::dag::RetentionPolicy::KeepDepth(req.value as usize),
-        other => return Err(Error::InvalidInput(format!("Unknown policy: {}", other))),
-    };
-
-    let graph = state.graph.read().await;
-    let result = graph
-        .dag_prune(&policy, req.create_checkpoint)
-        .map_err(|e| Error::Internal(e.to_string()))?;
-
-    Ok(Json(PruneResponse {
-        pruned_count: result.pruned_count,
-        retained_count: result.retained_count,
-        checkpoint_hash: result.checkpoint_hash.map(|h| h.to_hex()),
-    }))
+    Ok(Json(crate::service::dag::prune(&state, req).await?))
 }
 
 /// GET /api/v1/dag/export?format=dot|mermaid|json
