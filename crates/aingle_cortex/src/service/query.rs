@@ -83,4 +83,59 @@ mod tests {
         assert_eq!(resp.total, 0);
         assert!(resp.matches.is_empty());
     }
+
+    #[tokio::test]
+    async fn query_with_data_round_trips() {
+        use aingle_graph::Triple;
+
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+
+        // Insert a few triples sharing a predicate so a bound query matches.
+        {
+            let graph = state.graph.read().await;
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:alice"),
+                    Predicate::named("ex:knows"),
+                    Value::Node(NodeId::named("ex:bob")),
+                ))
+                .unwrap();
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:alice"),
+                    Predicate::named("ex:knows"),
+                    Value::Node(NodeId::named("ex:carol")),
+                ))
+                .unwrap();
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:alice"),
+                    Predicate::named("ex:name"),
+                    Value::String("Alice".into()),
+                ))
+                .unwrap();
+        }
+
+        // Bound predicate => the two `ex:knows` triples.
+        let req = PatternQueryRequest {
+            subject: None,
+            predicate: Some("ex:knows".to_string()),
+            object: None,
+            limit: 100,
+        };
+        let resp = query_pattern(&state, req, None).await.unwrap();
+        assert_eq!(resp.total, 2);
+        assert_eq!(resp.matches.len(), 2);
+
+        // Non-matching predicate => no results.
+        let req = PatternQueryRequest {
+            subject: None,
+            predicate: Some("ex:nonexistent".to_string()),
+            object: None,
+            limit: 100,
+        };
+        let resp = query_pattern(&state, req, None).await.unwrap();
+        assert_eq!(resp.total, 0);
+        assert!(resp.matches.is_empty());
+    }
 }
