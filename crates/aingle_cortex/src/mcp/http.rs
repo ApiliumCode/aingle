@@ -103,8 +103,8 @@ mod tests {
     fn bearer_check() {
         assert!(bearer_ok("secret", Some("Bearer secret")));
         assert!(!bearer_ok("secret", Some("Bearer wrong")));
-        assert!(!bearer_ok("secret", Some("secret")));      // missing prefix
-        assert!(!bearer_ok("secret", None));                // missing header
-        assert!(!bearer_ok("secret", Some("Bearer sec")));   // length mismatch
+        assert!(!bearer_ok("secret", Some("secret"))); // missing prefix
+        assert!(!bearer_ok("secret", None)); // missing header
+        assert!(!bearer_ok("secret", Some("Bearer sec"))); // length mismatch
     }
 }

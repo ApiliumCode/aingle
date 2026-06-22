@@ -175,7 +175,11 @@ impl CortexServer {
         let app = {
             let public_hosts = std::env::var("AINGLE_PUBLIC_HOST")
                 .ok()
-                .map(|s| s.split(',').map(|x| x.trim().to_string()).collect::<Vec<_>>())
+                .map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             if let Some(mcp_router) = crate::mcp::http::mcp_http_router(
                 self.state.clone(),

@@ -91,7 +91,10 @@ async fn mcp_http_auth_and_initialize() {
         status.is_success(),
         "expected 2xx, got {status}; body={body}"
     );
-    assert!(body.contains("serverInfo"), "body lacked serverInfo: {body}");
+    assert!(
+        body.contains("serverInfo"),
+        "body lacked serverInfo: {body}"
+    );
 
     h.abort();
 }
