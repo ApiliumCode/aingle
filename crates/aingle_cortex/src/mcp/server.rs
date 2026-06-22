@@ -26,6 +26,25 @@ fn default_hist_limit() -> usize {
     50
 }
 
+/// Parameters for the `aingle_dag_action` tool.
+#[cfg(feature = "dag")]
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct DagActionParams {
+    /// Hex-encoded DAG action hash to fetch.
+    pub hash: String,
+}
+
+/// Parameters for the `aingle_dag_chain` tool.
+#[cfg(feature = "dag")]
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct DagChainParams {
+    /// Author identity whose action chain to fetch.
+    pub author: String,
+    /// Max actions to return.
+    #[serde(default = "default_hist_limit")]
+    pub limit: usize,
+}
+
 /// MCP server exposing AIngle Córtex capabilities as tools.
 ///
 /// Wraps the shared [`AppState`] so tools can operate on the same graph,
@@ -279,6 +298,85 @@ impl AingleMcp {
             .await
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(h)?]))
+    }
+
+    /// Return the current DAG tip hashes and their count.
+    #[tool(
+        description = "Return the current DAG tip hashes (frontier) and their count.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_dag_tips(&self) -> Result<CallToolResult, ErrorData> {
+        let resp = crate::service::dag::tips(&self.state)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Fetch a single DAG action by its hex hash.
+    #[tool(
+        description = "Fetch a single DAG action by its hex hash.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_dag_action(
+        &self,
+        params: Parameters<DagActionParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::dag::action(&self.state, &p.hash)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Return an author's DAG action chain, newest first.
+    #[tool(
+        description = "Return an author's DAG action chain (newest first), up to limit.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_dag_chain(
+        &self,
+        params: Parameters<DagChainParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::dag::chain(&self.state, &p.author, p.limit)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Return DAG statistics: action count and tip count.
+    #[tool(
+        description = "Return DAG statistics: action count and tip count.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_dag_stats(&self) -> Result<CallToolResult, ErrorData> {
+        let resp = crate::service::dag::stats(&self.state)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Prune the DAG according to a retention policy.
+    ///
+    /// Mutation: not read-only. Destructive (removes actions). NOT idempotent:
+    /// a second call against an already-pruned DAG yields a different result.
+    #[tool(
+        description = "Prune the DAG per a retention policy (keep_all/keep_since/keep_last/keep_depth). Destructive.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false
+        )
+    )]
+    async fn aingle_dag_prune(
+        &self,
+        params: Parameters<crate::rest::dag::PruneRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::dag::prune(&self.state, req)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 }
 
