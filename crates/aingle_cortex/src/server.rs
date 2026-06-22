@@ -169,6 +169,27 @@ impl CortexServer {
         // Add the shared state to the router.
         let app = app.with_state(self.state.clone());
 
+        // Mount the MCP-over-HTTP endpoint at `/mcp` (self-contained sub-router).
+        // Only mounted when a bearer token or anonymous mode is configured.
+        #[cfg(feature = "mcp-http")]
+        let app = {
+            let public_hosts = std::env::var("AINGLE_PUBLIC_HOST")
+                .ok()
+                .map(|s| s.split(',').map(|x| x.trim().to_string()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            if let Some(mcp_router) = crate::mcp::http::mcp_http_router(
+                self.state.clone(),
+                self.config.mcp_http_token.clone(),
+                self.config.mcp_http_allow_anonymous,
+                public_hosts,
+            ) {
+                tracing::info!("MCP HTTP endpoint mounted at /mcp");
+                app.nest("/mcp", mcp_router)
+            } else {
+                app
+            }
+        };
+
         // Add middleware layers (note: layers are applied in reverse order of definition).
 
         // Rate limiting layer.
