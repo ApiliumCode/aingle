@@ -41,9 +41,19 @@ pub struct AingleMcp {
 impl AingleMcp {
     /// Creates a new MCP handler bound to the given shared application state.
     pub fn new(state: AppState) -> Self {
+        // Start from the core tool router. The dag-gated tools live in a
+        // separate `#[tool_router(router = dag_tool_router)]` block so that the
+        // macro never references them when the `dag` feature is off (keeping
+        // `mcp` compilable standalone). Merge them in only when `dag` is on.
+        #[allow(unused_mut)]
+        let mut router = Self::tool_router();
+        #[cfg(feature = "dag")]
+        {
+            router += Self::dag_tool_router();
+        }
         Self {
             state,
-            tool_router: Self::tool_router(),
+            tool_router: router,
         }
     }
 
@@ -55,7 +65,8 @@ impl AingleMcp {
 
     /// Query the semantic graph by triple pattern (any field omitted = wildcard).
     #[tool(
-        description = "Query the semantic graph by triple pattern. Omit a field to wildcard it."
+        description = "Query the semantic graph by triple pattern. Omit a field to wildcard it.",
+        annotations(read_only_hint = true)
     )]
     async fn aingle_query_pattern(
         &self,
@@ -94,7 +105,10 @@ impl AingleMcp {
     }
 
     /// Return graph statistics (triple count and related metrics).
-    #[tool(description = "Return graph statistics: triple count and related metrics.")]
+    #[tool(
+        description = "Return graph statistics: triple count and related metrics.",
+        annotations(read_only_hint = true)
+    )]
     async fn aingle_graph_stats(&self) -> Result<CallToolResult, ErrorData> {
         let resp = crate::service::stats::graph_stats(&self.state)
             .await
@@ -120,10 +134,19 @@ impl AingleMcp {
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
+}
 
+/// Dag-gated tools, kept in a separate router so the `#[tool_router]` macro on
+/// the core impl never references them when `dag` is off. The combined router
+/// is assembled in [`AingleMcp::new`].
+#[cfg(feature = "dag")]
+#[tool_router(router = dag_tool_router)]
+impl AingleMcp {
     /// Inspect the signed DAG provenance history of a subject (who changed what, newest first).
-    #[cfg(feature = "dag")]
-    #[tool(description = "Return the signed DAG provenance history of a subject (newest first).")]
+    #[tool(
+        description = "Return the signed DAG provenance history of a subject (newest first).",
+        annotations(read_only_hint = true)
+    )]
     async fn aingle_dag_history(
         &self,
         params: Parameters<DagHistoryParams>,
@@ -136,7 +159,7 @@ impl AingleMcp {
     }
 }
 
-#[tool_handler]
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for AingleMcp {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
