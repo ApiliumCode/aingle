@@ -4,3 +4,4 @@
 //! Business-logic layer shared by REST handlers and the MCP server.
 
 pub mod query;
+pub mod stats;
