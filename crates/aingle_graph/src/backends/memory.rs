@@ -92,6 +92,10 @@ impl StorageBackend for MemoryBackend {
             .map(|t| t.values().map(|v| v.len()).sum())
             .unwrap_or(0)
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[cfg(test)]

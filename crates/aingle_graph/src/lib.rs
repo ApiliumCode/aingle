@@ -337,8 +337,11 @@ impl GraphDB {
     #[cfg(all(feature = "dag", feature = "sled-backend"))]
     pub fn sled_with_dag(path: &str) -> Result<Self> {
         let backend = SledBackend::open(path)?;
+        // Open the DAG tree on the SAME Sled Db (shared, Arc-backed handle) to
+        // avoid a second `sled::open` on the same path which deadlocks on the
+        // file lock.
+        let dag_backend = dag::SledDagBackend::from_db(backend.db())?;
         let store = GraphStore::new(Box::new(backend))?;
-        let dag_backend = dag::SledDagBackend::open(path)?;
         Ok(Self {
             store,
             dag_store: Some(dag::DagStore::with_backend(Box::new(dag_backend))?),
@@ -357,12 +360,25 @@ impl GraphDB {
 
     /// Enable DAG with a persistent Sled backend.
     ///
-    /// The DAG tree is created inside the same Sled database at `path`,
-    /// sharing the instance with the triple store.
+    /// The DAG tree is created inside the triple store's existing Sled `Db`,
+    /// genuinely sharing the same database instance (the handle is cloned, which
+    /// is cheap because `sled::Db` is `Arc`-backed). This avoids a second
+    /// `sled::open` on the same path, which would deadlock on the file lock.
+    /// If the triple store is not Sled-backed, falls back to opening `path`.
     #[cfg(all(feature = "dag", feature = "sled-backend"))]
     pub fn enable_dag_persistent(&mut self, path: &str) -> Result<()> {
         if self.dag_store.is_none() {
-            let dag_backend = dag::SledDagBackend::open(path)?;
+            // Share the triple store's Sled Db so we do NOT open a second
+            // sled::Db at the same path (which deadlocks on the file lock).
+            let dag_backend = if let Some(sled_be) = self
+                .store
+                .backend_as_any()
+                .downcast_ref::<crate::backends::SledBackend>()
+            {
+                dag::SledDagBackend::from_db(sled_be.db())?
+            } else {
+                dag::SledDagBackend::open(path)?
+            };
             self.dag_store = Some(dag::DagStore::with_backend(Box::new(dag_backend))?);
         }
         Ok(())

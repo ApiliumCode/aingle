@@ -111,6 +111,10 @@ impl StorageBackend for RocksBackend {
             .map_err(|e| Error::Storage(format!("rocksdb flush error: {}", e)))?;
         Ok(())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[cfg(test)]

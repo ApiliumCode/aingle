@@ -249,6 +249,12 @@ impl GraphStore {
         self.backend.count()
     }
 
+    /// Access the underlying storage backend as `Any` for downcasting
+    /// (e.g. to reach the Sled `Db` for the shared persistent DAG).
+    pub fn backend_as_any(&self) -> &dyn std::any::Any {
+        self.backend.as_any()
+    }
+
     /// Flushes any buffered writes to the underlying storage backend.
     ///
     /// For persistent backends (e.g., Sled), this ensures all data is
