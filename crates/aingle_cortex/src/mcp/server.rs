@@ -352,6 +352,63 @@ impl AingleMcp {
         let resp = crate::service::skill::delete_sandbox(&self.state, &req.id).await;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
+
+    /// Compute an agent's assertion consistency score.
+    ///
+    /// Read-only: inspects the graph + logic engine; never mutates. An unknown
+    /// agent returns a well-formed default ({score:0.0, total:0, verified:0}),
+    /// not an error.
+    #[tool(
+        description = "Compute an agent's assertion consistency score (fraction of its assertions that pass PoL validation). Unknown agent => score 0.0.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_agent_consistency(
+        &self,
+        params: Parameters<crate::rest::AgentConsistencyRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp =
+            crate::service::reputation::agent_consistency(&self.state, &req.agent_id, None).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Batch-verify assertion proofs (subject+predicate references).
+    ///
+    /// Read-only: verification never mutates. Missing/unknown assertions report
+    /// `verified:false` per entry rather than erroring.
+    #[tool(
+        description = "Batch-verify assertion proofs by (subject, predicate). Returns a per-assertion verified flag; unknown assertions => verified:false (not an error).",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_verify_assertions_batch(
+        &self,
+        params: Parameters<crate::rest::BatchVerifyAssertionsRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp =
+            crate::service::reputation::batch_verify_assertions(&self.state, req, None).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Validate triple(s) against the PoL logic engine.
+    ///
+    /// Read-only: validation never mutates the graph. Returns per-triple
+    /// validity + messages and an overall `valid` flag; an invalid triple yields
+    /// `valid:false` (not a tool error).
+    #[tool(
+        description = "Validate triple(s) against the PoL logic engine. Returns {valid, results, proof_hash}; invalid triples yield valid:false (not an error). Does not mutate.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_validate(
+        &self,
+        params: Parameters<crate::rest::ValidateRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::validate::validate_triples(&self.state, req, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
 }
 
 /// Dag-gated tools, kept in a separate router so the `#[tool_router]` macro on
