@@ -10,10 +10,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::middleware::{is_in_namespace, RequestNamespace};
+use crate::middleware::RequestNamespace;
 use crate::rest::triples::{TripleDto, ValueDto};
 use crate::state::AppState;
-use aingle_graph::{NodeId, Predicate, TriplePattern};
 
 /// Pattern query request
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
@@ -70,6 +69,7 @@ pub async fn query_pattern(
 }
 
 /// Query parameters for listing subjects
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Deserialize)]
 pub struct ListSubjectsQuery {
     /// Filter by predicate
@@ -87,31 +87,14 @@ pub async fn list_subjects(
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Query(query): Query<ListSubjectsQuery>,
 ) -> Result<Json<ListSubjectsResponse>> {
-    let graph = state.graph.read().await;
-
-    let pattern = if let Some(ref predicate) = query.predicate {
-        TriplePattern::predicate(Predicate::named(predicate))
-    } else {
-        TriplePattern::any()
-    };
-
-    let triples = graph.find(pattern)?;
-    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
-    let mut subjects: Vec<String> = triples
-        .into_iter()
-        .map(|t| t.subject.to_string())
-        .filter(|s| ns_filter.as_ref().map_or(true, |ns| is_in_namespace(s, ns)))
-        .collect();
-    subjects.sort();
-    subjects.dedup();
-
-    let total = subjects.len();
-    let subjects: Vec<String> = subjects.into_iter().take(query.limit).collect();
-
-    Ok(Json(ListSubjectsResponse { subjects, total }))
+    let namespace = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+    Ok(Json(
+        crate::service::query::list_subjects(&state, query, namespace).await?,
+    ))
 }
 
 /// Response for listing subjects
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Serialize)]
 pub struct ListSubjectsResponse {
     pub subjects: Vec<String>,
@@ -119,6 +102,7 @@ pub struct ListSubjectsResponse {
 }
 
 /// Query parameters for listing predicates
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Deserialize)]
 pub struct ListPredicatesQuery {
     /// Filter by subject
@@ -136,35 +120,14 @@ pub async fn list_predicates(
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Query(query): Query<ListPredicatesQuery>,
 ) -> Result<Json<ListPredicatesResponse>> {
-    let graph = state.graph.read().await;
-
-    let pattern = if let Some(ref subject) = query.subject {
-        TriplePattern::subject(NodeId::named(subject))
-    } else {
-        TriplePattern::any()
-    };
-
-    let triples = graph.find(pattern)?;
-    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
-    let mut predicates: Vec<String> = triples
-        .into_iter()
-        .filter(|t| {
-            ns_filter
-                .as_ref()
-                .map_or(true, |ns| is_in_namespace(&t.subject.to_string(), ns))
-        })
-        .map(|t| t.predicate.to_string())
-        .collect();
-    predicates.sort();
-    predicates.dedup();
-
-    let total = predicates.len();
-    let predicates: Vec<String> = predicates.into_iter().take(query.limit).collect();
-
-    Ok(Json(ListPredicatesResponse { predicates, total }))
+    let namespace = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+    Ok(Json(
+        crate::service::query::list_predicates(&state, query, namespace).await?,
+    ))
 }
 
 /// Response for listing predicates
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Serialize)]
 pub struct ListPredicatesResponse {
     pub predicates: Vec<String>,

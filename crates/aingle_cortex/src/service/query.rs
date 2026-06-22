@@ -5,7 +5,10 @@
 
 use crate::error::Result;
 use crate::middleware::is_in_namespace;
-use crate::rest::{PatternDescription, PatternQueryRequest, PatternQueryResponse, TripleDto};
+use crate::rest::{
+    ListPredicatesQuery, ListPredicatesResponse, ListSubjectsQuery, ListSubjectsResponse,
+    PatternDescription, PatternQueryRequest, PatternQueryResponse, TripleDto,
+};
 use crate::state::AppState;
 use aingle_graph::{NodeId, Predicate, TriplePattern, Value};
 
@@ -64,6 +67,71 @@ pub async fn query_pattern(
                 .map(|o| serde_json::to_value(o).unwrap_or_default()),
         },
     })
+}
+
+/// List unique subjects, optionally filtered by predicate. `namespace` filters
+/// subjects when `Some` (REST passes the request namespace; MCP passes `None`).
+pub async fn list_subjects(
+    state: &AppState,
+    query: ListSubjectsQuery,
+    namespace: Option<String>,
+) -> Result<ListSubjectsResponse> {
+    let graph = state.graph.read().await;
+
+    let pattern = if let Some(ref predicate) = query.predicate {
+        TriplePattern::predicate(Predicate::named(predicate))
+    } else {
+        TriplePattern::any()
+    };
+
+    let triples = graph.find(pattern)?;
+    let mut subjects: Vec<String> = triples
+        .into_iter()
+        .map(|t| t.subject.to_string())
+        .filter(|s| namespace.as_ref().map_or(true, |ns| is_in_namespace(s, ns)))
+        .collect();
+    subjects.sort();
+    subjects.dedup();
+
+    let total = subjects.len();
+    let subjects: Vec<String> = subjects.into_iter().take(query.limit).collect();
+
+    Ok(ListSubjectsResponse { subjects, total })
+}
+
+/// List unique predicates, optionally filtered by subject. `namespace` filters
+/// by subject namespace when `Some` (REST passes the request namespace; MCP
+/// passes `None`).
+pub async fn list_predicates(
+    state: &AppState,
+    query: ListPredicatesQuery,
+    namespace: Option<String>,
+) -> Result<ListPredicatesResponse> {
+    let graph = state.graph.read().await;
+
+    let pattern = if let Some(ref subject) = query.subject {
+        TriplePattern::subject(NodeId::named(subject))
+    } else {
+        TriplePattern::any()
+    };
+
+    let triples = graph.find(pattern)?;
+    let mut predicates: Vec<String> = triples
+        .into_iter()
+        .filter(|t| {
+            namespace
+                .as_ref()
+                .map_or(true, |ns| is_in_namespace(&t.subject.to_string(), ns))
+        })
+        .map(|t| t.predicate.to_string())
+        .collect();
+    predicates.sort();
+    predicates.dedup();
+
+    let total = predicates.len();
+    let predicates: Vec<String> = predicates.into_iter().take(query.limit).collect();
+
+    Ok(ListPredicatesResponse { predicates, total })
 }
 
 #[cfg(test)]
@@ -137,5 +205,115 @@ mod tests {
         let resp = query_pattern(&state, req, None).await.unwrap();
         assert_eq!(resp.total, 0);
         assert!(resp.matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_subjects_returns_unique_sorted() {
+        use aingle_graph::Triple;
+
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let graph = state.graph.read().await;
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:alice"),
+                    Predicate::named("ex:knows"),
+                    Value::Node(NodeId::named("ex:bob")),
+                ))
+                .unwrap();
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:alice"),
+                    Predicate::named("ex:name"),
+                    Value::String("Alice".into()),
+                ))
+                .unwrap();
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:bob"),
+                    Predicate::named("ex:name"),
+                    Value::String("Bob".into()),
+                ))
+                .unwrap();
+        }
+
+        // All subjects, deduped: alice + bob.
+        let query = ListSubjectsQuery {
+            predicate: None,
+            limit: 100,
+        };
+        let resp = list_subjects(&state, query, None).await.unwrap();
+        assert_eq!(resp.total, 2);
+        assert_eq!(resp.subjects, vec!["<ex:alice>", "<ex:bob>"]);
+
+        // Filter by predicate => only subjects with `ex:knows` (alice).
+        let query = ListSubjectsQuery {
+            predicate: Some("ex:knows".to_string()),
+            limit: 100,
+        };
+        let resp = list_subjects(&state, query, None).await.unwrap();
+        assert_eq!(resp.total, 1);
+        assert_eq!(resp.subjects, vec!["<ex:alice>"]);
+    }
+
+    #[tokio::test]
+    async fn list_predicates_returns_unique_sorted() {
+        use aingle_graph::Triple;
+
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let graph = state.graph.read().await;
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:alice"),
+                    Predicate::named("ex:knows"),
+                    Value::Node(NodeId::named("ex:bob")),
+                ))
+                .unwrap();
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:alice"),
+                    Predicate::named("ex:name"),
+                    Value::String("Alice".into()),
+                ))
+                .unwrap();
+            graph
+                .insert(Triple::new(
+                    NodeId::named("ex:bob"),
+                    Predicate::named("ex:name"),
+                    Value::String("Bob".into()),
+                ))
+                .unwrap();
+        }
+
+        // All predicates, deduped: knows + name.
+        let query = ListPredicatesQuery {
+            subject: None,
+            limit: 100,
+        };
+        let resp = list_predicates(&state, query, None).await.unwrap();
+        assert_eq!(resp.total, 2);
+        assert_eq!(resp.predicates, vec!["<ex:knows>", "<ex:name>"]);
+
+        // Filter by subject => only predicates used by bob (name).
+        let query = ListPredicatesQuery {
+            subject: Some("ex:bob".to_string()),
+            limit: 100,
+        };
+        let resp = list_predicates(&state, query, None).await.unwrap();
+        assert_eq!(resp.total, 1);
+        assert_eq!(resp.predicates, vec!["<ex:name>"]);
+    }
+
+    #[tokio::test]
+    async fn list_subjects_empty_graph() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let query = ListSubjectsQuery {
+            predicate: None,
+            limit: 100,
+        };
+        let resp = list_subjects(&state, query, None).await.unwrap();
+        assert_eq!(resp.total, 0);
+        assert!(resp.subjects.is_empty());
     }
 }
