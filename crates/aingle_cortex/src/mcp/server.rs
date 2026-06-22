@@ -98,6 +98,25 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// Verify a stored proof by ID; returns {valid: bool, ...}.
+    ///
+    /// Read-only. Invalid/malformed proofs return `valid:false` (NOT an error);
+    /// only a missing proof yields an error.
+    #[tool(
+        description = "Verify a cryptographic/ZK proof by ID. Returns valid:false for invalid proofs (not an error).",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_verify_proof(
+        &self,
+        params: Parameters<crate::rest::VerifyProofByIdRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::proof::verify_proof(&self.state, req)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// Inspect the signed DAG provenance history of a subject (who changed what, newest first).
     #[cfg(feature = "dag")]
     #[tool(description = "Return the signed DAG provenance history of a subject (newest first).")]
