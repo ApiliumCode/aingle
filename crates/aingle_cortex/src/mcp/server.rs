@@ -4,7 +4,8 @@
 //! The `AingleMcp` MCP server handler and its tool router.
 
 use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::model::{ServerCapabilities, ServerInfo};
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::{CallToolResult, Content, ErrorData, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 
 use crate::state::AppState;
@@ -15,7 +16,6 @@ use crate::state::AppState;
 /// proof store, and DAG as the REST/GraphQL surfaces.
 #[derive(Clone)]
 pub struct AingleMcp {
-    #[allow(dead_code)]
     pub(crate) state: AppState,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
@@ -43,15 +43,13 @@ impl AingleMcp {
     )]
     async fn aingle_query_pattern(
         &self,
-        params: rmcp::handler::server::wrapper::Parameters<crate::rest::PatternQueryRequest>,
-    ) -> Result<rmcp::model::CallToolResult, rmcp::model::ErrorData> {
-        let rmcp::handler::server::wrapper::Parameters(req) = params;
+        params: Parameters<crate::rest::PatternQueryRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
         let resp = crate::service::query::query_pattern(&self.state, req, None)
             .await
             .map_err(super::convert::to_mcp_error)?;
-        Ok(rmcp::model::CallToolResult::success(vec![
-            rmcp::model::Content::json(resp)?,
-        ]))
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 }
 
