@@ -60,8 +60,8 @@ pub use proof::{
 // Re-export from proof_api (ZK proof storage endpoints)
 pub use proof_api::{
     BatchSubmitRequest, BatchSubmitResponse, BatchVerifyRequest, BatchVerifyResponse,
-    DeleteProofResponse, ListProofsQuery, ListProofsResponse, ProofResponse, ProofStatsResponse,
-    SubmitProofResponse, VerifyProofByIdRequest, VerifyProofResponse,
+    DeleteProofResponse, GetProofRequest, ListProofsQuery, ListProofsResponse, ProofResponse,
+    ProofStatsResponse, SubmitProofResponse, VerifyProofByIdRequest, VerifyProofResponse,
 };
 
 // Re-export from other modules

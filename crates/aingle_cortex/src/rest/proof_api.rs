@@ -87,17 +87,16 @@ pub async fn submit_proofs_batch(
 /// Get a proof by ID
 ///
 /// GET /api/v1/proofs/:id
+///
+/// Delegates to [`crate::service::proof::get_proof`]; the not-found behavior
+/// (`Err(Error::NotFound)` for a missing proof) lives in the service layer so it
+/// can be shared with the MCP `aingle_get_proof` tool.
 pub async fn get_proof(
     State(state): State<AppState>,
     Path(proof_id): Path<ProofId>,
 ) -> Result<Json<ProofResponse>> {
-    let proof = state
-        .proof_store
-        .get(&proof_id)
-        .await
-        .ok_or_else(|| Error::NotFound(format!("Proof {} not found", proof_id)))?;
-
-    Ok(Json(ProofResponse::from(proof)))
+    let resp = crate::service::proof::get_proof(&state, GetProofRequest { proof_id }).await?;
+    Ok(Json(resp))
 }
 
 /// Verify a proof
@@ -320,6 +319,17 @@ impl From<StoredProof> for ProofResponse {
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct VerifyProofByIdRequest {
     /// Identifier of the stored proof to verify.
+    pub proof_id: ProofId,
+}
+
+/// Request to fetch a stored proof by its ID.
+///
+/// Tool/handler INPUT: the path parameter of `GET /api/v1/proofs/:id` modeled as
+/// a struct so it can be shared with the MCP `aingle_get_proof` tool.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct GetProofRequest {
+    /// Identifier of the stored proof to fetch.
     pub proof_id: ProofId,
 }
 
