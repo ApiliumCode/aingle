@@ -16,6 +16,7 @@ use crate::state::{AppState, Event};
 use aingle_graph::{NodeId, Predicate, Triple, Value};
 
 /// Request to validate triples
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Deserialize)]
 pub struct ValidateRequest {
     /// Triples to validate
@@ -25,6 +26,7 @@ pub struct ValidateRequest {
 }
 
 /// Triple input for validation
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Deserialize)]
 pub struct ValidateTripleInput {
     pub subject: String,
