@@ -32,6 +32,7 @@ pub struct DagTipsResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct DagActionDto {
     pub hash: String,
     pub parents: Vec<String>,
@@ -221,15 +222,14 @@ pub async fn get_dag_history(
     State(state): State<AppState>,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<DagActionDto>>> {
-    let graph = state.graph.read().await;
-
-    // Subject-based lookup uses the dedicated subject index
+    // Subject-based lookup uses the dedicated subject index (shared service logic)
     if let Some(ref subject) = query.subject {
-        let actions = graph
-            .dag_history_by_subject(subject, query.limit)
-            .map_err(|e| Error::Internal(e.to_string()))?;
-        return Ok(Json(actions.iter().map(action_to_dto).collect()));
+        let actions =
+            crate::service::dag::history_by_subject(&state, subject, query.limit).await?;
+        return Ok(Json(actions));
     }
+
+    let graph = state.graph.read().await;
 
     // Triple-ID-based lookup uses the affected index
     if let Some(ref tid_hex) = query.triple_id {
@@ -641,7 +641,7 @@ pub fn dag_router() -> Router<AppState> {
 // Helpers
 // ============================================================================
 
-fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionDto {
+pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionDto {
     let hash = action.compute_hash().to_hex();
     let parents: Vec<String> = action.parents.iter().map(|h| h.to_hex()).collect();
 

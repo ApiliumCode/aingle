@@ -10,6 +10,22 @@ use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 
 use crate::state::AppState;
 
+/// Parameters for the `aingle_dag_history` tool.
+#[cfg(feature = "dag")]
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct DagHistoryParams {
+    /// Subject IRI whose mutation history to fetch.
+    pub subject: String,
+    /// Max actions to return.
+    #[serde(default = "default_hist_limit")]
+    pub limit: usize,
+}
+
+#[cfg(feature = "dag")]
+fn default_hist_limit() -> usize {
+    50
+}
+
 /// MCP server exposing AIngle Córtex capabilities as tools.
 ///
 /// Wraps the shared [`AppState`] so tools can operate on the same graph,
@@ -80,6 +96,20 @@ impl AingleMcp {
             .await
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Inspect the signed DAG provenance history of a subject (who changed what, newest first).
+    #[cfg(feature = "dag")]
+    #[tool(description = "Return the signed DAG provenance history of a subject (newest first).")]
+    async fn aingle_dag_history(
+        &self,
+        params: Parameters<DagHistoryParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let h = crate::service::dag::history_by_subject(&self.state, &p.subject, p.limit)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(h)?]))
     }
 }
 

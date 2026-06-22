@@ -3,6 +3,8 @@
 
 //! Business-logic layer shared by REST handlers and the MCP server.
 
+#[cfg(feature = "dag")]
+pub mod dag;
 pub mod query;
 pub mod stats;
 pub mod triples;
