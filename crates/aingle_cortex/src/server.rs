@@ -178,6 +178,7 @@ impl CortexServer {
                 .map(|s| {
                     s.split(',')
                         .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
