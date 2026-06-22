@@ -2,3 +2,5 @@
 // SPDX-License-Identifier: Apache-2.0 OR Commercial
 
 //! Business-logic layer shared by REST handlers and the MCP server.
+
+pub mod query;

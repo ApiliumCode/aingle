@@ -13,9 +13,10 @@ use crate::error::Result;
 use crate::middleware::{is_in_namespace, RequestNamespace};
 use crate::rest::triples::{TripleDto, ValueDto};
 use crate::state::AppState;
-use aingle_graph::{NodeId, Predicate, Triple, TriplePattern, Value};
+use aingle_graph::{NodeId, Predicate, TriplePattern};
 
 /// Pattern query request
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Deserialize)]
 pub struct PatternQueryRequest {
     /// Subject pattern (None = wildcard)
@@ -33,10 +34,8 @@ fn default_limit() -> usize {
     100
 }
 
-/// Hard maximum for any query to prevent OOM on large graphs
-const MAX_QUERY_LIMIT: usize = 10_000;
-
 /// Pattern query response
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Serialize)]
 pub struct PatternQueryResponse {
     /// Matching triples
@@ -48,6 +47,7 @@ pub struct PatternQueryResponse {
 }
 
 /// Description of the query pattern
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Serialize)]
 pub struct PatternDescription {
     pub subject: Option<String>,
@@ -63,55 +63,10 @@ pub async fn query_pattern(
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(req): Json<PatternQueryRequest>,
 ) -> Result<Json<PatternQueryResponse>> {
-    let graph = state.graph.read().await;
-
-    // Build pattern from request
-    let mut pattern = TriplePattern::any();
-
-    if let Some(ref subject) = req.subject {
-        pattern = pattern.with_subject(NodeId::named(subject));
-    }
-    if let Some(ref predicate) = req.predicate {
-        pattern = pattern.with_predicate(Predicate::named(predicate));
-    }
-    if let Some(ref object) = req.object {
-        let obj: Value = object.clone().into();
-        pattern = pattern.with_object(obj);
-    }
-
-    let triples = graph.find(pattern)?;
-
-    // Enforce hard query limit to prevent OOM
-    let effective_limit = req.limit.min(MAX_QUERY_LIMIT);
-
-    // Filter by namespace if present
-    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
-    let triples: Vec<Triple> = if let Some(ref ns) = ns_filter {
-        triples.into_iter().filter(|t| is_in_namespace(&t.subject.to_string(), ns)).collect()
-    } else {
-        triples
-    };
-
-    let total = triples.len();
-    let matches: Vec<TripleDto> = triples
-        .into_iter()
-        .take(effective_limit)
-        .map(|t| t.into())
-        .collect();
-
-    let pattern_desc = PatternDescription {
-        subject: req.subject,
-        predicate: req.predicate,
-        object: req
-            .object
-            .map(|o| serde_json::to_value(o).unwrap_or_default()),
-    };
-
-    Ok(Json(PatternQueryResponse {
-        matches,
-        total,
-        pattern: pattern_desc,
-    }))
+    let namespace = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+    Ok(Json(
+        crate::service::query::query_pattern(&state, req, namespace).await?,
+    ))
 }
 
 /// Query parameters for listing subjects

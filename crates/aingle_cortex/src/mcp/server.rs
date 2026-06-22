@@ -36,6 +36,23 @@ impl AingleMcp {
     async fn aingle_ping(&self) -> String {
         "pong".to_string()
     }
+
+    /// Query the semantic graph by triple pattern (any field omitted = wildcard).
+    #[tool(
+        description = "Query the semantic graph by triple pattern. Omit a field to wildcard it."
+    )]
+    async fn aingle_query_pattern(
+        &self,
+        params: rmcp::handler::server::wrapper::Parameters<crate::rest::PatternQueryRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::model::ErrorData> {
+        let rmcp::handler::server::wrapper::Parameters(req) = params;
+        let resp = crate::service::query::query_pattern(&self.state, req, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(rmcp::model::CallToolResult::success(vec![
+            rmcp::model::Content::json(resp)?,
+        ]))
+    }
 }
 
 #[tool_handler]
