@@ -9,7 +9,7 @@
 
 #![cfg(feature = "cluster")]
 
-use aingle_cortex::cluster_init::{ClusterConfig, init_cluster};
+use aingle_cortex::cluster_init::{init_cluster, ClusterConfig};
 use aingle_cortex::{CortexConfig, CortexServer};
 use std::time::Duration;
 use tokio::time::sleep;
@@ -27,7 +27,10 @@ async fn boot_node(
     peers: Vec<String>,
     secret: &str,
     wal_dir: &str,
-) -> (tokio::task::JoinHandle<()>, tokio::sync::watch::Sender<bool>) {
+) -> (
+    tokio::task::JoinHandle<()>,
+    tokio::sync::watch::Sender<bool>,
+) {
     let mut config = CortexConfig::default()
         .with_host("127.0.0.1")
         .with_port(port);
@@ -71,7 +74,12 @@ async fn boot_node(
 }
 
 /// Gracefully shut down nodes with enough time for Raft to stop.
-async fn shutdown_nodes(nodes: Vec<(tokio::task::JoinHandle<()>, tokio::sync::watch::Sender<bool>)>) {
+async fn shutdown_nodes(
+    nodes: Vec<(
+        tokio::task::JoinHandle<()>,
+        tokio::sync::watch::Sender<bool>,
+    )>,
+) {
     for (_, tx) in &nodes {
         tx.send(true).ok();
     }
@@ -103,6 +111,35 @@ async fn wait_for_leader(port: u16, timeout_secs: u64) -> Option<u64> {
         sleep(Duration::from_millis(250)).await;
     }
     None
+}
+
+/// Poll a node until a triple with the given subject is visible (replicated),
+/// or the timeout elapses. Returns true if the triple appeared.
+async fn wait_for_triple(port: u16, subject: &str, timeout_secs: u64) -> bool {
+    let client = reqwest::Client::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(resp) = client
+            .get(format!(
+                "http://127.0.0.1:{port}/api/v1/triples?subject={subject}"
+            ))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    if let Some(triples) = body["triples"].as_array() {
+                        if !triples.is_empty() {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        sleep(Duration::from_millis(250)).await;
+    }
+    false
 }
 
 #[tokio::test]
@@ -159,17 +196,14 @@ async fn test_single_node_cluster_bootstrap() {
         resp.status()
     );
     let body: serde_json::Value = resp.json().await.unwrap();
-    let triples = body["triples"].as_array().expect("triples field should be an array");
-    assert!(
-        !triples.is_empty(),
-        "Should find the triple we just wrote"
-    );
+    let triples = body["triples"]
+        .as_array()
+        .expect("triples field should be an array");
+    assert!(!triples.is_empty(), "Should find the triple we just wrote");
 
     // Verify cluster members endpoint
     let resp = client
-        .get(format!(
-            "http://127.0.0.1:{port}/api/v1/cluster/members"
-        ))
+        .get(format!("http://127.0.0.1:{port}/api/v1/cluster/members"))
         .send()
         .await
         .unwrap();
@@ -200,14 +234,7 @@ async fn test_three_node_cluster_replication() {
     let wal3 = tmp.path().join("wal3");
 
     // Boot node 1 as bootstrap (no peers)
-    let (h1, tx1) = boot_node(
-        1,
-        port1,
-        vec![],
-        secret,
-        wal1.to_str().unwrap(),
-    )
-    .await;
+    let (h1, tx1) = boot_node(1, port1, vec![], secret, wal1.to_str().unwrap()).await;
 
     // Wait for Raft election (timeout_min=1500ms, give 2s + buffer)
     sleep(Duration::from_secs(2)).await;
@@ -242,9 +269,7 @@ async fn test_three_node_cluster_replication() {
     // Verify members from the leader
     let client = reqwest::Client::new();
     let resp = client
-        .get(format!(
-            "http://127.0.0.1:{port1}/api/v1/cluster/members"
-        ))
+        .get(format!("http://127.0.0.1:{port1}/api/v1/cluster/members"))
         .send()
         .await
         .unwrap();
@@ -273,39 +298,15 @@ async fn test_three_node_cluster_replication() {
         "Write to leader should succeed: {status}"
     );
 
-    // Wait for replication
-    sleep(Duration::from_secs(2)).await;
-
-    // Read from follower node 2 — the triple should be replicated
-    let resp = client
-        .get(format!(
-            "http://127.0.0.1:{port2}/api/v1/triples?subject=cluster_test"
-        ))
-        .send()
-        .await
-        .unwrap();
-    assert!(resp.status().is_success(), "Read from node 2 failed: {}", resp.status());
-    let body: serde_json::Value = resp.json().await.unwrap();
-    let triples = body["triples"].as_array().expect("triples field should be an array");
+    // Wait for replication to each follower (poll, don't assume a fixed delay —
+    // Raft apply latency varies, especially for debug builds on busy machines).
     assert!(
-        !triples.is_empty(),
-        "Follower (node 2) should have the replicated triple"
+        wait_for_triple(port2, "cluster_test", 15).await,
+        "Follower (node 2) should have the replicated triple within 15s"
     );
-
-    // Also verify from follower node 3
-    let resp = client
-        .get(format!(
-            "http://127.0.0.1:{port3}/api/v1/triples?subject=cluster_test"
-        ))
-        .send()
-        .await
-        .unwrap();
-    assert!(resp.status().is_success(), "Read from node 3 failed: {}", resp.status());
-    let body: serde_json::Value = resp.json().await.unwrap();
-    let triples = body["triples"].as_array().expect("triples field should be an array");
     assert!(
-        !triples.is_empty(),
-        "Follower (node 3) should have the replicated triple"
+        wait_for_triple(port3, "cluster_test", 15).await,
+        "Follower (node 3) should have the replicated triple within 15s"
     );
 
     // Shutdown all nodes
@@ -333,25 +334,32 @@ async fn test_cluster_wal_stats() {
 
     // Check WAL stats endpoint
     let resp = client
-        .get(format!(
-            "http://127.0.0.1:{port}/api/v1/cluster/wal/stats"
-        ))
+        .get(format!("http://127.0.0.1:{port}/api/v1/cluster/wal/stats"))
         .send()
         .await
         .unwrap();
-    assert!(resp.status().is_success(), "WAL stats failed: {}", resp.status());
+    assert!(
+        resp.status().is_success(),
+        "WAL stats failed: {}",
+        resp.status()
+    );
     let stats: serde_json::Value = resp.json().await.unwrap();
-    assert!(stats["segment_count"].is_number(), "segment_count should be a number: {stats}");
+    assert!(
+        stats["segment_count"].is_number(),
+        "segment_count should be a number: {stats}"
+    );
 
     // Verify WAL integrity
     let resp = client
-        .post(format!(
-            "http://127.0.0.1:{port}/api/v1/cluster/wal/verify"
-        ))
+        .post(format!("http://127.0.0.1:{port}/api/v1/cluster/wal/verify"))
         .send()
         .await
         .unwrap();
-    assert!(resp.status().is_success(), "WAL verify failed: {}", resp.status());
+    assert!(
+        resp.status().is_success(),
+        "WAL verify failed: {}",
+        resp.status()
+    );
     let verify: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(verify["valid"], true, "WAL should be valid: {verify}");
 

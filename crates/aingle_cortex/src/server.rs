@@ -7,10 +7,10 @@ use crate::error::Result;
 use crate::rest;
 use crate::state::AppState;
 
+use axum::extract::DefaultBodyLimit;
 use axum::Router;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use axum::extract::DefaultBodyLimit;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -126,6 +126,11 @@ impl CortexServer {
         &mut self.state
     }
 
+    /// Returns a reference to the server configuration.
+    pub fn config(&self) -> &CortexConfig {
+        &self.config
+    }
+
     /// Builds the `axum` router, combining all API routes and middleware.
     pub fn build_router(&self) -> Router {
         let mut app: Router<AppState> = Router::new();
@@ -174,7 +179,7 @@ impl CortexServer {
 
         // CORS layer — only enabled with explicit origin whitelist.
         let app = if !self.config.cors_allowed_origins.is_empty() {
-            use tower_http::cors::{Any, AllowOrigin};
+            use tower_http::cors::{AllowOrigin, Any};
 
             let cors = if self.config.cors_allowed_origins == ["*"] {
                 // Development-only wildcard
@@ -220,8 +225,7 @@ impl CortexServer {
         if let Some(ref tls_config) = self.state.tls_server_config {
             info!("Starting Córtex API server on https://{}", addr);
 
-            let tls_acceptor =
-                tokio_rustls::TlsAcceptor::from(tls_config.clone());
+            let tls_acceptor = tokio_rustls::TlsAcceptor::from(tls_config.clone());
             let tcp_listener = tokio::net::TcpListener::bind(addr).await?;
             let tls_listener = TlsListener {
                 inner: tcp_listener,
@@ -266,19 +270,15 @@ impl CortexServer {
         if let Some(ref tls_config) = self.state.tls_server_config {
             info!("Starting Córtex API server on https://{}", addr);
 
-            let tls_acceptor =
-                tokio_rustls::TlsAcceptor::from(tls_config.clone());
+            let tls_acceptor = tokio_rustls::TlsAcceptor::from(tls_config.clone());
             let tcp_listener = tokio::net::TcpListener::bind(addr).await?;
             let tls_listener = TlsListener {
                 inner: tcp_listener,
                 acceptor: tls_acceptor,
             };
-            axum::serve(
-                tls_listener,
-                router.into_make_service(),
-            )
-            .with_graceful_shutdown(shutdown_signal)
-            .await?;
+            axum::serve(tls_listener, router.into_make_service())
+                .with_graceful_shutdown(shutdown_signal)
+                .await?;
 
             info!("Córtex API server stopped");
             return Ok(());
