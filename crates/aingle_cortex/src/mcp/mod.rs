@@ -10,6 +10,8 @@
 //! stdout is reserved for the JSON-RPC stream; all logging must go to stderr.
 
 mod convert;
+#[cfg(feature = "mcp-http")]
+pub mod http;
 mod server;
 
 pub use server::AingleMcp;
