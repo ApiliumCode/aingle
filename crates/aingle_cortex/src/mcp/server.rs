@@ -79,6 +79,38 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// List unique subjects in the graph, optionally filtered by predicate.
+    #[tool(
+        description = "List unique subjects in the semantic graph, optionally filtered by predicate.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_list_subjects(
+        &self,
+        params: Parameters<crate::rest::ListSubjectsQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::query::list_subjects(&self.state, req, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// List unique predicates in the graph, optionally filtered by subject.
+    #[tool(
+        description = "List unique predicates in the semantic graph, optionally filtered by subject.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_list_predicates(
+        &self,
+        params: Parameters<crate::rest::ListPredicatesQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::query::list_predicates(&self.state, req, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// Insert a triple (subject, predicate, object) into the graph.
     ///
     /// Mutation: not read-only. Non-destructive (it never removes or overwrites
