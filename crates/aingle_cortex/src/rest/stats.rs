@@ -10,6 +10,7 @@ use crate::error::Result;
 use crate::state::AppState;
 
 /// Graph statistics response
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Serialize)]
 pub struct StatsResponse {
     /// Graph statistics
@@ -19,6 +20,7 @@ pub struct StatsResponse {
 }
 
 /// Graph statistics DTO
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Serialize)]
 pub struct GraphStatsDto {
     /// Total number of triples
@@ -32,6 +34,7 @@ pub struct GraphStatsDto {
 }
 
 /// Server statistics DTO
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Serialize)]
 pub struct ServerStatsDto {
     /// Number of connected WebSocket clients
@@ -46,21 +49,7 @@ pub struct ServerStatsDto {
 ///
 /// GET /api/v1/stats
 pub async fn get_stats(State(state): State<AppState>) -> Result<Json<StatsResponse>> {
-    let stats = state.stats().await;
-
-    Ok(Json(StatsResponse {
-        graph: GraphStatsDto {
-            triple_count: stats.triple_count,
-            subject_count: stats.subject_count,
-            predicate_count: stats.predicate_count,
-            object_count: stats.object_count,
-        },
-        server: ServerStatsDto {
-            connected_clients: stats.connected_clients,
-            uptime_seconds: 0, // TODO: track actual uptime
-            version: env!("CARGO_PKG_VERSION").to_string(),
-        },
-    }))
+    Ok(Json(crate::service::stats::graph_stats(&state).await?))
 }
 
 /// Health check response

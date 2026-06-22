@@ -51,6 +51,15 @@ impl AingleMcp {
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
+
+    /// Return graph statistics (triple count and related metrics).
+    #[tool(description = "Return graph statistics: triple count and related metrics.")]
+    async fn aingle_graph_stats(&self) -> Result<CallToolResult, ErrorData> {
+        let resp = crate::service::stats::graph_stats(&self.state)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
 }
 
 #[tool_handler]
