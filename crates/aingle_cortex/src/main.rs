@@ -89,6 +89,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
 
+    // If --mcp was requested but the binary was built without the `mcp` feature,
+    // fail loudly instead of silently falling through to the TCP REST server.
+    #[cfg(not(feature = "mcp"))]
+    if config.mcp_mode {
+        eprintln!("error: --mcp requires building with the `mcp` feature: cargo build -p aingle_cortex --features mcp");
+        std::process::exit(2);
+    }
+
     // Parse P2P flags (feature-gated at compile time).
     #[cfg(feature = "p2p")]
     let p2p_config = {
