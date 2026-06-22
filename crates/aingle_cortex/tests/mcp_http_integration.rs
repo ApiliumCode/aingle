@@ -98,3 +98,60 @@ async fn mcp_http_auth_and_initialize() {
 
     h.abort();
 }
+
+#[tokio::test]
+async fn mcp_http_not_mounted_without_token() {
+    // Neither a token nor anonymous mode -> /mcp must NOT exist.
+    let (port, h) = boot(None, false).await;
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{port}/mcp");
+    let init = serde_json::json!({
+        "jsonrpc":"2.0","id":1,"method":"initialize",
+        "params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}
+    });
+    let r = client
+        .post(&url)
+        .header("Accept", "application/json, text/event-stream")
+        .json(&init)
+        .send()
+        .await
+        .unwrap();
+    // Route absent -> 404 (NOT 401, which would mean it IS mounted+guarded; NOT 2xx).
+    assert_eq!(
+        r.status(),
+        reqwest::StatusCode::NOT_FOUND,
+        "/mcp must be absent without token/anon, got {}",
+        r.status()
+    );
+    h.abort();
+}
+
+#[tokio::test]
+async fn mcp_http_anonymous_serves_without_auth() {
+    let (port, h) = boot(None, true).await; // allow_anonymous = true
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{port}/mcp");
+    let init = serde_json::json!({
+        "jsonrpc":"2.0","id":1,"method":"initialize",
+        "params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}
+    });
+    // No Authorization header at all -> still 2xx + serverInfo because anonymous.
+    let r = client
+        .post(&url)
+        .header("Accept", "application/json, text/event-stream")
+        .json(&init)
+        .send()
+        .await
+        .unwrap();
+    let status = r.status();
+    let body = r.text().await.unwrap();
+    assert!(
+        status.is_success(),
+        "anonymous should serve, got {status}; body={body}"
+    );
+    assert!(
+        body.contains("serverInfo"),
+        "anonymous body lacked serverInfo: {body}"
+    );
+    h.abort();
+}
