@@ -172,6 +172,9 @@ pub mod middleware;
 pub mod proofs;
 pub mod rest;
 pub mod server;
+pub mod service;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 #[cfg(feature = "sparql")]
 pub mod sparql;
 pub mod state;

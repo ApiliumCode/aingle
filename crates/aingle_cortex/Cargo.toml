@@ -22,6 +22,7 @@ p2p = ["dep:quinn", "dep:rustls", "dep:rcgen", "dep:ed25519-dalek", "dep:hex"]
 p2p-mdns = ["p2p", "dep:mdns-sd", "dep:if-addrs"]
 cluster = ["p2p", "dep:aingle_wal", "dep:aingle_raft", "dep:openraft", "dep:tokio-rustls", "dep:rustls-pemfile"]
 dag = ["cluster", "aingle_graph/dag", "aingle_graph/dag-sign", "aingle_raft/dag"]
+mcp = ["dep:rmcp", "dep:schemars"]
 full = ["rest", "graphql", "sparql", "auth", "dag"]
 
 [[bin]]
@@ -46,6 +47,10 @@ async-graphql-axum = { version = "8.0.0-rc", optional = true }
 
 # SPARQL (optional)
 spargebra = { version = "0.4", optional = true }
+
+# MCP server (optional) — Model Context Protocol over stdio
+rmcp = { version = "1.7", features = ["server", "transport-io", "macros"], optional = true }
+schemars = { version = "1.0", optional = true }
 
 # Authentication (optional)
 jsonwebtoken = { version = "10", features = ["rust_crypto"], optional = true }
