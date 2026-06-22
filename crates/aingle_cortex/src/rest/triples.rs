@@ -20,6 +20,7 @@ use aingle_graph::{NodeId, Predicate, Triple, TripleId, TriplePattern, Value};
 use axum::http::HeaderMap;
 
 /// Triple data transfer object
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleDto {
     /// Triple hash (read-only)
@@ -37,6 +38,7 @@ pub struct TripleDto {
 }
 
 /// Value data transfer object
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ValueDto {
