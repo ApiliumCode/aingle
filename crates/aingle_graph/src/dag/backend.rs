@@ -115,6 +115,16 @@ impl SledDagBackend {
             .map_err(|e| crate::Error::Storage(format!("sled open_tree(dag) error: {}", e)))?;
         Ok(Self { tree })
     }
+
+    /// Open the DAG tree on an EXISTING Sled `Db`, sharing the instance with
+    /// the triple store (avoids a second `sled::open` on the same path, which
+    /// would deadlock on the file lock).
+    pub fn from_db(db: &sled::Db) -> crate::Result<Self> {
+        let tree = db
+            .open_tree("dag")
+            .map_err(|e| crate::Error::Storage(format!("sled open_tree(dag) error: {}", e)))?;
+        Ok(Self { tree })
+    }
 }
 
 #[cfg(feature = "sled-backend")]

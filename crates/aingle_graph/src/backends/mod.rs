@@ -65,6 +65,10 @@ pub trait StorageBackend: Send + Sync {
     fn close(&self) -> Result<()> {
         Ok(())
     }
+
+    /// Downcasting support, so callers can access backend-specific handles
+    /// (e.g. the shared `sled::Db` used by the persistent DAG).
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 // Re-exports
