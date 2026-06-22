@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
 
 /// SPARQL query request
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct SparqlRequest {
     /// SPARQL query string
     pub query: String,
@@ -63,25 +64,8 @@ pub async fn execute_sparql(
     State(state): State<AppState>,
     Json(req): Json<SparqlRequest>,
 ) -> Result<Json<SparqlResponse>> {
-    let start = std::time::Instant::now();
-
-    // Parse the query
-    let parsed = parse_sparql(&req.query)?;
-
-    // Execute against the graph
-    let graph = state.graph.read().await;
-    let result = execute_query(&graph, &parsed)?;
-
-    let execution_time_ms = start.elapsed().as_millis() as u64;
-
-    Ok(Json(SparqlResponse {
-        result_type: result.result_type,
-        variables: result.variables,
-        bindings: result.bindings,
-        boolean: result.boolean,
-        triple_count: result.triple_count,
-        execution_time_ms,
-    }))
+    let resp = crate::service::sparql::execute(&state, req).await?;
+    Ok(Json(resp))
 }
 
 /// SPARQL result

@@ -51,6 +51,14 @@ impl AingleMcp {
         {
             router += Self::dag_tool_router();
         }
+        // The sparql-gated tool likewise lives in its own
+        // `#[tool_router(router = sparql_tool_router)]` block so the macro on the
+        // core impl never references it when `sparql` is off. Merge it only when
+        // `sparql` is on (it is in `default`, but `mcp` must compile without it).
+        #[cfg(feature = "sparql")]
+        {
+            router += Self::sparql_tool_router();
+        }
         Self {
             state,
             tool_router: router,
@@ -271,6 +279,29 @@ impl AingleMcp {
             .await
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(h)?]))
+    }
+}
+
+/// Sparql-gated tools, kept in a separate router so the `#[tool_router]` macro
+/// on the core impl never references them when `sparql` is off. The combined
+/// router is assembled in [`AingleMcp::new`].
+#[cfg(feature = "sparql")]
+#[tool_router(router = sparql_tool_router)]
+impl AingleMcp {
+    /// Run a SPARQL query against the semantic graph.
+    #[tool(
+        description = "Execute a SPARQL query (SELECT/CONSTRUCT/ASK) against the semantic graph.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_sparql(
+        &self,
+        params: Parameters<crate::sparql::SparqlRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::sparql::execute(&self.state, req)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 }
 
