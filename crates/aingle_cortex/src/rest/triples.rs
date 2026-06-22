@@ -157,13 +157,9 @@ pub async fn create_triple(
     // DAG + Cluster mode: create DagAction and route through Raft
     #[cfg(feature = "dag")]
     if let Some(ref raft) = state.raft {
-        let dag_author = state
-            .dag_author
-            .clone()
-            .unwrap_or_else(|| aingle_graph::NodeId::named(&format!(
-                "node:{}",
-                state.cluster_node_id.unwrap_or(0)
-            )));
+        let dag_author = state.dag_author.clone().unwrap_or_else(|| {
+            aingle_graph::NodeId::named(&format!("node:{}", state.cluster_node_id.unwrap_or(0)))
+        });
         let dag_seq = state
             .dag_seq_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -171,9 +167,7 @@ pub async fn create_triple(
         // Get current tips
         let parents = {
             let graph = state.graph.read().await;
-            graph
-                .dag_tips()
-                .unwrap_or_default()
+            graph.dag_tips().unwrap_or_default()
         };
 
         let mut action = aingle_graph::dag::DagAction {
@@ -324,7 +318,9 @@ pub async fn create_triple(
     // Reaching here means Raft was skipped — prevent split-brain (#2).
     #[cfg(feature = "cluster")]
     if state.raft.is_some() {
-        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+        return Err(Error::Internal(
+            "Raft initialized but write not routed through Raft".into(),
+        ));
     }
 
     // Non-cluster mode: direct write.
@@ -362,7 +358,8 @@ pub async fn create_triple(
             predicate,
             object,
             triple_id: *triple_id.as_bytes(),
-        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+        })
+        .map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
     }
 
     Ok((StatusCode::CREATED, Json(dto)))
@@ -445,13 +442,9 @@ pub async fn delete_triple(
     // DAG + Cluster mode: create DagAction for delete
     #[cfg(feature = "dag")]
     if let Some(ref raft) = state.raft {
-        let dag_author = state
-            .dag_author
-            .clone()
-            .unwrap_or_else(|| aingle_graph::NodeId::named(&format!(
-                "node:{}",
-                state.cluster_node_id.unwrap_or(0)
-            )));
+        let dag_author = state.dag_author.clone().unwrap_or_else(|| {
+            aingle_graph::NodeId::named(&format!("node:{}", state.cluster_node_id.unwrap_or(0)))
+        });
         let dag_seq = state
             .dag_seq_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -540,7 +533,9 @@ pub async fn delete_triple(
     // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
     #[cfg(feature = "cluster")]
     if state.raft.is_some() {
-        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+        return Err(Error::Internal(
+            "Raft initialized but write not routed through Raft".into(),
+        ));
     }
 
     // Non-cluster mode: direct delete
@@ -603,7 +598,8 @@ pub async fn delete_triple(
         if let Some(ref wal) = state.wal {
             wal.append(aingle_wal::WalEntryKind::TripleDelete {
                 triple_id: *triple_id.as_bytes(),
-            }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+            })
+            .map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
         }
 
         // Record audit entry
@@ -677,7 +673,10 @@ pub async fn list_triples(
     // Filter by namespace if present
     let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
     let triples: Vec<Triple> = if let Some(ref ns) = ns_filter {
-        triples.into_iter().filter(|t| is_in_namespace(&t.subject.to_string(), ns)).collect()
+        triples
+            .into_iter()
+            .filter(|t| is_in_namespace(&t.subject.to_string(), ns))
+            .collect()
     } else {
         triples
     };

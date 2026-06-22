@@ -186,7 +186,9 @@ pub async fn get_dag_tips(State(state): State<AppState>) -> Result<Json<DagTipsR
         .dag_store()
         .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
 
-    let tips = dag_store.tips().map_err(|e| Error::Internal(e.to_string()))?;
+    let tips = dag_store
+        .tips()
+        .map_err(|e| Error::Internal(e.to_string()))?;
     let tip_strings: Vec<String> = tips.iter().map(|h| h.to_hex()).collect();
     let count = tip_strings.len();
 
@@ -224,8 +226,7 @@ pub async fn get_dag_history(
 ) -> Result<Json<Vec<DagActionDto>>> {
     // Subject-based lookup uses the dedicated subject index (shared service logic)
     if let Some(ref subject) = query.subject {
-        let actions =
-            crate::service::dag::history_by_subject(&state, subject, query.limit).await?;
+        let actions = crate::service::dag::history_by_subject(&state, subject, query.limit).await?;
         return Ok(Json(actions));
     }
 
@@ -280,7 +281,9 @@ pub async fn get_dag_stats(State(state): State<AppState>) -> Result<Json<DagStat
         .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
 
     let action_count = dag_store.action_count();
-    let tip_count = dag_store.tip_count().map_err(|e| Error::Internal(e.to_string()))?;
+    let tip_count = dag_store
+        .tip_count()
+        .map_err(|e| Error::Internal(e.to_string()))?;
 
     Ok(Json(DagStatsResponse {
         action_count,
@@ -357,7 +360,9 @@ pub async fn get_dag_verify(
 
     let mut pk_bytes = [0u8; 32];
     if query.public_key.len() != 64 {
-        return Err(Error::InvalidInput("public_key must be 64 hex chars".into()));
+        return Err(Error::InvalidInput(
+            "public_key must be 64 hex chars".into(),
+        ));
     }
     for i in 0..32 {
         pk_bytes[i] = u8::from_str_radix(&query.public_key[i * 2..i * 2 + 2], 16)
@@ -468,7 +473,10 @@ pub async fn post_dag_pull(
             .dag_store()
             .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
 
-        if dag_store.contains(&hash).map_err(|e| Error::Internal(e.to_string()))? {
+        if dag_store
+            .contains(&hash)
+            .map_err(|e| Error::Internal(e.to_string()))?
+        {
             already_had += 1;
         } else {
             graph
@@ -571,7 +579,9 @@ pub async fn post_create_dag_action(
         .dag_store()
         .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
 
-    let parents = dag_store.tips().map_err(|e| Error::Internal(e.to_string()))?;
+    let parents = dag_store
+        .tips()
+        .map_err(|e| Error::Internal(e.to_string()))?;
 
     let timestamp = chrono::Utc::now();
     let mut action = aingle_graph::dag::DagAction {
@@ -655,7 +665,10 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
             };
             ("triple:create".to_string(), summary)
         }
-        aingle_graph::dag::DagPayload::TripleDelete { triple_ids, subjects } => {
+        aingle_graph::dag::DagPayload::TripleDelete {
+            triple_ids,
+            subjects,
+        } => {
             let summary = if !subjects.is_empty() {
                 format!("{} triple(s) [{}]", triple_ids.len(), subjects.join(", "))
             } else {
@@ -675,10 +688,9 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
             };
             ("memory:op".to_string(), summary)
         }
-        aingle_graph::dag::DagPayload::Batch { ops } => (
-            "batch".to_string(),
-            format!("{} ops", ops.len()),
-        ),
+        aingle_graph::dag::DagPayload::Batch { ops } => {
+            ("batch".to_string(), format!("{} ops", ops.len()))
+        }
         aingle_graph::dag::DagPayload::Genesis {
             triple_count,
             description,
@@ -692,7 +704,10 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
             ref policy,
         } => (
             "compact".to_string(),
-            format!("pruned {} / retained {} ({})", pruned_count, retained_count, policy),
+            format!(
+                "pruned {} / retained {} ({})",
+                pruned_count, retained_count, policy
+            ),
         ),
         aingle_graph::dag::DagPayload::Noop => ("noop".to_string(), String::new()),
         aingle_graph::dag::DagPayload::Custom {

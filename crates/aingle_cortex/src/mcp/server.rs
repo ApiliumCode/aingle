@@ -76,7 +76,11 @@ impl AingleMcp {
     /// error rather than silently succeeding — a retried call may therefore fail.
     #[tool(
         description = "Insert a triple into the semantic graph. Mutates the graph.",
-        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false
+        )
     )]
     async fn aingle_create_triple(
         &self,

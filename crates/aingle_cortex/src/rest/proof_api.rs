@@ -110,8 +110,8 @@ pub async fn verify_proof_by_id(
     State(state): State<AppState>,
     Path(proof_id): Path<ProofId>,
 ) -> Result<Json<VerifyProofResponse>> {
-    let resp = crate::service::proof::verify_proof(&state, VerifyProofByIdRequest { proof_id })
-        .await?;
+    let resp =
+        crate::service::proof::verify_proof(&state, VerifyProofByIdRequest { proof_id }).await?;
     Ok(Json(resp))
 }
 
@@ -431,7 +431,9 @@ mod tests {
             limit: Some(10),
         };
 
-        let response = list_proofs(AxumState(state), None, Query(query)).await.unwrap();
+        let response = list_proofs(AxumState(state), None, Query(query))
+            .await
+            .unwrap();
 
         assert_eq!(response.0.count, 3);
     }

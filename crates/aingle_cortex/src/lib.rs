@@ -164,24 +164,24 @@
 #[cfg(feature = "auth")]
 pub mod auth;
 pub mod client;
+#[cfg(feature = "cluster")]
+pub mod cluster_init;
 pub mod error;
-pub mod wasm_types;
 #[cfg(feature = "graphql")]
 pub mod graphql;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod middleware;
+#[cfg(feature = "p2p")]
+pub mod p2p;
 pub mod proofs;
 pub mod rest;
 pub mod server;
 pub mod service;
-#[cfg(feature = "mcp")]
-pub mod mcp;
 #[cfg(feature = "sparql")]
 pub mod sparql;
 pub mod state;
-#[cfg(feature = "p2p")]
-pub mod p2p;
-#[cfg(feature = "cluster")]
-pub mod cluster_init;
+pub mod wasm_types;
 
 pub use client::{CortexClientConfig, CortexInternalClient};
 pub use error::{Error, Result};
