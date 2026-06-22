@@ -116,3 +116,6 @@ if-addrs = { version = "0.13", optional = true }
 tempfile = "3.26"
 reqwest = { version = "0.12", features = ["json"] }
 tokio-test = "0.4"
+# Enable the rmcp `client` feature for the in-process MCP integration test.
+# This is dev-only; the production `mcp` feature uses the server side only.
+rmcp = { version = "1.7", features = ["client", "transport-io"] }
