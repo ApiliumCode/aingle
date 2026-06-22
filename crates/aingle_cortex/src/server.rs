@@ -47,6 +47,10 @@ pub struct CortexConfig {
     pub db_path: Option<String>,
     /// If `true`, serve MCP over stdio instead of binding a TCP listener.
     pub mcp_mode: bool,
+    /// Bearer token required on the `/mcp` HTTP endpoint. None = not configured.
+    pub mcp_http_token: Option<String>,
+    /// Serve `/mcp` without auth (test mode, pre-OAuth). Default false.
+    pub mcp_http_allow_anonymous: bool,
 }
 
 impl Default for CortexConfig {
@@ -65,6 +69,8 @@ impl Default for CortexConfig {
             flush_interval_secs: 300,
             db_path: None,
             mcp_mode: false,
+            mcp_http_token: None,
+            mcp_http_allow_anonymous: false,
         }
     }
 }
