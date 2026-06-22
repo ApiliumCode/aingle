@@ -276,6 +276,24 @@ impl AingleMcp {
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
+
+    /// Fetch a stored proof by ID; returns its metadata.
+    ///
+    /// Read-only. A missing proof yields an error.
+    #[tool(
+        description = "Fetch a stored cryptographic/ZK proof by ID. Errors if the proof does not exist.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_get_proof(
+        &self,
+        params: Parameters<crate::rest::GetProofRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::proof::get_proof(&self.state, req)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
 }
 
 /// Dag-gated tools, kept in a separate router so the `#[tool_router]` macro on

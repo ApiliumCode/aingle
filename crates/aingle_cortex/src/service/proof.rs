@@ -4,8 +4,25 @@
 //! Proof verification business logic shared by REST and MCP.
 
 use crate::error::{Error, Result};
-use crate::rest::{VerifyProofByIdRequest, VerifyProofResponse};
+use crate::rest::{GetProofRequest, ProofResponse, VerifyProofByIdRequest, VerifyProofResponse};
 use crate::state::AppState;
+
+/// Fetch a stored proof by its ID.
+///
+/// Semantics (preserved from the REST `GET /api/v1/proofs/:id` handler):
+/// - Proof exists -> `Ok(ProofResponse)`.
+/// - Proof does not exist -> `Err(Error::NotFound(..))`.
+pub async fn get_proof(state: &AppState, req: GetProofRequest) -> Result<ProofResponse> {
+    let proof_id = req.proof_id;
+
+    let proof = state
+        .proof_store
+        .get(&proof_id)
+        .await
+        .ok_or_else(|| Error::NotFound(format!("Proof {} not found", proof_id)))?;
+
+    Ok(ProofResponse::from(proof))
+}
 
 /// Verify a stored proof by its ID.
 ///
@@ -81,5 +98,49 @@ mod tests {
             .expect("invalid proof must return Ok (200), not Err");
         assert!(!resp.valid, "bogus proof data must yield valid:false");
         assert_eq!(resp.proof_id, proof_id);
+    }
+
+    #[tokio::test]
+    async fn getting_missing_proof_returns_not_found() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+
+        let req = GetProofRequest {
+            proof_id: "does-not-exist".to_string(),
+        };
+
+        let err = get_proof(&state, req)
+            .await
+            .expect_err("missing proof must return Err(NotFound)");
+        assert!(
+            matches!(err, Error::NotFound(_)),
+            "expected NotFound, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn getting_existing_proof_round_trips() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+
+        let proof_id = state
+            .proof_store
+            .submit(SubmitProofRequest {
+                proof_type: ProofType::Schnorr,
+                proof_data: serde_json::json!({ "some": "data" }),
+                metadata: None,
+            })
+            .await
+            .expect("submit should succeed");
+
+        let resp = get_proof(
+            &state,
+            GetProofRequest {
+                proof_id: proof_id.clone(),
+            },
+        )
+        .await
+        .expect("stored proof must be fetchable");
+
+        assert_eq!(resp.id, proof_id);
+        assert_eq!(resp.proof_type, ProofType::Schnorr);
     }
 }
