@@ -53,8 +53,16 @@ mod triples;
 
 // Re-export from proof (legacy validation endpoints)
 pub use proof::{
-    ProofDto, ProofStepDto, StatementInput, ValidateRequest, ValidateResponse, ValidateTripleInput,
-    ValidationMessage, VerificationDetails, VerifyProofRequest,
+    ProofDto, ProofStepDto, StatementInput, TripleValidationResult, ValidateRequest,
+    ValidateResponse, ValidateTripleInput, ValidationMessage, VerificationDetails,
+    VerifyProofRequest,
+};
+
+// Re-export from reputation (agent consistency + batch assertion verification).
+// Shared with the service layer and MCP tools.
+pub use reputation::{
+    AgentConsistencyRequest, AssertionRef, AssertionVerifyResult, BatchVerifyAssertionsRequest,
+    BatchVerifyAssertionsResponse, ConsistencyResponse,
 };
 
 // Re-export from proof_api (ZK proof storage endpoints)
