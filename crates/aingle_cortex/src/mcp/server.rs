@@ -54,12 +54,13 @@ impl AingleMcp {
 
     /// Insert a triple (subject, predicate, object) into the graph.
     ///
-    /// Mutation: not read-only. Idempotent because the graph keys triples by
-    /// content hash, so re-inserting the same triple is a no-op. Non-destructive
-    /// (it never removes or overwrites existing data).
+    /// Mutation: not read-only. Non-destructive (it never removes or overwrites
+    /// existing data). NOT idempotent: the graph keys triples by content hash,
+    /// so inserting a triple that already exists (same content hash) returns an
+    /// error rather than silently succeeding — a retried call may therefore fail.
     #[tool(
         description = "Insert a triple into the semantic graph. Mutates the graph.",
-        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true)
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
     )]
     async fn aingle_create_triple(
         &self,

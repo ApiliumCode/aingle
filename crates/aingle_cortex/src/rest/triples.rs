@@ -345,6 +345,10 @@ pub async fn create_triple(
     let dto = crate::service::triples::create_triple(&state, req, namespace).await?;
 
     // Append to WAL (cluster mode without Raft — legacy path).
+    // NOTE: ordering — the service call above has already performed the graph
+    // insert, recorded the audit entry, and broadcast the `TripleAdded` event.
+    // A WAL-append failure here therefore happens *after* those side-effects and
+    // cannot roll them back; the event was already observed by subscribers.
     #[cfg(feature = "cluster")]
     if let Some(ref wal) = state.wal {
         let triple_id = dto
