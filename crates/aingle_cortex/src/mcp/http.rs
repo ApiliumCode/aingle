@@ -22,6 +22,80 @@ pub(crate) fn bearer_ok(expected: &str, header: Option<&str>) -> bool {
     diff == 0
 }
 
+use crate::mcp::AingleMcp;
+use crate::state::AppState;
+use axum::response::IntoResponse;
+use axum::Router;
+
+/// Build the `/mcp` sub-router. Returns None when neither a token nor anonymous
+/// mode is configured (so the endpoint is never exposed unintentionally).
+pub fn mcp_http_router(
+    state: AppState,
+    token: Option<String>,
+    allow_anonymous: bool,
+    public_hosts: Vec<String>,
+) -> Option<Router> {
+    use rmcp::transport::streamable_http_server::{
+        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+    };
+    use std::sync::Arc;
+
+    if token.is_none() && !allow_anonymous {
+        return None;
+    }
+
+    let factory_state = state;
+    // Default loopback hosts plus any public host(s) for remote deployment.
+    // `::1` is included by StreamableHttpServerConfig::default(), but we rebuild
+    // the list explicitly so we control exactly which hosts are accepted.
+    let mut allowed_hosts = vec![
+        "localhost".to_string(),
+        "127.0.0.1".to_string(),
+        "::1".to_string(),
+    ];
+    allowed_hosts.extend(public_hosts);
+
+    // StreamableHttpServerConfig is #[non_exhaustive]; build via Default + builder.
+    let config = StreamableHttpServerConfig::default().with_allowed_hosts(allowed_hosts);
+    let service = StreamableHttpService::new(
+        move || Ok(AingleMcp::new(factory_state.clone())),
+        Arc::new(LocalSessionManager::default()),
+        config,
+    );
+
+    // The StreamableHttpService is a tower Service over `http::Request<B: Body>`;
+    // axum's body satisfies the `Body` bound, so it can be mounted directly as
+    // the router's fallback service. Nested under `/mcp` in build_router, the
+    // full path served is `/mcp`.
+    let mut router = Router::new().fallback_service(service);
+
+    if !allow_anonymous {
+        let expected = token.expect("token present when not anonymous");
+        router = router.layer(axum::middleware::from_fn(
+            move |req: axum::extract::Request, next: axum::middleware::Next| {
+                let expected = expected.clone();
+                async move {
+                    let hdr = req
+                        .headers()
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|v| v.to_str().ok());
+                    if bearer_ok(&expected, hdr) {
+                        next.run(req).await
+                    } else {
+                        (
+                            axum::http::StatusCode::UNAUTHORIZED,
+                            [(axum::http::header::WWW_AUTHENTICATE, "Bearer")],
+                            "unauthorized",
+                        )
+                            .into_response()
+                    }
+                }
+            },
+        ));
+    }
+    Some(router)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
