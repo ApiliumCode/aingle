@@ -294,6 +294,64 @@ impl AingleMcp {
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
+
+    /// Validate a semantic skill manifest against PoL rules.
+    ///
+    /// Read-only: validation never mutates state. Returns `{valid, errors}`;
+    /// a manifest with unsatisfiable proof requirements yields `valid:false`
+    /// with per-assertion error messages (not a tool error).
+    #[tool(
+        description = "Validate a semantic skill manifest against PoL rules. Returns {valid, errors}; does not mutate.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_validate_skill(
+        &self,
+        params: Parameters<crate::rest::ValidateManifestRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::skill::validate_manifest(&self.state, req).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Create a temporary sandbox namespace for skill verification.
+    ///
+    /// Mutation: not read-only. Non-destructive (only registers new sandbox
+    /// state; never removes or overwrites). Each call mints a fresh sandbox id,
+    /// so it is not marked idempotent.
+    #[tool(
+        description = "Create a temporary sandbox namespace for skill testing. Returns {id, namespace}.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    async fn aingle_sandbox_create(
+        &self,
+        params: Parameters<crate::rest::CreateSandboxRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::skill::create_sandbox(&self.state, req).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Delete a sandbox namespace by id, removing all triples under it.
+    ///
+    /// Mutation: not read-only. Destructive (removes the sandbox and its
+    /// triples). Idempotent: deleting an absent id reports `deleted:false`, but
+    /// the resulting state (sandbox gone) is the same on retry.
+    #[tool(
+        description = "Delete a sandbox namespace by id, removing all triples under it. Unknown id => deleted:false.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
+    )]
+    async fn aingle_sandbox_delete(
+        &self,
+        params: Parameters<crate::rest::DeleteSandboxRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(req) = params;
+        let resp = crate::service::skill::delete_sandbox(&self.state, &req.id).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
 }
 
 /// Dag-gated tools, kept in a separate router so the `#[tool_router]` macro on
