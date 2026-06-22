@@ -35,8 +35,6 @@ pub mod audit;
 pub mod cluster;
 #[cfg(feature = "cluster")]
 pub(crate) mod cluster_utils;
-#[cfg(feature = "cluster")]
-pub mod raft_rpc;
 #[cfg(feature = "dag")]
 pub mod dag;
 mod memory;
@@ -46,28 +44,45 @@ mod p2p;
 mod proof;
 mod proof_api;
 mod query;
+#[cfg(feature = "cluster")]
+pub mod raft_rpc;
 mod reputation;
-mod skill_verification;
+pub mod skill_verification;
 mod stats;
 mod triples;
 
 // Re-export from proof (legacy validation endpoints)
 pub use proof::{
-    ProofDto, ProofStepDto, StatementInput, ValidateRequest, ValidateResponse, ValidateTripleInput,
-    ValidationMessage, VerificationDetails, VerifyProofRequest,
+    ProofDto, ProofStepDto, StatementInput, TripleValidationResult, ValidateRequest,
+    ValidateResponse, ValidateTripleInput, ValidationMessage, VerificationDetails,
+    VerifyProofRequest,
+};
+
+// Re-export from reputation (agent consistency + batch assertion verification).
+// Shared with the service layer and MCP tools.
+pub use reputation::{
+    AgentConsistencyRequest, AssertionRef, AssertionVerifyResult, BatchVerifyAssertionsRequest,
+    BatchVerifyAssertionsResponse, ConsistencyResponse,
 };
 
 // Re-export from proof_api (ZK proof storage endpoints)
 pub use proof_api::{
     BatchSubmitRequest, BatchSubmitResponse, BatchVerifyRequest, BatchVerifyResponse,
-    DeleteProofResponse, ListProofsQuery, ListProofsResponse, ProofResponse, ProofStatsResponse,
-    SubmitProofResponse,
+    DeleteProofResponse, GetProofRequest, ListProofsQuery, ListProofsResponse, ProofResponse,
+    ProofStatsResponse, SubmitProofResponse, VerifyProofByIdRequest, VerifyProofResponse,
 };
 
 // Re-export from other modules
 pub use query::*;
 pub use stats::*;
 pub use triples::*;
+
+// Re-export skill verification request/response types (shared with the service
+// layer and MCP tools).
+pub use skill_verification::{
+    AssertionDecl, CreateSandboxRequest, CreateSandboxResponse, DeleteSandboxRequest,
+    DeleteSandboxResponse, ValidateManifestRequest, ValidateManifestResponse,
+};
 
 use crate::state::AppState;
 use axum::{
@@ -81,10 +96,7 @@ pub fn router() -> Router<AppState> {
         // Triple CRUD
         .route("/api/v1/triples", post(triples::create_triple))
         .route("/api/v1/triples", get(triples::list_triples))
-        .route(
-            "/api/v1/triples/batch",
-            post(triples::batch_insert_triples),
-        )
+        .route("/api/v1/triples/batch", post(triples::batch_insert_triples))
         .route("/api/v1/triples/{id}", get(triples::get_triple))
         .route("/api/v1/triples/{id}", delete(triples::delete_triple))
         // Query endpoints

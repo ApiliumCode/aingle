@@ -395,6 +395,46 @@ aingle-minimal run --rest-port 19080
 
 ---
 
+## MCP Server
+
+The Cortex exposes the AIngle semantic graph to MCP clients like Claude Code and Claude Desktop over the Model Context Protocol (stdio), letting agents query, write, and verify graph data through tool calls.
+
+### Build
+
+```bash
+cargo build -p aingle_cortex --features "mcp dag" --release
+```
+
+### Client configuration
+
+Add to `claude_desktop_config.json` (Claude Desktop) or `.mcp.json` (Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "aingle": {
+      "command": "aingle-cortex",
+      "args": ["--mcp", "--db", "./data/graph.sled"]
+    }
+  }
+}
+```
+
+Replace `--db <path>` with `--memory` for an ephemeral, in-memory graph.
+
+### Available tools
+
+- `aingle_ping` — liveness check
+- `aingle_query_pattern` — query the semantic graph by triple pattern
+- `aingle_graph_stats` — graph statistics
+- `aingle_create_triple` — insert a triple (write)
+- `aingle_verify_proof` — verify a zero-knowledge proof (returns `valid: false` for invalid proofs)
+- `aingle_dag_history` — signed DAG provenance history of a subject (requires the `dag` feature)
+
+> stdout is reserved for the JSON-RPC stream; logs are written to stderr.
+
+---
+
 ## Contributing
 
 We welcome contributions from the community.

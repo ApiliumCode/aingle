@@ -6,17 +6,27 @@
 //! REST/GraphQL/SPARQL interface for AIngle semantic graphs.
 
 use aingle_cortex::{CortexConfig, CortexServer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // In MCP mode, stdout is reserved for the JSON-RPC stream, so all logging
+    // must be redirected to stderr. Detect the flag before subscriber init.
+    let mcp_mode = std::env::args().any(|a| a == "--mcp");
+
     // Initialize logging
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "aingle_cortex=info,tower_http=debug".into());
+    let fmt_layer = if mcp_mode {
+        tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stderr)
+            .boxed()
+    } else {
+        tracing_subscriber::fmt::layer().boxed()
+    };
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "aingle_cortex=info,tower_http=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
+        .with(fmt_layer)
         .init();
 
     // Parse command line arguments
@@ -61,6 +71,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--memory" => {
                 config.db_path = Some(":memory:".to_string());
             }
+            "--mcp" => {
+                config.mcp_mode = true;
+            }
             "--flush-interval" => {
                 if i + 1 < args.len() {
                     config.flush_interval_secs = args[i + 1].parse().unwrap_or(300);
@@ -74,6 +87,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         }
         i += 1;
+    }
+
+    // If --mcp was requested but the binary was built without the `mcp` feature,
+    // fail loudly instead of silently falling through to the TCP REST server.
+    #[cfg(not(feature = "mcp"))]
+    if config.mcp_mode {
+        eprintln!("error: --mcp requires building with the `mcp` feature: cargo build -p aingle_cortex --features mcp");
+        std::process::exit(2);
     }
 
     // Parse P2P flags (feature-gated at compile time).
@@ -157,6 +178,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "dag")]
     if !cluster_config.enabled {
         aingle_cortex::cluster_init::ensure_dag_ready(server.state_mut(), db_path.as_deref()).await;
+    }
+
+    // MCP mode: serve over stdio instead of binding a TCP listener.
+    #[cfg(feature = "mcp")]
+    if server.config().mcp_mode {
+        let state = server.state().clone();
+        aingle_cortex::mcp::serve_stdio(state).await?;
+        return Ok(());
     }
 
     // Spawn periodic flush task if enabled
@@ -269,6 +298,7 @@ fn print_help() {
     );
     println!("    --memory             Use volatile in-memory storage (no persistence)");
     println!("    --flush-interval <S> Periodic flush interval in seconds (default: 300, 0=off)");
+    println!("    --mcp                Serve MCP over stdio (requires --features mcp)");
     println!("    -V, --version        Print version and exit");
     println!("    --help               Print this help message");
     println!();
