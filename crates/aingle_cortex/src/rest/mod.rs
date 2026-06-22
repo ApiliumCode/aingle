@@ -47,7 +47,7 @@ mod query;
 #[cfg(feature = "cluster")]
 pub mod raft_rpc;
 mod reputation;
-mod skill_verification;
+pub mod skill_verification;
 mod stats;
 mod triples;
 
@@ -68,6 +68,13 @@ pub use proof_api::{
 pub use query::*;
 pub use stats::*;
 pub use triples::*;
+
+// Re-export skill verification request/response types (shared with the service
+// layer and MCP tools).
+pub use skill_verification::{
+    AssertionDecl, CreateSandboxRequest, CreateSandboxResponse, DeleteSandboxRequest,
+    DeleteSandboxResponse, ValidateManifestRequest, ValidateManifestResponse,
+};
 
 use crate::state::AppState;
 use axum::{

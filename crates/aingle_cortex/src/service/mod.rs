@@ -7,6 +7,7 @@
 pub mod dag;
 pub mod proof;
 pub mod query;
+pub mod skill;
 #[cfg(feature = "sparql")]
 pub mod sparql;
 pub mod stats;
