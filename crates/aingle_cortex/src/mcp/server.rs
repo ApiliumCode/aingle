@@ -90,6 +90,56 @@ impl AingleMcp {
         "pong".to_string()
     }
 
+    /// Ingest a markdown vault / code repo into the graph + memory with provenance.
+    #[tool(
+        description = "Ingest a markdown vault or code repo: auto-extracts triples \
+            (frontmatter, wikilinks, headings, tags), indexes text chunks for \
+            semantic recall, and records signed provenance. Incremental: unchanged \
+            files are skipped."
+    )]
+    async fn aingle_ingest(
+        &self,
+        params: Parameters<IngestParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::ingest::ingest_path(&self.state, &p.path, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Grounded retrieval: cited, provenance-backed context for a question.
+    #[tool(
+        description = "Answer-grounding for a question. Returns cited source chunks \
+            (path:lines) with a signed-provenance anchor and a groundedness signal. \
+            Answer ONLY from the returned context; if groundedness is not 'grounded', \
+            say so and do not invent.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_ground(
+        &self,
+        params: Parameters<GroundParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::ground::ground(&self.state, &p.question, p.k)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// List ingested sources and their signed content hashes.
+    #[tool(
+        description = "List ingested source files with their content hashes (the \
+            signed provenance registry).",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_sources(&self) -> Result<CallToolResult, ErrorData> {
+        let resp = crate::service::ingest::list_sources(&self.state)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// Query the semantic graph by triple pattern (any field omitted = wildcard).
     #[tool(
         description = "Query the semantic graph by triple pattern. Omit a field to wildcard it.",
@@ -536,6 +586,27 @@ impl AingleMcp {
     }
 }
 
+/// Parameters for the `aingle_ingest` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct IngestParams {
+    /// Absolute or relative path to the vault/repo root to ingest.
+    pub path: String,
+}
+
+/// Parameters for the `aingle_ground` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GroundParams {
+    /// The question to ground against ingested sources.
+    pub question: String,
+    /// Max chunks to retrieve.
+    #[serde(default = "default_ground_k")]
+    pub k: usize,
+}
+
+fn default_ground_k() -> usize {
+    6
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for AingleMcp {
     fn get_info(&self) -> ServerInfo {
@@ -547,5 +618,25 @@ impl ServerHandler for AingleMcp {
                 .to_string(),
         );
         info
+    }
+}
+
+#[cfg(test)]
+mod ingest_tools_tests {
+    use super::*;
+
+    #[test]
+    fn router_exposes_ingest_ground_sources() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let mcp = AingleMcp::new(state);
+        let names: Vec<String> = mcp
+            .tool_router
+            .list_all()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        for expected in ["aingle_ingest", "aingle_ground", "aingle_sources"] {
+            assert!(names.contains(&expected.to_string()), "missing tool {expected}");
+        }
     }
 }

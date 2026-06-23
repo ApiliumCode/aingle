@@ -251,6 +251,24 @@ pub async fn ingest_path(
     Ok(report)
 }
 
+/// List all source files recorded in the signed registry (path + content hash).
+pub async fn list_sources(state: &AppState) -> Result<Vec<SourceRecord>> {
+    let graph = state.graph.read().await;
+    let pattern = TriplePattern::any().with_predicate(Predicate::named(PRED_SOURCE_HASH));
+    let triples = graph
+        .find(pattern)
+        .map_err(|e| Error::Internal(format!("graph find error: {e}")))?;
+    Ok(triples
+        .iter()
+        .filter_map(|t| {
+            t.object_string().map(|h| SourceRecord {
+                path: t.subject.to_string(),
+                content_hash: h.to_string(),
+            })
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
