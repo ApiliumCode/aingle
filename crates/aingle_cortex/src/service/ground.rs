@@ -8,10 +8,15 @@ use crate::error::Result;
 use crate::state::AppState;
 use serde::Serialize;
 
-/// Similarity at/above which retrieval is considered well-grounded.
+/// Similarity at/above which a chunk counts as a strong, corroborating match.
 const GROUND_HIGH: f32 = 0.55;
 /// Similarity below which retrieval is considered ungrounded.
 const GROUND_LOW: f32 = 0.30;
+/// Number of strong chunks required to call retrieval "grounded". A lone strong
+/// chunk is treated as "weak": with the current placeholder embedder a single
+/// high score can be spurious, so we require independent corroboration rather
+/// than blind-tuning `GROUND_HIGH`. Revisit once a real embedder lands.
+const MIN_CORROBORATING_CHUNKS: usize = 2;
 
 /// A cited chunk of source context.
 #[derive(Debug, Clone, Serialize)]
@@ -85,7 +90,13 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
         });
     }
 
-    let groundedness = if best >= GROUND_HIGH {
+    // Require at least MIN_CORROBORATING_CHUNKS strong matches for "grounded";
+    // a single strong chunk is only "weak" (independent corroboration guard).
+    let strong = answer_context
+        .iter()
+        .filter(|c| c.relevance >= GROUND_HIGH)
+        .count();
+    let groundedness = if best >= GROUND_HIGH && strong >= MIN_CORROBORATING_CHUNKS {
         "grounded"
     } else if best >= GROUND_LOW && !answer_context.is_empty() {
         "weak"
@@ -97,7 +108,13 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
     if answer_context.is_empty() {
         gaps.push(format!("No ingested source matches: {question:?}."));
     } else if groundedness == "weak" {
-        gaps.push("Retrieved context is only weakly related to the question.".to_string());
+        if best >= GROUND_HIGH && strong < MIN_CORROBORATING_CHUNKS {
+            gaps.push(
+                "Only one source corroborates this; a second is needed to be grounded.".to_string(),
+            );
+        } else {
+            gaps.push("Retrieved context is only weakly related to the question.".to_string());
+        }
     }
 
     Ok(GroundedContext {
@@ -165,6 +182,70 @@ mod tests {
         assert_eq!(g.groundedness, "ungrounded");
         assert!(g.answer_context.is_empty());
         assert!(!g.gaps.is_empty());
+    }
+
+    #[tokio::test]
+    async fn single_corroborating_chunk_is_weak_not_grounded() {
+        // One source, one chunk: even a strong similarity match must not be called
+        // "grounded" — with the placeholder embedder a lone high score can be
+        // spurious, so a single corroborating chunk is downgraded to "weak".
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("note.md"),
+            "# Note\n\nWe chose sled for its exclusive lock semantics.\n",
+        )
+        .unwrap();
+        let state = enabled_state().await;
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+
+        // Query the chunk almost verbatim so the lone chunk scores well above HIGH.
+        let g = ground(&state, "We chose sled for its exclusive lock semantics.", 5)
+            .await
+            .unwrap();
+        assert!(
+            !g.answer_context.is_empty(),
+            "should retrieve the one chunk"
+        );
+        assert_eq!(
+            g.groundedness, "weak",
+            "a single corroborating chunk must be weak, not grounded; ctx: {:?}",
+            g.answer_context
+        );
+    }
+
+    #[tokio::test]
+    async fn two_corroborating_sources_are_grounded() {
+        // The same fact stated in two separate files yields two strong chunks for a
+        // matching query — that independent corroboration is what makes it grounded.
+        let dir = tempfile::tempdir().unwrap();
+        let fact = "# Doc\n\nThe quorum read requires a valid leader lease.\n";
+        std::fs::write(dir.path().join("a.md"), fact).unwrap();
+        std::fs::write(dir.path().join("b.md"), fact).unwrap();
+        let state = enabled_state().await;
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+
+        let g = ground(&state, "The quorum read requires a valid leader lease.", 5)
+            .await
+            .unwrap();
+        let strong = g
+            .answer_context
+            .iter()
+            .filter(|c| c.relevance >= 0.55)
+            .count();
+        assert!(
+            strong >= 2,
+            "two sources should both score strongly; ctx: {:?}",
+            g.answer_context
+        );
+        assert_eq!(
+            g.groundedness, "grounded",
+            "two corroborating strong chunks must be grounded; ctx: {:?}",
+            g.answer_context
+        );
     }
 
     #[tokio::test]
