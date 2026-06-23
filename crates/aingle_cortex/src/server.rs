@@ -51,6 +51,12 @@ pub struct CortexConfig {
     pub mcp_http_token: Option<String>,
     /// Serve `/mcp` without auth (test mode, pre-OAuth). Default false.
     pub mcp_http_allow_anonymous: bool,
+    /// OAuth issuer URL (e.g. https://auth.example/realms/aingle). Enables OAuth on /mcp when set.
+    pub mcp_oauth_issuer: Option<String>,
+    /// OAuth protected-resource id = expected JWT audience (e.g. https://mcp.example/mcp).
+    pub mcp_oauth_resource: Option<String>,
+    /// Optional explicit JWKS URL; if None, derived from the issuer (Keycloak certs path).
+    pub mcp_oauth_jwks_url: Option<String>,
 }
 
 impl Default for CortexConfig {
@@ -71,6 +77,9 @@ impl Default for CortexConfig {
             mcp_mode: false,
             mcp_http_token: None,
             mcp_http_allow_anonymous: false,
+            mcp_oauth_issuer: None,
+            mcp_oauth_resource: None,
+            mcp_oauth_jwks_url: None,
         }
     }
 }
