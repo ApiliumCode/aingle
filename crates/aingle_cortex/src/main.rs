@@ -74,6 +74,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--mcp" => {
                 config.mcp_mode = true;
             }
+            "--mcp-http-token" => {
+                if i + 1 < args.len() {
+                    config.mcp_http_token = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            }
+            "--mcp-http-allow-anonymous" => {
+                config.mcp_http_allow_anonymous = true;
+            }
+            "--mcp-oauth-issuer" => {
+                if i + 1 < args.len() {
+                    config.mcp_oauth_issuer = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            }
+            "--mcp-oauth-resource" => {
+                if i + 1 < args.len() {
+                    config.mcp_oauth_resource = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            }
+            "--mcp-oauth-jwks-url" => {
+                if i + 1 < args.len() {
+                    config.mcp_oauth_jwks_url = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            }
             "--flush-interval" => {
                 if i + 1 < args.len() {
                     config.flush_interval_secs = args[i + 1].parse().unwrap_or(300);
@@ -87,6 +114,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         }
         i += 1;
+    }
+
+    // Fall back to the environment for the MCP HTTP bearer token if not given as a flag.
+    if config.mcp_http_token.is_none() {
+        config.mcp_http_token = std::env::var("AINGLE_MCP_HTTP_TOKEN").ok();
+    }
+    if config.mcp_oauth_issuer.is_none() {
+        config.mcp_oauth_issuer = std::env::var("AINGLE_OAUTH_ISSUER").ok();
+    }
+    if config.mcp_oauth_resource.is_none() {
+        config.mcp_oauth_resource = std::env::var("AINGLE_OAUTH_RESOURCE").ok();
+    }
+    if config.mcp_oauth_jwks_url.is_none() {
+        config.mcp_oauth_jwks_url = std::env::var("AINGLE_OAUTH_JWKS_URL").ok();
     }
 
     // If --mcp was requested but the binary was built without the `mcp` feature,
@@ -299,6 +340,21 @@ fn print_help() {
     println!("    --memory             Use volatile in-memory storage (no persistence)");
     println!("    --flush-interval <S> Periodic flush interval in seconds (default: 300, 0=off)");
     println!("    --mcp                Serve MCP over stdio (requires --features mcp)");
+    println!(
+        "    --mcp-http-token <T> Bearer token for the /mcp HTTP endpoint (requires --features mcp-http)"
+    );
+    println!(
+        "    --mcp-http-allow-anonymous  Serve /mcp without auth (test mode; requires --features mcp-http)"
+    );
+    println!(
+        "    --mcp-oauth-issuer <U>   OAuth issuer URL; enables OAuth on /mcp (requires --features mcp-oauth)"
+    );
+    println!(
+        "    --mcp-oauth-resource <R> OAuth protected-resource id = expected JWT audience (requires --features mcp-oauth)"
+    );
+    println!(
+        "    --mcp-oauth-jwks-url <U> Explicit JWKS URL; derived from issuer if omitted (requires --features mcp-oauth)"
+    );
     println!("    -V, --version        Print version and exit");
     println!("    --help               Print this help message");
     println!();

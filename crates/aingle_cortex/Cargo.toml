@@ -23,7 +23,9 @@ p2p-mdns = ["p2p", "dep:mdns-sd", "dep:if-addrs"]
 cluster = ["p2p", "dep:aingle_wal", "dep:aingle_raft", "dep:openraft", "dep:tokio-rustls", "dep:rustls-pemfile"]
 dag = ["cluster", "aingle_graph/dag", "aingle_graph/dag-sign", "aingle_raft/dag"]
 mcp = ["dep:rmcp", "dep:schemars"]
-full = ["rest", "graphql", "sparql", "auth", "dag"]
+mcp-http = ["mcp", "rmcp/transport-streamable-http-server", "rmcp/server-side-http"]
+mcp-oauth = ["mcp-http", "dep:jsonwebtoken"]
+full =["rest", "graphql", "sparql", "auth", "dag"]
 
 [[bin]]
 name = "aingle-cortex"
@@ -119,3 +121,6 @@ tokio-test = "0.4"
 # Enable the rmcp `client` feature for the in-process MCP integration test.
 # This is dev-only; the production `mcp` feature uses the server side only.
 rmcp = { version = "1.7", features = ["client", "transport-io"] }
+# OAuth integration test: derive a JWK from the test public key + base64url encode.
+rsa = { version = "0.9", features = ["pem"] }
+base64 = "0.22"

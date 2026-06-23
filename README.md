@@ -433,6 +433,46 @@ Replace `--db <path>` with `--memory` for an ephemeral, in-memory graph.
 
 > stdout is reserved for the JSON-RPC stream; logs are written to stderr.
 
+### Remote (HTTP) connector
+
+Build with the HTTP transport and run cortex normally; the MCP endpoint is served at `/mcp`:
+
+```bash
+cargo build -p aingle_cortex --features "mcp dag mcp-http" --release
+
+AINGLE_MCP_HTTP_TOKEN=your-secret AINGLE_PUBLIC_HOST=your.domain \
+  aingle-cortex --db ./data/graph.sled
+# MCP available at http://localhost:19090/mcp
+# Clients send:  Authorization: Bearer your-secret
+```
+
+- The `/mcp` route is **only mounted** when a bearer token is set (`--mcp-http-token` / `AINGLE_MCP_HTTP_TOKEN`) or `--mcp-http-allow-anonymous` is passed — it is never exposed unintentionally.
+- `AINGLE_PUBLIC_HOST` (comma-separated) must list the public hostname(s) for a remote deployment (rmcp rejects non-loopback `Host` headers otherwise).
+- `--mcp-http-allow-anonymous` serves `/mcp` without auth (test only).
+
+> Note: claude.ai's connector UI cannot attach a static bearer header; secured remote use from claude.ai needs OAuth (planned). Verify the deployed endpoint with `curl`/MCP Inspector using the bearer token.
+
+#### OAuth (secured remote access)
+
+Build with `--features "mcp dag mcp-http mcp-oauth"` and set an issuer; cortex then acts as an OAuth 2.0
+Resource Server for `/mcp` (e.g. for claude.ai remote connectors):
+
+```bash
+AINGLE_OAUTH_ISSUER=https://auth.example/realms/aingle \
+AINGLE_OAUTH_RESOURCE=https://mcp.example/mcp \
+  aingle-cortex --db ./data/graph.sled
+```
+
+- Serves `GET /.well-known/oauth-protected-resource` (RFC 9728); a request to `/mcp` without a valid token
+  gets `401` + `WWW-Authenticate: Bearer resource_metadata="…"` so clients can discover the authorization server.
+- `/mcp` accepts a Bearer **JWT** signed by the issuer — validated via its JWKS, algorithm pinned to RS256,
+  with `iss`, `aud` (must equal the resource), and `exp` all required.
+- The Phase-1 static bearer (`AINGLE_MCP_HTTP_TOKEN`) is still accepted alongside OAuth (handy for `curl`).
+  This dual-credential behavior is intentional; a leaked static token bypasses the JWT checks, so use it only
+  where appropriate.
+- For non-Keycloak issuers, set `AINGLE_OAUTH_JWKS_URL` explicitly (the default derives the Keycloak certs path).
+  The Authorization Server (login, PKCE, client registration) is external — see the private deploy repo.
+
 ---
 
 ## Contributing
