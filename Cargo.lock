@@ -141,6 +141,7 @@ name = "aingle_cortex"
 version = "0.6.3"
 dependencies = [
  "aingle_graph",
+ "aingle_ingest",
  "aingle_logic",
  "aingle_raft",
  "aingle_wal",
@@ -149,6 +150,7 @@ dependencies = [
  "async-graphql",
  "async-graphql-axum",
  "axum",
+ "base64",
  "blake3",
  "chrono",
  "dashmap 6.1.0",
@@ -157,6 +159,7 @@ dependencies = [
  "futures",
  "hex",
  "if-addrs 0.13.4",
+ "ignore",
  "ineru",
  "jsonwebtoken",
  "log",
@@ -169,6 +172,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rmcp",
+ "rsa",
  "rustls",
  "rustls-pemfile",
  "schemars",
@@ -213,6 +217,18 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "uuid",
+]
+
+[[package]]
+name = "aingle_ingest"
+version = "0.6.3"
+dependencies = [
+ "aingle_graph",
+ "blake3",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
