@@ -200,6 +200,7 @@ pub async fn create_triple(
                     subject: req.subject.clone(),
                     predicate: req.predicate.clone(),
                     object: serde_json::to_value(&req.object).unwrap_or_default(),
+                    provenance: None,
                 }],
             },
             signature: None,

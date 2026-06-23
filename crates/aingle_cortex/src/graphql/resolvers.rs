@@ -191,6 +191,7 @@ impl MutationRoot {
                             subject: input.subject.clone(),
                             predicate: input.predicate.clone(),
                             object: serde_json::json!({}),
+                            provenance: None,
                         }],
                     },
                     signature: None,
