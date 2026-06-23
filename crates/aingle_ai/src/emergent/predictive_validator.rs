@@ -5,8 +5,8 @@
 //!
 //! Predict validation outcome before full validation.
 
-use crate::nested_learning::NestedLearning;
 use crate::ineru::IneruMemory;
+use crate::nested_learning::NestedLearning;
 use crate::types::{AiTransaction, ValidationPrediction};
 
 /// Predict validation outcome before full validation

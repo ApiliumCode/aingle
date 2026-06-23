@@ -3,9 +3,9 @@
 
 //! Global AI configuration
 
+use crate::ineru::IneruConfig;
 use crate::kaneru::KaneruConfig;
 use crate::nested_learning::NestedConfig;
-use crate::ineru::IneruConfig;
 use serde::{Deserialize, Serialize};
 
 /// Global AI configuration for AIngle nodes
