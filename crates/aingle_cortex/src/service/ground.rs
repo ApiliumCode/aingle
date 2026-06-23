@@ -20,7 +20,9 @@ pub struct ContextChunk {
     pub source: String,
     pub lines: String,
     pub relevance: f32,
-    pub provenance_sig: Option<String>,
+    /// Hex hash of the signed DAG action that recorded this source — verifiable
+    /// via the DAG history/action API. `None` when the source has no signed action.
+    pub provenance_anchor: Option<String>,
     pub ingested_at: Option<String>,
 }
 
@@ -70,7 +72,7 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
             source,
             lines: format!("{ls}-{le}"),
             relevance: r.relevance,
-            provenance_sig: sig,
+            provenance_anchor: sig,
             ingested_at,
         });
     }
