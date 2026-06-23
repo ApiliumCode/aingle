@@ -22,6 +22,8 @@ Thumbs.db
 CLAUDE.md
 .claude_settings
 .claudeignore
+.mcp.json
+docs/superpowers/
 
 # GitHub Copilot
 .copilot/
@@ -113,6 +115,8 @@ llm-instructions.md
 *.profraw
 *.profdata
 aingle_iot.db
+data/
+*.sled
 
 # Logs
 *.log
