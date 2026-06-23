@@ -12,6 +12,8 @@
 mod convert;
 #[cfg(feature = "mcp-http")]
 pub mod http;
+#[cfg(feature = "mcp-oauth")]
+pub mod oauth;
 mod server;
 
 pub use server::AingleMcp;
