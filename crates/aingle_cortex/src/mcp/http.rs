@@ -27,6 +27,22 @@ use crate::state::AppState;
 use axum::response::IntoResponse;
 use axum::Router;
 
+/// Given an OAuth resource URL like `https://mcp.example/mcp`, return its
+/// `<scheme>://<host[:port]>/.well-known/oauth-protected-resource`.
+#[cfg(feature = "mcp-oauth")]
+fn metadata_url_from_resource(resource: &str) -> Option<String> {
+    // resource is "<scheme>://<authority>/<path...>"; take scheme + authority.
+    let rest = resource.split("://").nth(1)?; // "<authority>/<path>"
+    let authority = rest.split('/').next()?; // "<host[:port]>"
+    let scheme = resource.split("://").next()?; // "https" / "http"
+    if authority.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{scheme}://{authority}/.well-known/oauth-protected-resource"
+    ))
+}
+
 /// Build the `/mcp` sub-router. Returns None when neither a token nor anonymous
 /// mode is configured (so the endpoint is never exposed unintentionally).
 pub fn mcp_http_router(
@@ -81,10 +97,21 @@ pub fn mcp_http_router(
         let static_token = token.clone();
         #[cfg(feature = "mcp-oauth")]
         let oauth_for_layer = oauth.clone();
-        let resource_metadata_url = public_hosts
-            .first()
-            .map(|h| format!("https://{h}/.well-known/oauth-protected-resource"))
-            .unwrap_or_default();
+        let resource_metadata_url = {
+            #[cfg(feature = "mcp-oauth")]
+            let from_oauth = oauth
+                .as_ref()
+                .and_then(|(cfg, _)| metadata_url_from_resource(&cfg.resource));
+            #[cfg(not(feature = "mcp-oauth"))]
+            let from_oauth: Option<String> = None;
+            from_oauth
+                .or_else(|| {
+                    public_hosts
+                        .first()
+                        .map(|h| format!("https://{h}/.well-known/oauth-protected-resource"))
+                })
+                .unwrap_or_default()
+        };
         router = router.layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {
                 let static_token = static_token.clone();
