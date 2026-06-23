@@ -45,13 +45,10 @@ pub async fn raft_append_entries(
     let req: openraft::raft::AppendEntriesRequest<C> = serde_json::from_slice(&body)
         .map_err(|e| Error::Internal(format!("Deserialize AppendEntries: {e}")))?;
 
-    let resp = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        raft.append_entries(req),
-    )
-    .await
-    .map_err(|_| Error::Timeout("AppendEntries RPC timed out (10s)".into()))?
-    .map_err(|e| Error::Internal(format!("AppendEntries failed: {e}")))?;
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(10), raft.append_entries(req))
+        .await
+        .map_err(|_| Error::Timeout("AppendEntries RPC timed out (10s)".into()))?
+        .map_err(|e| Error::Internal(format!("AppendEntries failed: {e}")))?;
 
     let payload = serde_json::to_vec(&resp)
         .map_err(|e| Error::Internal(format!("Serialize response: {e}")))?;
@@ -78,13 +75,10 @@ pub async fn raft_vote(
     let req: openraft::raft::VoteRequest<C> = serde_json::from_slice(&body)
         .map_err(|e| Error::Internal(format!("Deserialize Vote: {e}")))?;
 
-    let resp = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        raft.vote(req),
-    )
-    .await
-    .map_err(|_| Error::Timeout("Vote RPC timed out (10s)".into()))?
-    .map_err(|e| Error::Internal(format!("Vote failed: {e}")))?;
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(10), raft.vote(req))
+        .await
+        .map_err(|_| Error::Timeout("Vote RPC timed out (10s)".into()))?
+        .map_err(|e| Error::Internal(format!("Vote failed: {e}")))?;
 
     let payload = serde_json::to_vec(&resp)
         .map_err(|e| Error::Internal(format!("Serialize response: {e}")))?;
@@ -153,9 +147,8 @@ struct SnapshotBuffer {
 /// In-flight chunked snapshot buffers, keyed by snapshot_id.
 /// Buffers older than `BUFFER_TTL` are evicted to prevent memory leaks
 /// from abandoned transfers.
-static SNAPSHOT_BUFFERS: std::sync::LazyLock<
-    dashmap::DashMap<String, SnapshotBuffer>,
-> = std::sync::LazyLock::new(dashmap::DashMap::new);
+static SNAPSHOT_BUFFERS: std::sync::LazyLock<dashmap::DashMap<String, SnapshotBuffer>> =
+    std::sync::LazyLock::new(dashmap::DashMap::new);
 
 /// Maximum time a partial snapshot buffer can live before eviction.
 const BUFFER_TTL: std::time::Duration = std::time::Duration::from_secs(300); // 5 min
@@ -226,7 +219,9 @@ pub async fn raft_snapshot_chunk(
                 // Remove buffer and validate completeness
                 let full_buf = SNAPSHOT_BUFFERS
                     .remove(&snapshot_id)
-                    .ok_or_else(|| Error::Internal("Snapshot buffer missing on final chunk".into()))?
+                    .ok_or_else(|| {
+                        Error::Internal("Snapshot buffer missing on final chunk".into())
+                    })?
                     .1;
 
                 if (full_buf.data.len() as u64) != full_buf.expected_size {
@@ -256,10 +251,7 @@ pub async fn raft_snapshot_chunk(
 }
 
 /// Shared logic: install a full snapshot from its raw bytes.
-async fn install_full_snapshot_from_bytes(
-    state: &AppState,
-    data: &[u8],
-) -> Result<Vec<u8>, Error> {
+async fn install_full_snapshot_from_bytes(state: &AppState, data: &[u8]) -> Result<Vec<u8>, Error> {
     let raft = state
         .raft
         .as_ref()
@@ -292,8 +284,7 @@ async fn install_full_snapshot_from_bytes(
     .map_err(|_| Error::Timeout("InstallSnapshot timed out (60s)".into()))?
     .map_err(|e| Error::Internal(format!("InstallSnapshot failed: {e}")))?;
 
-    serde_json::to_vec(&resp)
-        .map_err(|e| Error::Internal(format!("Serialize response: {e}")))
+    serde_json::to_vec(&resp).map_err(|e| Error::Internal(format!("Serialize response: {e}")))
 }
 
 /// Create the internal Raft RPC sub-router.

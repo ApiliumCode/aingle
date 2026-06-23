@@ -6,12 +6,12 @@
 //! Uses openraft for leader election and log replication,
 //! backed by the AIngle WAL for durable log storage.
 
-pub mod types;
-pub mod log_store;
-pub mod state_machine;
-pub mod snapshot_builder;
-pub mod network;
 pub mod consistency;
+pub mod log_store;
+pub mod network;
+pub mod snapshot_builder;
+pub mod state_machine;
+pub mod types;
 
-pub use types::{CortexTypeConfig, CortexRequest, CortexResponse, CortexNode, NodeId};
 pub use consistency::ConsistencyLevel;
+pub use types::{CortexNode, CortexRequest, CortexResponse, CortexTypeConfig, NodeId};

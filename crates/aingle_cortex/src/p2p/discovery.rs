@@ -42,8 +42,7 @@ mod inner {
 
     impl P2pDiscovery {
         pub fn new(node_id: String, seed_hash: String, port: u16) -> Result<Self, String> {
-            let daemon = ServiceDaemon::new()
-                .map_err(|e| format!("mDNS daemon: {}", e))?;
+            let daemon = ServiceDaemon::new().map_err(|e| format!("mDNS daemon: {}", e))?;
             Ok(Self {
                 daemon,
                 node_id,
@@ -71,10 +70,7 @@ mod inner {
                 return Err("no network interfaces".to_string());
             }
 
-            let instance_name = format!(
-                "cortex-{}",
-                &self.node_id[..8.min(self.node_id.len())]
-            );
+            let instance_name = format!("cortex-{}", &self.node_id[..8.min(self.node_id.len())]);
 
             let mut props = HashMap::new();
             props.insert("node_id".to_string(), self.node_id.clone());
@@ -177,10 +173,8 @@ mod inner {
             self.running
                 .store(false, std::sync::atomic::Ordering::SeqCst);
             if self.registered {
-                let instance_name = format!(
-                    "cortex-{}",
-                    &self.node_id[..8.min(self.node_id.len())]
-                );
+                let instance_name =
+                    format!("cortex-{}", &self.node_id[..8.min(self.node_id.len())]);
                 let _ = self
                     .daemon
                     .unregister(&format!("{}.{}", instance_name, SERVICE_TYPE));

@@ -39,12 +39,30 @@ mod tests {
 
     #[test]
     fn test_from_header() {
-        assert_eq!(ConsistencyLevel::from_header("local"), ConsistencyLevel::Local);
-        assert_eq!(ConsistencyLevel::from_header("quorum"), ConsistencyLevel::Quorum);
-        assert_eq!(ConsistencyLevel::from_header("linearizable"), ConsistencyLevel::Linearizable);
-        assert_eq!(ConsistencyLevel::from_header("LOCAL"), ConsistencyLevel::Local);
-        assert_eq!(ConsistencyLevel::from_header("QUORUM"), ConsistencyLevel::Quorum);
-        assert_eq!(ConsistencyLevel::from_header("unknown"), ConsistencyLevel::Local);
+        assert_eq!(
+            ConsistencyLevel::from_header("local"),
+            ConsistencyLevel::Local
+        );
+        assert_eq!(
+            ConsistencyLevel::from_header("quorum"),
+            ConsistencyLevel::Quorum
+        );
+        assert_eq!(
+            ConsistencyLevel::from_header("linearizable"),
+            ConsistencyLevel::Linearizable
+        );
+        assert_eq!(
+            ConsistencyLevel::from_header("LOCAL"),
+            ConsistencyLevel::Local
+        );
+        assert_eq!(
+            ConsistencyLevel::from_header("QUORUM"),
+            ConsistencyLevel::Quorum
+        );
+        assert_eq!(
+            ConsistencyLevel::from_header("unknown"),
+            ConsistencyLevel::Local
+        );
     }
 
     #[test]

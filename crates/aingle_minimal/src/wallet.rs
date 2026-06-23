@@ -667,9 +667,10 @@ impl ApduCommand {
     /// Serialize to bytes for transmission
     pub fn serialize(&self) -> std::result::Result<Vec<u8>, crate::error::Error> {
         if self.data.len() > 255 {
-            return Err(crate::error::Error::network(
-                format!("APDU data too large: {} bytes (max 255)", self.data.len()),
-            ));
+            return Err(crate::error::Error::network(format!(
+                "APDU data too large: {} bytes (max 255)",
+                self.data.len()
+            )));
         }
         let mut bytes = Vec::with_capacity(5 + self.data.len());
         bytes.push(self.cla);

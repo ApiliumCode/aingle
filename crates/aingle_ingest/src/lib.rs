@@ -80,19 +80,31 @@ mod tests {
             && t.predicate == "type"
             && t.object == ObjectValue::Text("adr".into())));
         // frontmatter tags -> two tagged triples
-        assert!(ex.triples.iter().any(|t| t.predicate == "tagged"
-            && t.object == ObjectValue::Text("storage".into())));
-        assert!(ex.triples.iter().any(|t| t.predicate == "tagged"
-            && t.object == ObjectValue::Text("decision".into())));
+        assert!(ex
+            .triples
+            .iter()
+            .any(|t| t.predicate == "tagged" && t.object == ObjectValue::Text("storage".into())));
+        assert!(ex
+            .triples
+            .iter()
+            .any(|t| t.predicate == "tagged" && t.object == ObjectValue::Text("decision".into())));
         // heading -> has_section
         assert!(ex.triples.iter().any(|t| t.predicate == "has_section"
             && t.object == ObjectValue::Text("Storage Decision".into())));
         // wikilink -> links_to sled
-        let link = ex.triples.iter().find(|t| t.predicate == "links_to").unwrap();
+        let link = ex
+            .triples
+            .iter()
+            .find(|t| t.predicate == "links_to")
+            .unwrap();
         assert_eq!(link.object, ObjectValue::Node("sled".into()));
         // inline tag -> tagged durability
-        assert!(ex.triples.iter().any(|t| t.predicate == "tagged"
-            && t.object == ObjectValue::Text("durability".into())));
+        assert!(
+            ex.triples
+                .iter()
+                .any(|t| t.predicate == "tagged"
+                    && t.object == ObjectValue::Text("durability".into()))
+        );
 
         // provenance line numbers are 1-based and point at the real lines.
         assert_eq!(prov(&link.provenance).0, 7); // the "We chose [[sled]]" line
@@ -100,12 +112,18 @@ mod tests {
 
         // at least one chunk, all carrying the same content hash.
         assert!(!ex.chunks.is_empty());
-        assert!(ex.chunks.iter().all(|c| !c.provenance.content_hash.is_empty()));
+        assert!(ex
+            .chunks
+            .iter()
+            .all(|c| !c.provenance.content_hash.is_empty()));
     }
 
     #[test]
     fn non_markdown_gets_chunks_only() {
-        let code = (1..=120).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let code = (1..=120)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let ex = extract("src/main.rs", &code);
         assert!(ex.triples.is_empty());
         // 120 lines / 50-line window => 3 chunks.

@@ -114,10 +114,11 @@ fn reconstruct_zk_proof(proof: &StoredProof) -> Result<aingle_zk::ZkProof, Verif
         "metadata": null
     });
 
-    serde_json::from_value(envelope)
-        .map_err(|e| VerificationError::DeserializationError(
-            format!("Failed to reconstruct ZkProof envelope: {e}")
+    serde_json::from_value(envelope).map_err(|e| {
+        VerificationError::DeserializationError(format!(
+            "Failed to reconstruct ZkProof envelope: {e}"
         ))
+    })
 }
 
 /// Map Cortex `ProofType` → `aingle_zk::ProofType`.
@@ -203,8 +204,8 @@ impl ProofVerifier {
         // envelope) when submitted via the REST API, since submit() only
         // persists request.proof_data. Try full envelope first, then
         // reconstruct from StoredProof.proof_type + raw proof data.
-        let zk_proof: aingle_zk::ZkProof = serde_json::from_slice(&proof.data)
-            .or_else(|_| reconstruct_zk_proof(proof))?;
+        let zk_proof: aingle_zk::ZkProof =
+            serde_json::from_slice(&proof.data).or_else(|_| reconstruct_zk_proof(proof))?;
 
         // Verify based on proof type
         let valid = match proof.proof_type {
@@ -512,7 +513,11 @@ mod tests {
 
         // This is the exact path that was failing with 422
         let result = verifier.verify(&stored).await;
-        assert!(result.is_ok(), "verify() should reconstruct ZkProof envelope: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "verify() should reconstruct ZkProof envelope: {:?}",
+            result.err()
+        );
         assert!(result.unwrap().valid);
     }
 
@@ -529,14 +534,14 @@ mod tests {
         });
         let raw_bytes = serde_json::to_vec(&raw).unwrap();
 
-        let stored = StoredProof::new(
-            ProofType::HashOpening,
-            raw_bytes,
-            ProofMetadata::default(),
-        );
+        let stored = StoredProof::new(ProofType::HashOpening, raw_bytes, ProofMetadata::default());
 
         let result = verifier.verify(&stored).await;
-        assert!(result.is_ok(), "verify() should inject type tag: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "verify() should inject type tag: {:?}",
+            result.err()
+        );
         assert!(result.unwrap().valid);
     }
 

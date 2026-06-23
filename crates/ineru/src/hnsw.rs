@@ -9,8 +9,8 @@
 use crate::error::{Error, Result};
 use crate::types::MemoryId;
 use serde::{Deserialize, Serialize};
-use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 // ============================================================================
 // Config
@@ -82,7 +82,10 @@ impl Eq for Candidate {}
 impl Ord for Candidate {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse for min-heap behavior (BinaryHeap is max-heap)
-        other.distance.partial_cmp(&self.distance).unwrap_or(Ordering::Equal)
+        other
+            .distance
+            .partial_cmp(&self.distance)
+            .unwrap_or(Ordering::Equal)
     }
 }
 
@@ -109,7 +112,9 @@ impl Eq for MaxCandidate {}
 
 impl Ord for MaxCandidate {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.distance.partial_cmp(&other.distance).unwrap_or(Ordering::Equal)
+        self.distance
+            .partial_cmp(&other.distance)
+            .unwrap_or(Ordering::Equal)
     }
 }
 
@@ -259,7 +264,8 @@ impl HnswIndex {
 
     /// Rebuild the index, removing deleted points.
     pub fn rebuild(&mut self) {
-        let active_points: Vec<(MemoryId, Vec<f32>)> = self.points
+        let active_points: Vec<(MemoryId, Vec<f32>)> = self
+            .points
             .iter()
             .filter(|p| !p.deleted)
             .map(|p| (p.id.clone(), p.embedding.clone()))
@@ -282,7 +288,8 @@ impl HnswIndex {
 
     /// Serialize the index to bytes (M1 fix — preserves full topology).
     pub fn serialize(&self) -> Result<Vec<u8>> {
-        let points: Vec<HnswPointSnapshot> = self.points
+        let points: Vec<HnswPointSnapshot> = self
+            .points
             .iter()
             .map(|p| HnswPointSnapshot {
                 id: p.id.clone(),
@@ -302,8 +309,7 @@ impl HnswIndex {
             points,
         };
 
-        serde_json::to_vec(&snapshot)
-            .map_err(|e| Error::internal(format!("HNSW serialize: {e}")))
+        serde_json::to_vec(&snapshot).map_err(|e| Error::internal(format!("HNSW serialize: {e}")))
     }
 
     /// Deserialize an index from bytes (M1 fix — backward-compatible).
@@ -320,7 +326,9 @@ impl HnswIndex {
                 index.max_layer = snapshot.max_layer;
                 index.entry_point = snapshot.entry_point;
 
-                let dimensions = snapshot.points.first()
+                let dimensions = snapshot
+                    .points
+                    .first()
                     .map(|p| p.embedding.len())
                     .unwrap_or(0);
                 index.dimensions = dimensions;
@@ -474,15 +482,27 @@ impl HnswIndex {
         current
     }
 
-    fn search_layer(&self, start: usize, query: &[f32], ef: usize, _layer: usize) -> Vec<Candidate> {
+    fn search_layer(
+        &self,
+        start: usize,
+        query: &[f32],
+        ef: usize,
+        _layer: usize,
+    ) -> Vec<Candidate> {
         let mut visited = HashSet::new();
         let start_dist = Self::cosine_distance(&self.points[start].embedding, query);
 
         let mut candidates = BinaryHeap::new(); // min-heap
         let mut result = BinaryHeap::<MaxCandidate>::new(); // max-heap
 
-        candidates.push(Candidate { index: start, distance: start_dist });
-        result.push(MaxCandidate { index: start, distance: start_dist });
+        candidates.push(Candidate {
+            index: start,
+            distance: start_dist,
+        });
+        result.push(MaxCandidate {
+            index: start,
+            distance: start_dist,
+        });
         visited.insert(start);
 
         while let Some(current) = candidates.pop() {
@@ -521,8 +541,14 @@ impl HnswIndex {
                 };
 
                 if should_add {
-                    candidates.push(Candidate { index: neighbor_idx, distance: dist });
-                    result.push(MaxCandidate { index: neighbor_idx, distance: dist });
+                    candidates.push(Candidate {
+                        index: neighbor_idx,
+                        distance: dist,
+                    });
+                    result.push(MaxCandidate {
+                        index: neighbor_idx,
+                        distance: dist,
+                    });
 
                     if result.len() > ef {
                         result.pop(); // Remove worst
@@ -534,9 +560,16 @@ impl HnswIndex {
         // Convert max-heap to sorted vec (best first)
         let mut results: Vec<Candidate> = result
             .into_iter()
-            .map(|mc| Candidate { index: mc.index, distance: mc.distance })
+            .map(|mc| Candidate {
+                index: mc.index,
+                distance: mc.distance,
+            })
             .collect();
-        results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        results.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(Ordering::Equal)
+        });
         results
     }
 
@@ -571,17 +604,20 @@ impl HnswIndex {
             // Add reverse links
             for &neighbor_idx in &selected {
                 if layer < self.points[neighbor_idx].neighbors.len() {
-                    let already_linked = self.points[neighbor_idx].neighbors[layer].contains(&new_idx);
+                    let already_linked =
+                        self.points[neighbor_idx].neighbors[layer].contains(&new_idx);
                     if !already_linked {
                         self.points[neighbor_idx].neighbors[layer].push(new_idx);
                         // Prune if too many neighbors
                         if self.points[neighbor_idx].neighbors[layer].len() > max_neighbors {
                             // Compute distances for sorting, then sort & truncate
                             let emb = self.points[neighbor_idx].embedding.clone();
-                            let mut scored: Vec<(usize, f32)> = self.points[neighbor_idx]
-                                .neighbors[layer]
+                            let mut scored: Vec<(usize, f32)> = self.points[neighbor_idx].neighbors
+                                [layer]
                                 .iter()
-                                .map(|&n| (n, Self::cosine_distance(&self.points[n].embedding, &emb)))
+                                .map(|&n| {
+                                    (n, Self::cosine_distance(&self.points[n].embedding, &emb))
+                                })
                                 .collect();
                             scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
                             scored.truncate(max_neighbors);
@@ -851,7 +887,11 @@ mod tests {
     #[test]
     fn test_entry_point_updates_on_higher_level() {
         // Use a config with small m to increase chance of higher layers
-        let config = HnswConfig { m: 2, ef_construction: 10, ef_search: 10 };
+        let config = HnswConfig {
+            m: 2,
+            ef_construction: 10,
+            ef_search: 10,
+        };
         let mut index = HnswIndex::new(config);
 
         // Insert many points; at least one should get a level > 0
@@ -882,7 +922,11 @@ mod tests {
 
     #[test]
     fn test_deletion_prunes_neighbor_lists() {
-        let config = HnswConfig { m: 4, ef_construction: 20, ef_search: 10 };
+        let config = HnswConfig {
+            m: 4,
+            ef_construction: 20,
+            ef_search: 10,
+        };
         let mut index = HnswIndex::new(config);
 
         // Insert several closely-related points so they appear in each other's

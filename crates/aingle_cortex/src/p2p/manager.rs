@@ -52,9 +52,7 @@ impl ManualPeerTracker {
     fn record_failure(&mut self) {
         self.retries += 1;
         self.last_attempt = Instant::now();
-        self.current_backoff = Duration::from_secs(
-            (self.current_backoff.as_secs() * 2).min(300),
-        );
+        self.current_backoff = Duration::from_secs((self.current_backoff.as_secs() * 2).min(300));
         if self.retries >= self.max_retries {
             self.abandoned = true;
         }
@@ -85,7 +83,8 @@ impl PingTracker {
     }
 
     fn record_ping(&mut self, addr: SocketAddr, timestamp_ms: u64) {
-        self.outstanding.insert(addr, (timestamp_ms, Instant::now()));
+        self.outstanding
+            .insert(addr, (timestamp_ms, Instant::now()));
     }
 
     fn record_pong(&mut self, addr: &SocketAddr, _timestamp_ms: u64) {
@@ -183,9 +182,10 @@ impl P2pManager {
         }
 
         // A3: Load persistent peer store and merge with manual peers.
-        let peer_store = Arc::new(RwLock::new(
-            PeerStore::load(&config.data_dir, config.max_peers * 2),
-        ));
+        let peer_store = Arc::new(RwLock::new(PeerStore::load(
+            &config.data_dir,
+            config.max_peers * 2,
+        )));
 
         // 6. Connect to manual peers + persisted peers.
         let triple_count = {
@@ -227,7 +227,11 @@ impl P2pManager {
                             sync.write().await.get_peer_state(&stored.addr);
                         }
                         Err(e) => {
-                            tracing::debug!("P2P persisted peer {} unreachable: {}", stored.addr, e);
+                            tracing::debug!(
+                                "P2P persisted peer {} unreachable: {}",
+                                stored.addr,
+                                e
+                            );
                         }
                     }
                 }
@@ -243,8 +247,7 @@ impl P2pManager {
         )));
 
         // 7. Discovery.
-        let mut disc =
-            P2pDiscovery::new(node_id.clone(), seed_hash.clone(), config.port)?;
+        let mut disc = P2pDiscovery::new(node_id.clone(), seed_hash.clone(), config.port)?;
         if config.mdns {
             disc.register()?;
             disc.start_browsing()?;
@@ -309,19 +312,31 @@ impl P2pManager {
                         };
 
                         match hello {
-                            P2pMessage::Hello { seed_hash: peer_seed, node_id: peer_nid, .. } => {
+                            P2pMessage::Hello {
+                                seed_hash: peer_seed,
+                                node_id: peer_nid,
+                                ..
+                            } => {
                                 let accepted = peer_seed == accept_seed_hash;
                                 let ack = P2pMessage::HelloAck {
                                     node_id: accept_node_id.clone(),
                                     accepted,
-                                    reason: if accepted { None } else { Some("seed_mismatch".into()) },
+                                    reason: if accepted {
+                                        None
+                                    } else {
+                                        Some("seed_mismatch".into())
+                                    },
                                 };
                                 if P2pTransport::send_on_conn(&connection, &ack).await.is_err() {
                                     continue;
                                 }
 
                                 if accepted {
-                                    tracing::info!("P2P accepted connection from {} ({})", remote, &peer_nid[..8.min(peer_nid.len())]);
+                                    tracing::info!(
+                                        "P2P accepted connection from {} ({})",
+                                        remote,
+                                        &peer_nid[..8.min(peer_nid.len())]
+                                    );
                                     // Store connection (brief write lock).
                                     transport.write().await.store_connection(remote, connection);
                                     // Register in sync manager for gossip.
@@ -336,7 +351,10 @@ impl P2pManager {
                                     });
                                     let _ = ps.save();
                                 } else {
-                                    tracing::warn!("P2P rejected connection from {}: seed mismatch", remote);
+                                    tracing::warn!(
+                                        "P2P rejected connection from {}: seed mismatch",
+                                        remote
+                                    );
                                     connection.close(1u32.into(), b"seed_mismatch");
                                 }
                             }
@@ -441,13 +459,9 @@ impl P2pManager {
                         #[cfg(feature = "dag")]
                         {
                             let g = graph2.read().await;
-                            let (tips, action_count) =
-                                crate::p2p::dag_sync::collect_local_tips(&g);
+                            let (tips, action_count) = crate::p2p::dag_sync::collect_local_tips(&g);
                             if !tips.is_empty() {
-                                let dag_msg = P2pMessage::DagTipSync {
-                                    tips,
-                                    action_count,
-                                };
+                                let dag_msg = P2pMessage::DagTipSync { tips, action_count };
                                 let _ = t.send(&peer_addr, &dag_msg).await;
                             }
                         }
@@ -539,13 +553,9 @@ impl P2pManager {
                                 );
                             }
                         }
-                        P2pMessage::BloomSync {
-                            filter_bytes,
-                            ..
-                        } => {
+                        P2pMessage::BloomSync { filter_bytes, .. } => {
                             let peer_filter = BloomFilter::from_bytes(&filter_bytes);
-                            let local_ids: Vec<[u8; 32]> =
-                                sync.read().await.local_ids().to_vec();
+                            let local_ids: Vec<[u8; 32]> = sync.read().await.local_ids().to_vec();
                             let missing =
                                 gossip.read().await.find_missing(&peer_filter, &local_ids);
 
@@ -601,10 +611,7 @@ impl P2pManager {
                                 .filter_map(|tw| tw.to_triple())
                                 .collect();
                             let g = graph.read().await;
-                            let result = sync
-                                .write()
-                                .await
-                                .store_received_triples(converted, &g);
+                            let result = sync.write().await.store_received_triples(converted, &g);
                             sync.write()
                                 .await
                                 .record_sync_result(addr, true, result.inserted);
@@ -635,7 +642,10 @@ impl P2pManager {
                             }
                         }
                         // A1: Handle incoming deletion announcement.
-                        P2pMessage::AnnounceDelete { triple_id, tombstone_ts } => {
+                        P2pMessage::AnnounceDelete {
+                            triple_id,
+                            tombstone_ts,
+                        } => {
                             if let Some(tid) = TripleId::from_hex(&triple_id) {
                                 let mut s = sync.write().await;
                                 if !s.has_tombstone(&tid.0) {
@@ -682,10 +692,7 @@ impl P2pManager {
                         // A4: Forward pong to health task via channel.
                         P2pMessage::Pong { timestamp_ms, .. } => {
                             let _ = health_tx
-                                .send(HealthEvent::PongReceived {
-                                    addr,
-                                    timestamp_ms,
-                                })
+                                .send(HealthEvent::PongReceived { addr, timestamp_ms })
                                 .await;
                         }
                         // DAG sync message handlers
@@ -710,8 +717,7 @@ impl P2pManager {
                         #[cfg(feature = "dag")]
                         P2pMessage::RequestDagActions { hashes } => {
                             let g = graph.read().await;
-                            let actions =
-                                crate::p2p::dag_sync::fetch_actions_by_hash(&g, &hashes);
+                            let actions = crate::p2p::dag_sync::fetch_actions_by_hash(&g, &hashes);
                             if !actions.is_empty() {
                                 let send_msg = P2pMessage::SendDagActions { actions };
                                 let t = transport.read().await;
@@ -772,10 +778,7 @@ impl P2pManager {
                                 .connect(peer.addr, triple_count)
                                 .await;
                             if let Ok(()) = result {
-                                tracing::info!(
-                                    "P2P discovered and connected to {}",
-                                    peer.node_id
-                                );
+                                tracing::info!("P2P discovered and connected to {}", peer.node_id);
                                 sync.write().await.get_peer_state(&peer.addr);
                                 // A3: Record mDNS peer
                                 let mut ps = peer_store.write().await;
@@ -1155,7 +1158,9 @@ mod tests {
     fn ping_tracker_timed_out_detection() {
         let mut tracker = PingTracker::new(Duration::from_millis(10));
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
-        tracker.outstanding.insert(addr, (1000, Instant::now() - Duration::from_millis(50)));
+        tracker
+            .outstanding
+            .insert(addr, (1000, Instant::now() - Duration::from_millis(50)));
         let timed_out = tracker.timed_out_peers();
         assert_eq!(timed_out.len(), 1);
         assert_eq!(timed_out[0], addr);

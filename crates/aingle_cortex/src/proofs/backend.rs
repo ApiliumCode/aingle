@@ -80,10 +80,7 @@ impl ProofBackend for MemoryProofBackend {
             .data
             .read()
             .map_err(|_| "MemoryProofBackend lock poisoned".to_string())?;
-        Ok(data
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect())
+        Ok(data.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
     }
 }
 
@@ -103,8 +100,7 @@ pub struct SledProofBackend {
 impl SledProofBackend {
     /// Open or create a proofs tree inside the Sled database at `path`.
     pub fn open(path: &str) -> Result<Self, String> {
-        let db =
-            sled::open(path).map_err(|e| format!("sled open error (proofs): {e}"))?;
+        let db = sled::open(path).map_err(|e| format!("sled open error (proofs): {e}"))?;
         let tree = db
             .open_tree("proofs")
             .map_err(|e| format!("sled open_tree(proofs) error: {e}"))?;
@@ -139,8 +135,7 @@ impl ProofBackend for SledProofBackend {
     fn list_all(&self) -> Result<Vec<(String, Vec<u8>)>, String> {
         let mut results = Vec::new();
         for item in self.tree.iter() {
-            let (k, v) =
-                item.map_err(|e| format!("sled proofs scan error: {e}"))?;
+            let (k, v) = item.map_err(|e| format!("sled proofs scan error: {e}"))?;
             let key = String::from_utf8(k.to_vec())
                 .map_err(|e| format!("sled proofs key decode error: {e}"))?;
             results.push((key, v.to_vec()));

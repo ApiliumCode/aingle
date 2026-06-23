@@ -59,10 +59,18 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
             continue;
         }
         let d = &r.entry.data;
-        let source = d.get("source_path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let source = d
+            .get("source_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let ls = d.get("line_start").and_then(|v| v.as_u64()).unwrap_or(0);
         let le = d.get("line_end").and_then(|v| v.as_u64()).unwrap_or(0);
-        let text = d.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let text = d
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         let (sig, ingested_at) = signed_provenance(state, &source).await;
 
@@ -110,7 +118,10 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
 /// `hash: String` (action hash) and `signed: bool`. We return the action hash
 /// as the provenance identifier when the action is signed, or None otherwise.
 /// The timestamp field is `timestamp: String` which matches the plan exactly.
-async fn signed_provenance(state: &AppState, source_path: &str) -> (Option<String>, Option<String>) {
+async fn signed_provenance(
+    state: &AppState,
+    source_path: &str,
+) -> (Option<String>, Option<String>) {
     #[cfg(feature = "dag")]
     {
         if source_path.is_empty() {
@@ -169,8 +180,13 @@ mod tests {
             .await
             .unwrap();
 
-        let g = ground(&state, "exclusive lock semantics sled", 5).await.unwrap();
-        assert!(!g.answer_context.is_empty(), "should retrieve the ingested chunk");
+        let g = ground(&state, "exclusive lock semantics sled", 5)
+            .await
+            .unwrap();
+        assert!(
+            !g.answer_context.is_empty(),
+            "should retrieve the ingested chunk"
+        );
         assert_eq!(g.answer_context[0].source, "adr.md");
         assert_ne!(g.groundedness, "ungrounded");
     }

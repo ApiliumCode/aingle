@@ -60,7 +60,11 @@ pub fn chunk_markdown(path: &str, content: &str, hash: &str) -> Vec<Chunk> {
 
     let mut out = Vec::new();
     for (n, &start) in starts.iter().enumerate() {
-        let end = if n + 1 < starts.len() { starts[n + 1] } else { lines.len() };
+        let end = if n + 1 < starts.len() {
+            starts[n + 1]
+        } else {
+            lines.len()
+        };
         let section = &lines[start..end];
         if section.len() > 80 {
             // chunk_fixed returns 1-based lines within the section; adding the

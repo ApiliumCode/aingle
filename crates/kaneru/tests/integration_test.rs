@@ -243,7 +243,8 @@ fn test_persistence_formats() {
         compress: false,
     };
     let json_bytes = agent.to_bytes_with_options(&json_options).unwrap();
-    let loaded_from_json = KaneruAgent::from_bytes_with_options(&json_bytes, &json_options).unwrap();
+    let loaded_from_json =
+        KaneruAgent::from_bytes_with_options(&json_bytes, &json_options).unwrap();
     assert_eq!(
         loaded_from_json.get_statistics().total_steps,
         agent.get_statistics().total_steps

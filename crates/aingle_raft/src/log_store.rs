@@ -69,7 +69,12 @@ impl CortexLogStore {
         let mut log = BTreeMap::new();
 
         for wal_entry in &wal_entries {
-            if let WalEntryKind::RaftEntry { index, term: _, data } = &wal_entry.kind {
+            if let WalEntryKind::RaftEntry {
+                index,
+                term: _,
+                data,
+            } = &wal_entry.kind
+            {
                 match serde_json::from_slice::<Entry>(data) {
                     Ok(entry) => {
                         log.insert(*index, entry);
@@ -248,7 +253,11 @@ impl CortexLogStore {
         // Write ALL to WAL first
         for (index, term, ref data, _) in &batch {
             self.wal
-                .append(WalEntryKind::RaftEntry { index: *index, term: *term, data: data.clone() })
+                .append(WalEntryKind::RaftEntry {
+                    index: *index,
+                    term: *term,
+                    data: data.clone(),
+                })
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         }
 
@@ -348,9 +357,12 @@ impl RaftLogStorage<C> for Arc<CortexLogStore> {
     {
         // Always invoke the callback, even on error, to prevent openraft hangs.
         let result = self.append_inner(entries).await;
-        callback.io_completed(result.as_ref().map(|_| ()).map_err(|e| {
-            io::Error::new(e.kind(), e.to_string())
-        }));
+        callback.io_completed(
+            result
+                .as_ref()
+                .map(|_| ())
+                .map_err(|e| io::Error::new(e.kind(), e.to_string())),
+        );
         result
     }
 
@@ -381,10 +393,7 @@ impl RaftLogStorage<C> for Arc<CortexLogStore> {
     async fn purge(&mut self, log_id: LogId) -> Result<(), io::Error> {
         let mut log = self.log.write().await;
 
-        let keys_to_remove: Vec<u64> = log
-            .range(..=log_id.index)
-            .map(|(k, _)| *k)
-            .collect();
+        let keys_to_remove: Vec<u64> = log.range(..=log_id.index).map(|(k, _)| *k).collect();
         for k in keys_to_remove {
             log.remove(&k);
         }
@@ -409,10 +418,7 @@ mod tests {
     use openraft::vote::RaftLeaderId;
 
     fn make_entry(index: u64, term: u64) -> Entry {
-        Entry::new_blank(openraft::LogId::new(
-            CommittedLeaderId::new(term, 0),
-            index,
-        ))
+        Entry::new_blank(openraft::LogId::new(CommittedLeaderId::new(term, 0), index))
     }
 
     #[tokio::test]
@@ -434,10 +440,7 @@ mod tests {
 
         let entries = vec![make_entry(1, 1), make_entry(2, 1), make_entry(3, 1)];
 
-        store_mut
-            .append(entries, IOFlushed::noop())
-            .await
-            .unwrap();
+        store_mut.append(entries, IOFlushed::noop()).await.unwrap();
 
         let mut reader = store.clone();
         let result = reader.try_get_log_entries(1..4).await.unwrap();
@@ -480,10 +483,7 @@ mod tests {
             make_entry(3, 1),
             make_entry(4, 1),
         ];
-        store_mut
-            .append(entries, IOFlushed::noop())
-            .await
-            .unwrap();
+        store_mut.append(entries, IOFlushed::noop()).await.unwrap();
 
         // Truncate after index 2
         let lid = openraft::LogId::new(CommittedLeaderId::new(1, 0), 2);
@@ -509,10 +509,7 @@ mod tests {
                 make_entry(3, 1),
                 make_entry(4, 1),
             ];
-            store_mut
-                .append(entries, IOFlushed::noop())
-                .await
-                .unwrap();
+            store_mut.append(entries, IOFlushed::noop()).await.unwrap();
 
             let lid = openraft::LogId::new(CommittedLeaderId::new(1, 0), 2);
             store_mut.truncate_after(Some(lid)).await.unwrap();
@@ -523,7 +520,11 @@ mod tests {
             let store = Arc::new(CortexLogStore::open(dir.path()).unwrap());
             let mut reader = store.clone();
             let result = reader.try_get_log_entries(1..5).await.unwrap();
-            assert_eq!(result.len(), 2, "truncated entries must not survive restart");
+            assert_eq!(
+                result.len(),
+                2,
+                "truncated entries must not survive restart"
+            );
         }
     }
 
@@ -533,15 +534,8 @@ mod tests {
         let store = Arc::new(CortexLogStore::open(dir.path()).unwrap());
         let mut store_mut = store.clone();
 
-        let entries = vec![
-            make_entry(1, 1),
-            make_entry(2, 1),
-            make_entry(3, 1),
-        ];
-        store_mut
-            .append(entries, IOFlushed::noop())
-            .await
-            .unwrap();
+        let entries = vec![make_entry(1, 1), make_entry(2, 1), make_entry(3, 1)];
+        store_mut.append(entries, IOFlushed::noop()).await.unwrap();
 
         let purge_id = openraft::LogId::new(CommittedLeaderId::new(1, 0), 2);
         store_mut.purge(purge_id).await.unwrap();
@@ -561,15 +555,8 @@ mod tests {
             let store = Arc::new(CortexLogStore::open(dir.path()).unwrap());
             let mut store_mut = store.clone();
 
-            let entries = vec![
-                make_entry(1, 1),
-                make_entry(2, 1),
-                make_entry(3, 1),
-            ];
-            store_mut
-                .append(entries, IOFlushed::noop())
-                .await
-                .unwrap();
+            let entries = vec![make_entry(1, 1), make_entry(2, 1), make_entry(3, 1)];
+            store_mut.append(entries, IOFlushed::noop()).await.unwrap();
 
             let purge_id = openraft::LogId::new(CommittedLeaderId::new(1, 0), 2);
             store_mut.purge(purge_id).await.unwrap();
@@ -601,10 +588,7 @@ mod tests {
             let mut store_mut = store.clone();
 
             let entries = vec![make_entry(1, 1), make_entry(2, 1)];
-            store_mut
-                .append(entries, IOFlushed::noop())
-                .await
-                .unwrap();
+            store_mut.append(entries, IOFlushed::noop()).await.unwrap();
         }
 
         // Reopen and verify entries are recovered
@@ -644,10 +628,7 @@ mod tests {
         let mut store_mut = store.clone();
 
         let entries = vec![make_entry(1, 1), make_entry(2, 1)];
-        store_mut
-            .append(entries, IOFlushed::noop())
-            .await
-            .unwrap();
+        store_mut.append(entries, IOFlushed::noop()).await.unwrap();
 
         let state = store_mut.get_log_state().await.unwrap();
         assert!(state.last_purged_log_id.is_none());

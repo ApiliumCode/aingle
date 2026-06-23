@@ -62,8 +62,7 @@ fn short_id(id: &str) -> &str {
 impl DagGraph {
     /// Build a graph from a list of actions and their tip status.
     pub fn from_actions(actions: &[DagAction], tips: &[DagActionHash]) -> Self {
-        let tip_set: std::collections::HashSet<[u8; 32]> =
-            tips.iter().map(|h| h.0).collect();
+        let tip_set: std::collections::HashSet<[u8; 32]> = tips.iter().map(|h| h.0).collect();
 
         let mut nodes = Vec::with_capacity(actions.len());
         let mut edges = Vec::new();
@@ -85,7 +84,9 @@ impl DagGraph {
                 DagPayload::Genesis { .. } => "Genesis".into(),
                 DagPayload::Compact { .. } => "Compact".into(),
                 DagPayload::Noop => "Noop".into(),
-                DagPayload::Custom { ref payload_type, .. } => {
+                DagPayload::Custom {
+                    ref payload_type, ..
+                } => {
                     format!("Custom({})", payload_type)
                 }
             };
@@ -115,7 +116,9 @@ impl DagGraph {
 
     /// Export as Graphviz DOT format.
     pub fn to_dot(&self) -> String {
-        let mut out = String::from("digraph DAG {\n  rankdir=BT;\n  node [shape=box, style=filled, fontsize=10];\n\n");
+        let mut out = String::from(
+            "digraph DAG {\n  rankdir=BT;\n  node [shape=box, style=filled, fontsize=10];\n\n",
+        );
 
         for node in &self.nodes {
             let color = if node.is_tip {
@@ -173,7 +176,10 @@ impl DagGraph {
         // Style tips
         for node in &self.nodes {
             if node.is_tip {
-                out.push_str(&format!("  style {} fill:#4CAF50,color:white\n", short_id(&node.id)));
+                out.push_str(&format!(
+                    "  style {} fill:#4CAF50,color:white\n",
+                    short_id(&node.id)
+                ));
             }
         }
 
@@ -306,7 +312,10 @@ mod tests {
         assert_eq!(ExportFormat::from_str("dot"), Some(ExportFormat::Dot));
         assert_eq!(ExportFormat::from_str("DOT"), Some(ExportFormat::Dot));
         assert_eq!(ExportFormat::from_str("graphviz"), Some(ExportFormat::Dot));
-        assert_eq!(ExportFormat::from_str("mermaid"), Some(ExportFormat::Mermaid));
+        assert_eq!(
+            ExportFormat::from_str("mermaid"),
+            Some(ExportFormat::Mermaid)
+        );
         assert_eq!(ExportFormat::from_str("json"), Some(ExportFormat::Json));
         assert_eq!(ExportFormat::from_str("xml"), None);
     }

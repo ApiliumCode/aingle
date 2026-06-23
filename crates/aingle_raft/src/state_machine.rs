@@ -219,9 +219,7 @@ impl CortexStateMachine {
                     id: None,
                 }
             }
-            WalEntryKind::DagAction { action_bytes } => {
-                self.apply_dag_action(action_bytes).await
-            }
+            WalEntryKind::DagAction { action_bytes } => self.apply_dag_action(action_bytes).await,
             _ => CortexResponse {
                 success: true,
                 detail: None,
@@ -248,9 +246,7 @@ impl CortexStateMachine {
             };
 
             // Reject unsigned actions (Genesis exempt — system-generated at init)
-            if action.signature.is_none()
-                && !matches!(action.payload, DagPayload::Genesis { .. })
-            {
+            if action.signature.is_none() && !matches!(action.payload, DagPayload::Genesis { .. }) {
                 tracing::warn!(
                     seq = action.seq,
                     author = %action.author,
@@ -285,9 +281,8 @@ impl CortexStateMachine {
                 DagPayload::TripleInsert { triples } => {
                     let graph = self.graph.read().await;
                     for t in triples {
-                        let value = json_to_value(
-                            &serde_json::to_value(&t.object).unwrap_or_default(),
-                        );
+                        let value =
+                            json_to_value(&serde_json::to_value(&t.object).unwrap_or_default());
                         let triple = aingle_graph::Triple::new(
                             aingle_graph::NodeId::named(&t.subject),
                             aingle_graph::Predicate::named(&t.predicate),
@@ -320,10 +315,15 @@ impl CortexStateMachine {
                             );
                         }
                         aingle_graph::dag::MemoryOpKind::Forget { memory_id } => {
-                            tracing::debug!(memory_id, "DagAction MemoryOp::Forget recorded (audit only)");
+                            tracing::debug!(
+                                memory_id,
+                                "DagAction MemoryOp::Forget recorded (audit only)"
+                            );
                         }
                         aingle_graph::dag::MemoryOpKind::Consolidate => {
-                            tracing::debug!("DagAction MemoryOp::Consolidate recorded (audit only)");
+                            tracing::debug!(
+                                "DagAction MemoryOp::Consolidate recorded (audit only)"
+                            );
                         }
                     }
                 }
@@ -360,24 +360,42 @@ impl CortexStateMachine {
                                 // Audit-only: no graph mutation needed
                             }
                             DagPayload::Batch { .. } => {
-                                tracing::warn!("Nested Batch inside Batch — skipping to avoid recursion");
+                                tracing::warn!(
+                                    "Nested Batch inside Batch — skipping to avoid recursion"
+                                );
                             }
                         }
                     }
                 }
-                DagPayload::Genesis { triple_count, description } => {
+                DagPayload::Genesis {
+                    triple_count,
+                    description,
+                } => {
+                    tracing::info!(triple_count, description, "Applied DagAction::Genesis");
+                }
+                DagPayload::Compact {
+                    pruned_count,
+                    retained_count,
+                    ref policy,
+                } => {
                     tracing::info!(
-                        triple_count,
-                        description,
-                        "Applied DagAction::Genesis"
+                        pruned_count,
+                        retained_count,
+                        policy,
+                        "Applied DagAction::Compact"
                     );
                 }
-                DagPayload::Compact { pruned_count, retained_count, ref policy } => {
-                    tracing::info!(pruned_count, retained_count, policy, "Applied DagAction::Compact");
-                }
                 DagPayload::Noop => {}
-                DagPayload::Custom { ref payload_type, ref payload_summary, .. } => {
-                    tracing::info!(payload_type, payload_summary, "Applied DagAction::Custom (audit only)");
+                DagPayload::Custom {
+                    ref payload_type,
+                    ref payload_summary,
+                    ..
+                } => {
+                    tracing::info!(
+                        payload_type,
+                        payload_summary,
+                        "Applied DagAction::Custom (audit only)"
+                    );
                 }
             }
 
@@ -426,9 +444,7 @@ impl CortexStateMachine {
 impl RaftStateMachine<C> for Arc<CortexStateMachine> {
     type SnapshotBuilder = CortexSnapshotBuilder;
 
-    async fn applied_state(
-        &mut self,
-    ) -> Result<(Option<LogId>, StoredMembershipOf<C>), io::Error> {
+    async fn applied_state(&mut self) -> Result<(Option<LogId>, StoredMembershipOf<C>), io::Error> {
         let la = self.last_applied.read().await;
         let membership = self.last_membership.read().await;
         Ok((la.clone(), membership.clone()))
@@ -436,9 +452,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
 
     async fn apply<Strm>(&mut self, mut entries: Strm) -> Result<(), io::Error>
     where
-        Strm: futures_util::Stream<Item = Result<EntryResponder<C>, io::Error>>
-            + Unpin
-            + Send,
+        Strm: futures_util::Stream<Item = Result<EntryResponder<C>, io::Error>> + Unpin + Send,
     {
         while let Some(item) = entries.next().await {
             let (entry, responder) = item?;
@@ -456,9 +470,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
                     detail: None,
                     id: None,
                 },
-                openraft::EntryPayload::Normal(ref req) => {
-                    self.apply_mutation(&req.kind).await
-                }
+                openraft::EntryPayload::Normal(ref req) => self.apply_mutation(&req.kind).await,
                 openraft::EntryPayload::Membership(_) => CortexResponse {
                     success: true,
                     detail: None,
@@ -509,8 +521,8 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
 
         // Build both new graph and new memory into temporaries FIRST,
         // then swap atomically only if both succeed (#7).
-        let new_graph = GraphDB::memory()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        let new_graph =
+            GraphDB::memory().map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
         for ts in &cluster_snap.triples {
             let value = json_to_value(&ts.object);
             let triple = aingle_graph::Triple::new(
@@ -525,9 +537,12 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
 
         let new_memory = if !cluster_snap.ineru_ltm.is_empty() {
             Some(
-                IneruMemory::import_snapshot(&cluster_snap.ineru_ltm)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData,
-                        format!("Failed to restore Ineru from snapshot: {e}")))?
+                IneruMemory::import_snapshot(&cluster_snap.ineru_ltm).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Failed to restore Ineru from snapshot: {e}"),
+                    )
+                })?,
             )
         } else {
             None
@@ -775,10 +790,7 @@ mod tests {
     fn make_graph_and_memory() -> (Arc<RwLock<GraphDB>>, Arc<RwLock<IneruMemory>>) {
         let graph = GraphDB::memory().unwrap();
         let memory = IneruMemory::agent_mode();
-        (
-            Arc::new(RwLock::new(graph)),
-            Arc::new(RwLock::new(memory)),
-        )
+        (Arc::new(RwLock::new(graph)), Arc::new(RwLock::new(memory)))
     }
 
     #[tokio::test]
@@ -954,7 +966,11 @@ mod tests {
 
         // Verify: old data cleared, only snapshot data present
         let g = graph.read().await;
-        assert_eq!(g.count(), 1, "old data should be cleared, only snapshot data remains");
+        assert_eq!(
+            g.count(),
+            1,
+            "old data should be cleared, only snapshot data remains"
+        );
         let triples = g.find(aingle_graph::TriplePattern::any()).unwrap();
         let subject_str = triples[0].subject.to_string();
         assert!(
@@ -1024,7 +1040,10 @@ mod tests {
         // Verify checksum was written into serialized data
         let raw: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let checksum = raw["checksum"].as_str().unwrap();
-        assert!(!checksum.is_empty(), "checksum should be set after to_bytes");
+        assert!(
+            !checksum.is_empty(),
+            "checksum should be set after to_bytes"
+        );
 
         // Valid roundtrip succeeds
         let restored = ClusterSnapshot::from_bytes(&bytes).unwrap();
@@ -1097,6 +1116,9 @@ mod tests {
         };
         let bytes = serde_json::to_vec(&snap).unwrap();
         let result = ClusterSnapshot::from_bytes(&bytes);
-        assert!(result.is_ok(), "empty checksum should be accepted for backward compat");
+        assert!(
+            result.is_ok(),
+            "empty checksum should be accepted for backward compat"
+        );
     }
 }

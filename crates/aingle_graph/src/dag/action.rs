@@ -142,10 +142,7 @@ pub struct TripleInsertPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MemoryOpKind {
     /// A memory entry was stored.
-    Store {
-        entry_type: String,
-        importance: f32,
-    },
+    Store { entry_type: String, importance: f32 },
     /// A memory entry was forgotten.
     Forget { memory_id: String },
     /// Consolidation was triggered.
@@ -197,8 +194,8 @@ impl DagAction {
 
         // Author — serde_json::to_vec cannot fail for NodeId (no maps with
         // non-string keys, no NaN/Inf floats), so expect() is safe here.
-        let author_bytes = serde_json::to_vec(&self.author)
-            .expect("NodeId serialization must not fail");
+        let author_bytes =
+            serde_json::to_vec(&self.author).expect("NodeId serialization must not fail");
         hasher.update(&(author_bytes.len() as u64).to_le_bytes());
         hasher.update(&author_bytes);
 
@@ -211,8 +208,8 @@ impl DagAction {
 
         // Payload — same reasoning: DagPayload contains only strings,
         // integers, booleans, and JSON values — all safely serializable.
-        let payload_bytes = serde_json::to_vec(&self.payload)
-            .expect("DagPayload serialization must not fail");
+        let payload_bytes =
+            serde_json::to_vec(&self.payload).expect("DagPayload serialization must not fail");
         hasher.update(&(payload_bytes.len() as u64).to_le_bytes());
         hasher.update(&payload_bytes);
 
@@ -376,9 +373,8 @@ mod tests {
             "another_future": 123
         }"#;
 
-        let action: DagAction = serde_json::from_str(json).expect(
-            "must deserialize actions with unknown fields (forward compat)"
-        );
+        let action: DagAction = serde_json::from_str(json)
+            .expect("must deserialize actions with unknown fields (forward compat)");
         assert_eq!(action.seq, 42);
         assert!(matches!(action.payload, DagPayload::Noop));
     }
@@ -417,9 +413,8 @@ mod tests {
             "payload": "Noop"
         }"#;
 
-        let action: DagAction = serde_json::from_str(json).expect(
-            "must deserialize actions without signature field (backward compat)"
-        );
+        let action: DagAction = serde_json::from_str(json)
+            .expect("must deserialize actions without signature field (backward compat)");
         assert!(action.signature.is_none());
     }
 
@@ -437,7 +432,10 @@ mod tests {
             provenance: None,
         };
         let json = serde_json::to_string(&p).unwrap();
-        assert!(!json.contains("provenance"), "None provenance must be skipped: {json}");
+        assert!(
+            !json.contains("provenance"),
+            "None provenance must be skipped: {json}"
+        );
 
         // Old wire format (no provenance key) still deserializes.
         let old = r#"{"subject":"a","predicate":"b","object":"c"}"#;
@@ -457,7 +455,8 @@ mod tests {
             object: serde_json::json!("o"),
             provenance: Some(prov.clone()),
         };
-        let round: TripleInsertPayload = serde_json::from_str(&serde_json::to_string(&p2).unwrap()).unwrap();
+        let round: TripleInsertPayload =
+            serde_json::from_str(&serde_json::to_string(&p2).unwrap()).unwrap();
         assert_eq!(round.provenance, Some(prov));
 
         // Sanity: an action carrying a None-provenance TripleInsert hashes the same

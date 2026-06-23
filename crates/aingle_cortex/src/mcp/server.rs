@@ -636,7 +636,10 @@ mod ingest_tools_tests {
             .map(|t| t.name.to_string())
             .collect();
         for expected in ["aingle_ingest", "aingle_ground", "aingle_sources"] {
-            assert!(names.contains(&expected.to_string()), "missing tool {expected}");
+            assert!(
+                names.contains(&expected.to_string()),
+                "missing tool {expected}"
+            );
         }
     }
 }

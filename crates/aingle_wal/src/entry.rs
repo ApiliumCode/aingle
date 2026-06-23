@@ -23,7 +23,12 @@ pub struct WalEntry {
 
 impl WalEntry {
     /// Compute the hash for this entry's payload (kind + seq + timestamp + prev_hash).
-    pub fn compute_hash(seq: u64, timestamp: &DateTime<Utc>, kind: &WalEntryKind, prev_hash: &[u8; 32]) -> [u8; 32] {
+    pub fn compute_hash(
+        seq: u64,
+        timestamp: &DateTime<Utc>,
+        kind: &WalEntryKind,
+        prev_hash: &[u8; 32],
+    ) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&seq.to_le_bytes());
         hasher.update(timestamp.to_rfc3339().as_bytes());
@@ -47,9 +52,7 @@ pub enum WalEntryKind {
         triple_id: [u8; 32],
     },
     /// Triple deleted from GraphDB.
-    TripleDelete {
-        triple_id: [u8; 32],
-    },
+    TripleDelete { triple_id: [u8; 32] },
     /// Memory entry stored in Ineru STM.
     MemoryStore {
         memory_id: String,
@@ -58,13 +61,9 @@ pub enum WalEntryKind {
         importance: f32,
     },
     /// Memory entry forgotten.
-    MemoryForget {
-        memory_id: String,
-    },
+    MemoryForget { memory_id: String },
     /// STM → LTM consolidation occurred.
-    MemoryConsolidate {
-        consolidated_count: usize,
-    },
+    MemoryConsolidate { consolidated_count: usize },
     /// Proof submitted.
     ProofSubmit {
         proof_id: String,
@@ -90,9 +89,7 @@ pub enum WalEntryKind {
         weight: f32,
     },
     /// LTM entity deleted (for Ineru replication).
-    LtmEntityDelete {
-        entity_id: String,
-    },
+    LtmEntityDelete { entity_id: String },
     /// Serialized openraft Raft log entry.
     RaftEntry {
         index: u64,
@@ -128,7 +125,9 @@ mod tests {
     #[test]
     fn test_compute_hash_deterministic() {
         let ts = Utc::now();
-        let kind = WalEntryKind::TripleDelete { triple_id: [1u8; 32] };
+        let kind = WalEntryKind::TripleDelete {
+            triple_id: [1u8; 32],
+        };
         let prev = [0u8; 32];
 
         let h1 = WalEntry::compute_hash(1, &ts, &kind, &prev);
@@ -139,7 +138,9 @@ mod tests {
     #[test]
     fn test_compute_hash_differs_on_seq() {
         let ts = Utc::now();
-        let kind = WalEntryKind::TripleDelete { triple_id: [1u8; 32] };
+        let kind = WalEntryKind::TripleDelete {
+            triple_id: [1u8; 32],
+        };
         let prev = [0u8; 32];
 
         let h1 = WalEntry::compute_hash(1, &ts, &kind, &prev);

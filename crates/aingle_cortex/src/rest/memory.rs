@@ -23,8 +23,8 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use serde::{Deserialize, Serialize};
 use ineru::{MemoryEntry, MemoryId, MemoryQuery};
+use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::state::AppState;
@@ -151,16 +151,15 @@ pub async fn remember(
             .clone()
             .unwrap_or_else(|| "raft".to_string());
 
-        return Ok((
-            StatusCode::CREATED,
-            Json(RememberResponse { id }),
-        ));
+        return Ok((StatusCode::CREATED, Json(RememberResponse { id })));
     }
 
     // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
     #[cfg(feature = "cluster")]
     if state.raft.is_some() {
-        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+        return Err(Error::Internal(
+            "Raft initialized but write not routed through Raft".into(),
+        ));
     }
 
     // Non-cluster mode: direct write
@@ -192,14 +191,13 @@ pub async fn remember(
             entry_type: req.entry_type.clone(),
             data: wal_data.clone(),
             importance: req.importance,
-        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+        })
+        .map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
     }
 
     Ok((
         StatusCode::CREATED,
-        Json(RememberResponse {
-            id: id.to_hex(),
-        }),
+        Json(RememberResponse { id: id.to_hex() }),
     ))
 }
 
@@ -237,9 +235,7 @@ pub async fn recall(
 }
 
 /// Force consolidation of important STM entries into LTM.
-pub async fn consolidate(
-    State(state): State<AppState>,
-) -> Result<Json<ConsolidateResponse>> {
+pub async fn consolidate(State(state): State<AppState>) -> Result<Json<ConsolidateResponse>> {
     // Cluster mode: route through Raft so all nodes consolidate deterministically
     #[cfg(feature = "cluster")]
     if let Some(ref raft) = state.raft {
@@ -278,7 +274,9 @@ pub async fn consolidate(
     // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
     #[cfg(feature = "cluster")]
     if state.raft.is_some() {
-        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+        return Err(Error::Internal(
+            "Raft initialized but write not routed through Raft".into(),
+        ));
     }
 
     // Non-cluster mode: direct consolidation
@@ -292,7 +290,8 @@ pub async fn consolidate(
     if let Some(ref wal) = state.wal {
         wal.append(aingle_wal::WalEntryKind::MemoryConsolidate {
             consolidated_count: count,
-        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+        })
+        .map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
     }
 
     Ok(Json(ConsolidateResponse {
@@ -315,10 +314,7 @@ pub async fn stats(State(state): State<AppState>) -> Result<Json<MemoryStatsDto>
 }
 
 /// Forget (delete) a specific memory entry.
-pub async fn forget(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<StatusCode> {
+pub async fn forget(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode> {
     // Cluster mode: route through Raft
     #[cfg(feature = "cluster")]
     if let Some(ref raft) = state.raft {
@@ -347,7 +343,9 @@ pub async fn forget(
     // Guard: if Raft is initialized, all writes MUST go through Raft (#2).
     #[cfg(feature = "cluster")]
     if state.raft.is_some() {
-        return Err(Error::Internal("Raft initialized but write not routed through Raft".into()));
+        return Err(Error::Internal(
+            "Raft initialized but write not routed through Raft".into(),
+        ));
     }
 
     // Non-cluster mode: direct delete
@@ -364,7 +362,8 @@ pub async fn forget(
     if let Some(ref wal) = state.wal {
         wal.append(aingle_wal::WalEntryKind::MemoryForget {
             memory_id: id.clone(),
-        }).map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
+        })
+        .map_err(|e| Error::Internal(format!("WAL append failed: {e}")))?;
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -379,9 +378,9 @@ pub async fn checkpoint(
     // For now, create a proof-of-state in the proof store
     let memory = state.memory.read().await;
     let s = memory.stats();
-    let label = req.label.unwrap_or_else(|| {
-        format!("checkpoint-{}", chrono::Utc::now().timestamp())
-    });
+    let label = req
+        .label
+        .unwrap_or_else(|| format!("checkpoint-{}", chrono::Utc::now().timestamp()));
 
     let checkpoint_data = serde_json::json!({
         "label": label,
@@ -429,16 +428,12 @@ pub async fn list_checkpoints(
         .into_iter()
         .filter(|p| p.metadata.tags.contains(&"checkpoint".to_string()))
         .map(|p| {
-            let data: serde_json::Value =
-                serde_json::from_slice(&p.data).unwrap_or_default();
+            let data: serde_json::Value = serde_json::from_slice(&p.data).unwrap_or_default();
             CheckpointListDto {
                 id: p.id.clone(),
                 label: data.get("label").and_then(|v| v.as_str()).map(String::from),
                 created_at: p.created_at.to_rfc3339(),
-                stm_count: data
-                    .get("stm_count")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0) as usize,
+                stm_count: data.get("stm_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
                 ltm_entity_count: data
                     .get("ltm_entity_count")
                     .and_then(|v| v.as_u64())
@@ -507,7 +502,9 @@ pub async fn vector_search(
     Json(req): Json<VectorSearchRequest>,
 ) -> Result<Json<Vec<MemoryResultDto>>> {
     let memory = state.memory.read().await;
-    let results = memory.ltm.vector_search_memories(&req.embedding, req.k, req.min_similarity);
+    let results = memory
+        .ltm
+        .vector_search_memories(&req.embedding, req.k, req.min_similarity);
 
     let mut dtos: Vec<MemoryResultDto> = results
         .into_iter()
@@ -543,7 +540,9 @@ pub async fn vector_index_stats(
     State(state): State<AppState>,
 ) -> Result<Json<VectorIndexStatsDto>> {
     let memory = state.memory.read().await;
-    let stats = memory.ltm.hnsw_index()
+    let stats = memory
+        .ltm
+        .hnsw_index()
         .map(|idx| idx.stats())
         .unwrap_or(ineru::hnsw::HnswStats {
             point_count: 0,
@@ -562,9 +561,7 @@ pub async fn vector_index_stats(
 }
 
 /// Force rebuild of the HNSW vector index.
-pub async fn rebuild_vector_index(
-    State(state): State<AppState>,
-) -> Result<StatusCode> {
+pub async fn rebuild_vector_index(State(state): State<AppState>) -> Result<StatusCode> {
     let mut memory = state.memory.write().await;
     if let Some(hnsw) = memory.ltm.hnsw_index_mut() {
         hnsw.rebuild();

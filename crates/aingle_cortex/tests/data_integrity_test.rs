@@ -9,8 +9,8 @@
 //! - State flush/restore round-trip
 //! - Batch insert atomicity
 
+use aingle_cortex::proofs::{ProofMetadata, ProofStore, ProofType, SubmitProofRequest};
 use aingle_cortex::state::AppState;
-use aingle_cortex::proofs::{ProofStore, ProofType, SubmitProofRequest, ProofMetadata};
 
 // ============================================================================
 // 1. ProofStore persistence round-trip (Sled backend)
@@ -62,7 +62,9 @@ async fn test_proof_store_sled_roundtrip_data_integrity() {
         assert_eq!(store.count().await, 20, "count mismatch after reopen");
 
         for (i, id) in proof_ids.iter().enumerate() {
-            let proof = store.get(id).await
+            let proof = store
+                .get(id)
+                .await
                 .unwrap_or_else(|| panic!("proof {} (id={}) missing after reopen", i, id));
 
             // Verify data field contains correct index
@@ -99,11 +101,17 @@ async fn test_proof_store_sled_roundtrip_data_integrity() {
 
         // Deleted ones should be gone
         for id in &proof_ids[0..10] {
-            assert!(store.get(id).await.is_none(), "deleted proof {} should not exist", id);
+            assert!(
+                store.get(id).await.is_none(),
+                "deleted proof {} should not exist",
+                id
+            );
         }
         // Remaining ones should be intact
         for (i, id) in proof_ids[10..20].iter().enumerate() {
-            let proof = store.get(id).await
+            let proof = store
+                .get(id)
+                .await
                 .unwrap_or_else(|| panic!("remaining proof {} missing", i + 10));
             let data: serde_json::Value = serde_json::from_slice(&proof.data).unwrap();
             assert_eq!(data["index"].as_u64().unwrap() as usize, i + 10);
@@ -117,7 +125,7 @@ async fn test_proof_store_sled_roundtrip_data_integrity() {
 
 #[tokio::test]
 async fn test_graph_dag_triple_materialization_consistency() {
-    use aingle_graph::{GraphDB, NodeId, Predicate, Value, Triple, TriplePattern};
+    use aingle_graph::{GraphDB, NodeId, Predicate, Triple, TriplePattern, Value};
 
     let mut graph = GraphDB::memory().unwrap();
     graph.enable_dag();
@@ -144,17 +152,28 @@ async fn test_graph_dag_triple_materialization_consistency() {
 
     // Verify each triple can be retrieved by ID
     for (i, tid) in triple_ids.iter().enumerate() {
-        let triple = graph.get(tid).unwrap()
+        let triple = graph
+            .get(tid)
+            .unwrap()
             .unwrap_or_else(|| panic!("triple {} not found by ID", i));
-        assert_eq!(triple.object, Value::Integer(i as i64 * 100),
-            "value mismatch for triple {}", i);
+        assert_eq!(
+            triple.object,
+            Value::Integer(i as i64 * 100),
+            "value mismatch for triple {}",
+            i
+        );
     }
 
     // Verify pattern queries return correct results
     for i in 0..50 {
         let pattern = TriplePattern::subject(NodeId::named(&format!("entity:{}", i)));
         let results = graph.find(pattern).unwrap();
-        assert_eq!(results.len(), 1, "entity:{} should have exactly 1 triple", i);
+        assert_eq!(
+            results.len(),
+            1,
+            "entity:{} should have exactly 1 triple",
+            i
+        );
         assert_eq!(results[0].object, Value::Integer(i * 100));
     }
 
@@ -182,17 +201,19 @@ async fn test_graph_dag_triple_materialization_consistency() {
 
 #[tokio::test]
 async fn test_batch_insert_index_consistency() {
-    use aingle_graph::{GraphDB, NodeId, Predicate, Value, Triple, TriplePattern};
+    use aingle_graph::{GraphDB, NodeId, Predicate, Triple, TriplePattern, Value};
 
     let graph = GraphDB::memory().unwrap();
 
     // Batch insert 100 triples
     let triples: Vec<Triple> = (0..100)
-        .map(|i| Triple::new(
-            NodeId::named(&format!("batch:{}", i)),
-            Predicate::named("batch_value"),
-            Value::Integer(i),
-        ))
+        .map(|i| {
+            Triple::new(
+                NodeId::named(&format!("batch:{}", i)),
+                Predicate::named("batch_value"),
+                Value::Integer(i),
+            )
+        })
         .collect();
 
     let ids = graph.insert_batch(triples).unwrap();
@@ -208,18 +229,20 @@ async fn test_batch_insert_index_consistency() {
     }
 
     // Verify predicate index works
-    let by_pred = graph.find(
-        TriplePattern::predicate(Predicate::named("batch_value"))
-    ).unwrap();
+    let by_pred = graph
+        .find(TriplePattern::predicate(Predicate::named("batch_value")))
+        .unwrap();
     assert_eq!(by_pred.len(), 100, "predicate index should find all 100");
 
     // Re-batch the same triples — should skip duplicates, no count change
     let triples2: Vec<Triple> = (0..100)
-        .map(|i| Triple::new(
-            NodeId::named(&format!("batch:{}", i)),
-            Predicate::named("batch_value"),
-            Value::Integer(i),
-        ))
+        .map(|i| {
+            Triple::new(
+                NodeId::named(&format!("batch:{}", i)),
+                Predicate::named("batch_value"),
+                Value::Integer(i),
+            )
+        })
         .collect();
     let ids2 = graph.insert_batch(triples2).unwrap();
     assert_eq!(ids2.len(), 100);
@@ -232,7 +255,7 @@ async fn test_batch_insert_index_consistency() {
 
 #[tokio::test]
 async fn test_app_state_flush_restore_roundtrip() {
-    use aingle_graph::{NodeId, Predicate, Value, Triple, TriplePattern};
+    use aingle_graph::{NodeId, Predicate, Triple, TriplePattern, Value};
 
     let dir = tempfile::TempDir::new().unwrap();
     let db_path = dir.path().join("graph.sled");
@@ -291,7 +314,8 @@ async fn test_app_state_flush_restore_roundtrip() {
                 assert_eq!(
                     results[0].object,
                     Value::String(format!("data-{}", i)),
-                    "data mismatch for node:{}", i
+                    "data mismatch for node:{}",
+                    i
                 );
             }
         }
@@ -300,7 +324,10 @@ async fn test_app_state_flush_restore_roundtrip() {
         let proof_count = state.proof_store.count().await;
         assert_eq!(proof_count, 5, "proofs should survive restart");
         for (i, id) in proof_ids.iter().enumerate() {
-            let proof = state.proof_store.get(id).await
+            let proof = state
+                .proof_store
+                .get(id)
+                .await
                 .unwrap_or_else(|| panic!("proof {} missing after restart", i));
             let data: serde_json::Value = serde_json::from_slice(&proof.data).unwrap();
             assert_eq!(data["flush_test"].as_u64().unwrap(), i as u64);
@@ -314,9 +341,7 @@ async fn test_app_state_flush_restore_roundtrip() {
 
 #[tokio::test]
 async fn test_raft_snapshot_with_proofs_roundtrip() {
-    use aingle_raft::state_machine::{
-        ClusterSnapshot, TripleSnapshot, ProofSnapshot,
-    };
+    use aingle_raft::state_machine::{ClusterSnapshot, ProofSnapshot, TripleSnapshot};
 
     let snapshot = ClusterSnapshot {
         triples: vec![
@@ -379,7 +404,10 @@ async fn test_raft_snapshot_with_proofs_roundtrip() {
     assert_eq!(restored.proofs[0].proof_type, "schnorr");
     assert_eq!(restored.proofs[0].data, vec![1, 2, 3, 4]);
     assert!(restored.proofs[0].verified);
-    assert_eq!(restored.proofs[0].verified_at.as_deref(), Some("2026-03-16T00:01:00Z"));
+    assert_eq!(
+        restored.proofs[0].verified_at.as_deref(),
+        Some("2026-03-16T00:01:00Z")
+    );
     assert_eq!(restored.proofs[1].id, "proof-002");
     assert!(!restored.proofs[1].verified);
     assert!(restored.proofs[1].verified_at.is_none());
@@ -398,9 +426,7 @@ async fn test_raft_snapshot_with_proofs_roundtrip() {
 
 #[tokio::test]
 async fn test_snapshot_checksum_changes_with_proofs() {
-    use aingle_raft::state_machine::{
-        ClusterSnapshot, TripleSnapshot, ProofSnapshot,
-    };
+    use aingle_raft::state_machine::{ClusterSnapshot, ProofSnapshot, TripleSnapshot};
 
     // Snapshot without proofs
     let snap_no_proofs = ClusterSnapshot {
@@ -447,8 +473,10 @@ async fn test_snapshot_checksum_changes_with_proofs() {
     let r2 = ClusterSnapshot::from_bytes(&bytes2).unwrap();
 
     // Checksums should differ
-    assert_ne!(r1.checksum, r2.checksum,
-        "checksum should change when proofs are added");
+    assert_ne!(
+        r1.checksum, r2.checksum,
+        "checksum should change when proofs are added"
+    );
 }
 
 // ============================================================================
@@ -457,7 +485,7 @@ async fn test_snapshot_checksum_changes_with_proofs() {
 
 #[tokio::test]
 async fn test_graph_sled_persistence_full_cycle() {
-    use aingle_graph::{GraphDB, NodeId, Predicate, Value, Triple, TriplePattern};
+    use aingle_graph::{GraphDB, NodeId, Predicate, Triple, TriplePattern, Value};
 
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("test.sled");
@@ -504,7 +532,7 @@ async fn test_graph_sled_persistence_full_cycle() {
 
 #[tokio::test]
 async fn test_audit_log_fsync_integrity() {
-    use aingle_cortex::rest::audit::{AuditLog, AuditEntry};
+    use aingle_cortex::rest::audit::{AuditEntry, AuditLog};
 
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("audit_test.jsonl");
@@ -517,7 +545,11 @@ async fn test_audit_log_fsync_integrity() {
                 timestamp: format!("2026-03-16T00:{:02}:00Z", i),
                 user_id: format!("user-{}", i % 5),
                 namespace: Some("test".to_string()),
-                action: if i % 3 == 0 { "create".into() } else { "read".into() },
+                action: if i % 3 == 0 {
+                    "create".into()
+                } else {
+                    "read".into()
+                },
                 resource: format!("/api/v1/triples/{}", i),
                 details: Some(format!("detail-{}", i)),
                 request_id: Some(format!("req-{}", i)),

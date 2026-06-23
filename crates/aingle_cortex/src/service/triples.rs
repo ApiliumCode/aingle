@@ -34,7 +34,15 @@ pub async fn create_triple(
     if req.predicate.is_empty() {
         return Err(Error::InvalidInput("Predicate cannot be empty".to_string()));
     }
-    insert_triple_inner(state, req.object, &req.subject, &req.predicate, None, namespace).await
+    insert_triple_inner(
+        state,
+        req.object,
+        &req.subject,
+        &req.predicate,
+        None,
+        namespace,
+    )
+    .await
 }
 
 /// Shared single-triple write used by `create_triple` and the ingestion path.
@@ -509,7 +517,9 @@ mod tests {
         };
         insert_triple_inner(
             &state,
-            crate::rest::ValueDto::Node { node: "sled".into() },
+            crate::rest::ValueDto::Node {
+                node: "sled".into(),
+            },
             "docs/x.md",
             "links_to",
             Some(prov.clone()),
@@ -527,7 +537,10 @@ mod tests {
             }
             _ => false,
         });
-        assert!(found, "provenance must be present in the TripleInsert DAG payload");
+        assert!(
+            found,
+            "provenance must be present in the TripleInsert DAG payload"
+        );
     }
 
     #[tokio::test]

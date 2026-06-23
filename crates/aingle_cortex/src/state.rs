@@ -5,9 +5,9 @@
 
 use aingle_graph::GraphDB;
 use aingle_logic::RuleEngine;
+use ineru::IneruMemory;
 use std::path::Path;
 use std::sync::Arc;
-use ineru::IneruMemory;
 use tokio::sync::RwLock;
 
 #[cfg(feature = "auth")]
@@ -48,7 +48,12 @@ pub struct AppState {
     pub wal: Option<Arc<aingle_wal::WalWriter>>,
     /// Raft consensus instance for cluster coordination.
     #[cfg(feature = "cluster")]
-    pub raft: Option<openraft::Raft<aingle_raft::CortexTypeConfig, std::sync::Arc<aingle_raft::state_machine::CortexStateMachine>>>,
+    pub raft: Option<
+        openraft::Raft<
+            aingle_raft::CortexTypeConfig,
+            std::sync::Arc<aingle_raft::state_machine::CortexStateMachine>,
+        >,
+    >,
     /// This node's ID in the Raft cluster.
     #[cfg(feature = "cluster")]
     pub cluster_node_id: Option<u64>,
@@ -268,7 +273,10 @@ impl AppState {
                     Arc::new(ps)
                 }
                 Err(e) => {
-                    log::warn!("Failed to open Sled ProofStore: {}. Falling back to in-memory.", e);
+                    log::warn!(
+                        "Failed to open Sled ProofStore: {}. Falling back to in-memory.",
+                        e
+                    );
                     Arc::new(ProofStore::new())
                 }
             }
@@ -313,7 +321,6 @@ impl AppState {
             dag_signing_key: None,
         })
     }
-
 
     /// Flushes the graph database and saves the Ineru memory snapshot to disk.
     ///

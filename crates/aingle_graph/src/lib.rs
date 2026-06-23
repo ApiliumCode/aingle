@@ -484,11 +484,7 @@ impl GraphDB {
 
     /// Get mutation history for a specific triple.
     #[cfg(feature = "dag")]
-    pub fn dag_history(
-        &self,
-        triple_id: &[u8; 32],
-        limit: usize,
-    ) -> Result<Vec<dag::DagAction>> {
+    pub fn dag_history(&self, triple_id: &[u8; 32], limit: usize) -> Result<Vec<dag::DagAction>> {
         self.dag_store
             .as_ref()
             .ok_or_else(|| Error::Config("DAG not enabled".into()))?
@@ -585,11 +581,7 @@ impl GraphDB {
 
     /// Sign a DAG action using an Ed25519 signing key.
     #[cfg(feature = "dag-sign")]
-    pub fn dag_sign(
-        &self,
-        action: &mut dag::DagAction,
-        key: &dag::DagSigningKey,
-    ) {
+    pub fn dag_sign(&self, action: &mut dag::DagAction, key: &dag::DagSigningKey) {
         key.sign(action);
     }
 
@@ -600,8 +592,7 @@ impl GraphDB {
         action: &dag::DagAction,
         public_key: &[u8; 32],
     ) -> Result<dag::VerifyResult> {
-        dag::signing::verify_action(action, public_key)
-            .map_err(|e| Error::Config(e.to_string()))
+        dag::signing::verify_action(action, public_key).map_err(|e| Error::Config(e.to_string()))
     }
 
     /// Export the full DAG as a portable graph structure.

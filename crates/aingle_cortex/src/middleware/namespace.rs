@@ -6,12 +6,7 @@
 //! Extracts the `namespace` from JWT claims and injects it into Axum request
 //! extensions so downstream handlers can scope queries/mutations by namespace.
 
-use axum::{
-    body::Body,
-    http::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{body::Body, http::Request, middleware::Next, response::Response};
 
 /// Namespace extracted from JWT claims, available via request extensions.
 #[derive(Debug, Clone)]
@@ -22,10 +17,7 @@ pub struct RequestNamespace(pub Option<String>);
 /// If auth is not enabled or no namespace is present in the token, sets `None`.
 /// Downstream handlers can read `RequestNamespace` from extensions and enforce
 /// namespace boundaries accordingly.
-pub async fn namespace_extractor(
-    mut req: Request<Body>,
-    next: Next,
-) -> Response {
+pub async fn namespace_extractor(mut req: Request<Body>, next: Next) -> Response {
     // Try to extract namespace from the Authorization header
     let namespace = extract_namespace_from_token(&req);
     req.extensions_mut().insert(RequestNamespace(namespace));

@@ -105,28 +105,33 @@ impl RuleEngine {
     ///
     /// The stats provide metrics on validations, inferences, rejections, etc.
     pub fn stats(&self) -> EngineStats {
-        self.stats.read()
+        self.stats
+            .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
     /// Resets all collected `EngineStats` to their default (zero) values.
     pub fn clear_stats(&self) {
-        let mut guard = self.stats.write()
+        let mut guard = self
+            .stats
+            .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         *guard = EngineStats::default();
     }
 
     /// Retrieves a clone of all triples that have been inferred by the engine.
     pub fn inferred_triples(&self) -> Vec<Triple> {
-        self.inferred.read()
+        self.inferred
+            .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
     /// Clears the internal cache of inferred triples.
     pub fn clear_inferred(&self) {
-        self.inferred.write()
+        self.inferred
+            .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
@@ -145,7 +150,9 @@ impl RuleEngine {
     /// A `ValidationResult` indicating whether the triple is valid, and detailing any
     /// matches, rejections, warnings, or chained rules.
     pub fn validate(&self, triple: &Triple) -> ValidationResult {
-        let mut stats = self.stats.write()
+        let mut stats = self
+            .stats
+            .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         stats.validations += 1;
 
@@ -172,7 +179,9 @@ impl RuleEngine {
                     }
                     Action::Infer(pattern) => {
                         if let Some(inferred) = pattern.instantiate(&bindings) {
-                            let mut inf = self.inferred.write()
+                            let mut inf = self
+                                .inferred
+                                .write()
                                 .unwrap_or_else(|poisoned| poisoned.into_inner());
                             inf.push(inferred);
                             stats.inferences += 1;
@@ -204,7 +213,9 @@ impl RuleEngine {
     /// A `Result` containing a `ForwardChainResult` which includes the number of iterations
     /// and all new facts inferred, or an `Error` if the process exceeds `max_depth`.
     pub fn forward_chain(&self, graph: &GraphDB) -> Result<ForwardChainResult> {
-        let mut stats = self.stats.write()
+        let mut stats = self
+            .stats
+            .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut result = ForwardChainResult::new();
         let mut iteration = 0;
@@ -263,7 +274,8 @@ impl RuleEngine {
 
             // Add new facts to result (would be added to graph in real use)
             for fact in new_facts {
-                self.inferred.write()
+                self.inferred
+                    .write()
                     .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .push(fact);
             }
@@ -292,7 +304,9 @@ impl RuleEngine {
         graph: &GraphDB,
         goal: &TriplePattern,
     ) -> Result<BackwardChainResult> {
-        let mut stats = self.stats.write()
+        let mut stats = self
+            .stats
+            .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         stats.backward_queries += 1;
 

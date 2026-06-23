@@ -8,8 +8,8 @@
 
 use axum::{
     extract::{Query, State},
-    Json, Router,
     routing::get,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -245,9 +245,7 @@ pub async fn get_audit_log(
 }
 
 /// GET /api/v1/audit/stats
-pub async fn get_audit_stats(
-    State(state): State<AppState>,
-) -> Json<AuditStats> {
+pub async fn get_audit_stats(State(state): State<AppState>) -> Json<AuditStats> {
     let log = state.audit_log.read().await;
     Json(log.stats())
 }

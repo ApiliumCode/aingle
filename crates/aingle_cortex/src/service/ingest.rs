@@ -298,10 +298,16 @@ mod tests {
     #[tokio::test]
     async fn ingest_writes_triples_and_chunks() {
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), "note.md", "# Title\n\nWe use [[sled]] for storage. #durability\n");
+        write(
+            dir.path(),
+            "note.md",
+            "# Title\n\nWe use [[sled]] for storage. #durability\n",
+        );
         let state = enabled_state().await;
 
-        let report = ingest_path(&state, dir.path().to_str().unwrap(), None).await.unwrap();
+        let report = ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
 
         assert_eq!(report.files_seen, 1);
         assert_eq!(report.files_ingested, 1);
@@ -334,8 +340,10 @@ mod tests {
 
         assert_eq!(report2.files_skipped, 1);
         assert_eq!(report2.files_ingested, 0);
-        assert_eq!(actions_after_first, actions_after_second,
-            "re-ingesting unchanged files must write zero new DAG actions");
+        assert_eq!(
+            actions_after_first, actions_after_second,
+            "re-ingesting unchanged files must write zero new DAG actions"
+        );
     }
 
     #[tokio::test]

@@ -66,10 +66,9 @@ impl IntoResponse for RateLimitError {
                     .into_response();
 
                 // Add Retry-After header (infallible: From<u64> for HeaderValue)
-                response.headers_mut().insert(
-                    "Retry-After",
-                    HeaderValue::from(*secs),
-                );
+                response
+                    .headers_mut()
+                    .insert("Retry-After", HeaderValue::from(*secs));
 
                 // Add rate limit headers
                 response
@@ -282,11 +281,9 @@ where
             // 1. If behind a proxy, try X-Forwarded-For / X-Real-IP headers.
             // 2. Fall back to ConnectInfo<SocketAddr> (direct connection IP).
             let ip = if limiter.secure_ip {
-                extract_proxy_ip(&req)
-                    .or_else(|| extract_connect_ip(&req))
+                extract_proxy_ip(&req).or_else(|| extract_connect_ip(&req))
             } else {
-                extract_connect_ip(&req)
-                    .or_else(|| extract_proxy_ip(&req))
+                extract_connect_ip(&req).or_else(|| extract_proxy_ip(&req))
             };
 
             let ip = match ip {
@@ -309,10 +306,7 @@ where
                         "X-RateLimit-Limit",
                         HeaderValue::from(limiter.requests_per_minute),
                     );
-                    headers.insert(
-                        "X-RateLimit-Remaining",
-                        HeaderValue::from(remaining),
-                    );
+                    headers.insert("X-RateLimit-Remaining", HeaderValue::from(remaining));
 
                     Ok(response)
                 }

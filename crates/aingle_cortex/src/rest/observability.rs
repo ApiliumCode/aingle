@@ -212,9 +212,7 @@ pub async fn query_events(
 
     // Query all event:type triples to find event subjects
     let type_pred = Predicate::named(format!("{}:event:type", ns));
-    let type_triples = graph
-        .get_predicate(&type_pred)
-        .unwrap_or_default();
+    let type_triples = graph.get_predicate(&type_pred).unwrap_or_default();
 
     let mut events: Vec<TraceEventOutput> = Vec::new();
 

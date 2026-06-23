@@ -460,10 +460,7 @@ impl ProofStore {
 
     /// Get count of proofs
     pub async fn count(&self) -> usize {
-        self.backend
-            .list_all()
-            .map(|all| all.len())
-            .unwrap_or(0)
+        self.backend.list_all().map(|all| all.len()).unwrap_or(0)
     }
 
     /// Flush proof backend to durable storage.

@@ -97,10 +97,7 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
             .to_bytes()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-        let snapshot_id = format!(
-            "snap-{}-{}",
-            last_applied_term, last_applied_index
-        );
+        let snapshot_id = format!("snap-{}-{}", last_applied_term, last_applied_index);
 
         let meta = SnapshotMeta {
             last_log_id: self.last_applied.clone(),
@@ -152,10 +149,7 @@ mod tests {
         let mut builder = CortexSnapshotBuilder {
             graph: Arc::new(RwLock::new(graph)),
             memory: Arc::new(RwLock::new(memory)),
-            last_applied: Some(openraft::LogId::new(
-                CommittedLeaderId::new(1, 0),
-                5,
-            )),
+            last_applied: Some(openraft::LogId::new(CommittedLeaderId::new(1, 0), 5)),
             last_membership: openraft::StoredMembership::default(),
             proof_provider: None,
         };

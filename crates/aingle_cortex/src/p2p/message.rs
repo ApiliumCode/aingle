@@ -38,21 +38,13 @@ pub enum P2pMessage {
         triple_count: u64,
     },
     /// Request triples by their hex IDs.
-    RequestTriples {
-        ids: Vec<String>,
-    },
+    RequestTriples { ids: Vec<String> },
     /// Batch of triples.
-    SendTriples {
-        triples: Vec<TripleWire>,
-    },
+    SendTriples { triples: Vec<TripleWire> },
     /// Lightweight announcement of a new triple.
-    Announce {
-        triple_id: String,
-    },
+    Announce { triple_id: String },
     /// Keep-alive ping.
-    Ping {
-        timestamp_ms: u64,
-    },
+    Ping { timestamp_ms: u64 },
     /// Keep-alive pong.
     Pong {
         timestamp_ms: u64,
@@ -64,9 +56,7 @@ pub enum P2pMessage {
         tombstone_ts: u64,
     },
     /// Batch tombstone synchronization.
-    TombstoneSync {
-        tombstones: Vec<TombstoneWire>,
-    },
+    TombstoneSync { tombstones: Vec<TombstoneWire> },
     // ── DAG sync messages (feature: dag) ────────────────────────
     /// Exchange of DAG tip hashes for sync.
     #[cfg(feature = "dag")]
@@ -76,14 +66,10 @@ pub enum P2pMessage {
     },
     /// Request specific DAG actions by hash.
     #[cfg(feature = "dag")]
-    RequestDagActions {
-        hashes: Vec<String>,
-    },
+    RequestDagActions { hashes: Vec<String> },
     /// Batch of serialized DAG actions.
     #[cfg(feature = "dag")]
-    SendDagActions {
-        actions: Vec<Vec<u8>>,
-    },
+    SendDagActions { actions: Vec<Vec<u8>> },
     // ── Raft / Cluster messages (feature: cluster) ──────────────
     /// Raft AppendEntries RPC (serialized openraft request).
     #[cfg(feature = "cluster")]
@@ -278,10 +264,7 @@ fn json_to_value(j: &serde_json::Value) -> Value {
                         }
                     }
                     "lang" => {
-                        let lang = map
-                            .get("lang")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or_default();
+                        let lang = map.get("lang").and_then(|v| v.as_str()).unwrap_or_default();
                         Value::LangString {
                             value: val.to_string(),
                             lang: lang.to_string(),
@@ -315,7 +298,13 @@ mod tests {
         };
         let bytes = msg.to_bytes();
         let parsed = P2pMessage::from_bytes(&bytes).unwrap();
-        assert!(matches!(parsed, P2pMessage::Hello { triple_count: 42, .. }));
+        assert!(matches!(
+            parsed,
+            P2pMessage::Hello {
+                triple_count: 42,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -328,7 +317,10 @@ mod tests {
         let bytes = msg.to_bytes();
         let parsed = P2pMessage::from_bytes(&bytes).unwrap();
         match parsed {
-            P2pMessage::BloomSync { filter_bytes, triple_count } => {
+            P2pMessage::BloomSync {
+                filter_bytes,
+                triple_count,
+            } => {
                 assert_eq!(filter_bytes.len(), 128);
                 assert_eq!(triple_count, 100);
             }
@@ -359,9 +351,7 @@ mod tests {
             author: None,
             source: None,
         };
-        let msg = P2pMessage::SendTriples {
-            triples: vec![tw],
-        };
+        let msg = P2pMessage::SendTriples { triples: vec![tw] };
         let bytes = msg.to_bytes();
         let parsed = P2pMessage::from_bytes(&bytes).unwrap();
         match parsed {
@@ -433,7 +423,10 @@ mod tests {
         let bytes = msg.to_bytes();
         let parsed = P2pMessage::from_bytes(&bytes).unwrap();
         match parsed {
-            P2pMessage::AnnounceDelete { triple_id, tombstone_ts } => {
+            P2pMessage::AnnounceDelete {
+                triple_id,
+                tombstone_ts,
+            } => {
                 assert_eq!(triple_id, "deadbeef");
                 assert_eq!(tombstone_ts, 1700000000000);
             }
@@ -444,8 +437,14 @@ mod tests {
     #[test]
     fn tombstone_sync_roundtrip() {
         let tombstones = vec![
-            TombstoneWire { triple_id: "aa".into(), deleted_at_ms: 100 },
-            TombstoneWire { triple_id: "bb".into(), deleted_at_ms: 200 },
+            TombstoneWire {
+                triple_id: "aa".into(),
+                deleted_at_ms: 100,
+            },
+            TombstoneWire {
+                triple_id: "bb".into(),
+                deleted_at_ms: 200,
+            },
         ];
         let msg = P2pMessage::TombstoneSync { tombstones };
         let bytes = msg.to_bytes();

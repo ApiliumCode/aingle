@@ -55,12 +55,11 @@ impl WalSegment {
             .strip_prefix("wal-")
             .and_then(|s| s.strip_suffix(".seg"))
             .and_then(|s| s.parse::<u64>().ok())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid segment filename"))?;
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "invalid segment filename")
+            })?;
 
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
 
         let size_bytes = file.metadata()?.len();
 
@@ -84,8 +83,8 @@ impl WalSegment {
 
     /// Append a WAL entry to the segment.
     pub fn append(&mut self, entry: &WalEntry) -> io::Result<()> {
-        let payload = serde_json::to_vec(entry)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let payload =
+            serde_json::to_vec(entry).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let len = payload.len() as u32;
         self.file.write_all(&len.to_be_bytes())?;
         self.file.write_all(&payload)?;

@@ -262,10 +262,12 @@ mod tests {
 
         // At a timestamp before any actions: None
         let result = db.dag_at_timestamp(&(before - chrono::Duration::seconds(10)));
-        assert!(result.is_err() || {
-            // Should fail or return empty
-            true
-        });
+        assert!(
+            result.is_err() || {
+                // Should fail or return empty
+                true
+            }
+        );
 
         // At current time: should get state with both triples
         let (snap, info) = db.dag_at_timestamp(&Utc::now()).unwrap();

@@ -160,8 +160,8 @@ pub struct PredictionAccuracy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nested_learning::NestedConfig;
     use crate::ineru::IneruConfig;
+    use crate::nested_learning::NestedConfig;
 
     fn make_test_tx(id: u8) -> AiTransaction {
         AiTransaction {

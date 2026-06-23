@@ -158,8 +158,8 @@ impl DagBackend for SledDagBackend {
     fn scan_prefix(&self, prefix: &[u8]) -> crate::Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let mut results = Vec::new();
         for item in self.tree.scan_prefix(prefix) {
-            let (k, v) = item
-                .map_err(|e| crate::Error::Storage(format!("sled dag scan error: {}", e)))?;
+            let (k, v) =
+                item.map_err(|e| crate::Error::Storage(format!("sled dag scan error: {}", e)))?;
             results.push((k.to_vec(), v.to_vec()));
         }
         Ok(results)

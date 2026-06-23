@@ -364,7 +364,8 @@ impl IneruMemory {
             config: self.config.clone(),
         };
 
-        serde_json::to_vec(&snapshot).map_err(|e| Error::internal(format!("snapshot export: {}", e)))
+        serde_json::to_vec(&snapshot)
+            .map_err(|e| Error::internal(format!("snapshot export: {}", e)))
     }
 
     /// Imports a memory state from a JSON byte slice.
@@ -401,8 +402,8 @@ impl IneruMemory {
 
     /// Loads a memory state from a file.
     pub fn load_from_file(path: &std::path::Path) -> Result<Self> {
-        let data = std::fs::read(path)
-            .map_err(|e| Error::internal(format!("snapshot read: {}", e)))?;
+        let data =
+            std::fs::read(path).map_err(|e| Error::internal(format!("snapshot read: {}", e)))?;
         Self::import_snapshot(&data)
     }
 }
