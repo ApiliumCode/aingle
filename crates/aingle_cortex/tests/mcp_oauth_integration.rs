@@ -82,9 +82,9 @@ async fn oauth_resource_server_end_to_end() {
     config.mcp_oauth_resource = Some(resource.clone());
     config.mcp_oauth_jwks_url = Some(format!("http://127.0.0.1:{jwks_port}/certs"));
     // The /mcp unauthorized challenge derives its `resource_metadata` URL from the
-    // advertised public host(s) (the externally-reachable hostname, normally behind
-    // a TLS proxy). Set it so the RFC 9728 `WWW-Authenticate` challenge is emitted.
-    std::env::set_var("AINGLE_PUBLIC_HOST", format!("127.0.0.1:{cortex_port}"));
+    // OAuth `resource` (the canonical public `/mcp` URL) when OAuth is configured.
+    // We deliberately do NOT set `AINGLE_PUBLIC_HOST` here so this test exercises
+    // the resource-derived path of the RFC 9728 `WWW-Authenticate` challenge.
     let server = CortexServer::new(config).unwrap();
     tokio::spawn(async move {
         let _ = server.run().await;
