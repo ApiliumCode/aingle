@@ -5,6 +5,7 @@
 
 #[cfg(feature = "dag")]
 pub mod dag;
+pub mod ingest;
 pub mod proof;
 pub mod query;
 pub mod reputation;
