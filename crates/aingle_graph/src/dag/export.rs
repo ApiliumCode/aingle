@@ -213,6 +213,7 @@ mod tests {
                     subject: format!("s{}", seq),
                     predicate: "p".into(),
                     object: serde_json::json!("o"),
+                    provenance: None,
                 }],
             },
             signature: None,

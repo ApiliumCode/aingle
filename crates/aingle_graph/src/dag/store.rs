@@ -1123,6 +1123,7 @@ mod tests {
                     subject: "alice".into(),
                     predicate: "knows".into(),
                     object: serde_json::json!("bob"),
+                    provenance: None,
                 }],
             },
             signature: None,
@@ -1185,6 +1186,7 @@ mod tests {
             subject: "alice".into(),
             predicate: "knows".into(),
             object: serde_json::json!("bob"),
+            provenance: None,
         });
 
         let history = store.history(&tid, 10).unwrap();
@@ -1261,6 +1263,7 @@ mod tests {
             subject: subject.into(),
             predicate: predicate.into(),
             object: object_json.clone(),
+            provenance: None,
         });
 
         // Compute via TripleId::from_triple (the canonical graph path)
@@ -1322,6 +1325,7 @@ mod tests {
                     subject: format!("s{}", seq),
                     predicate: "p".into(),
                     object: serde_json::json!(seq),
+                    provenance: None,
                 }],
             },
             signature: None,
@@ -1613,6 +1617,7 @@ mod tests {
                 subject: "alice".into(),
                 predicate: "knows".into(),
                 object: serde_json::json!("bob"),
+                provenance: None,
             });
             let history = store.history(&tid, 10).unwrap();
             assert_eq!(history.len(), 3);

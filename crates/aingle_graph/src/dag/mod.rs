@@ -25,7 +25,7 @@ pub mod sync;
 pub mod timetravel;
 pub mod tips;
 
-pub use action::{DagAction, DagActionHash, DagPayload, MemoryOpKind, TripleInsertPayload};
+pub use action::{DagAction, DagActionHash, DagPayload, MemoryOpKind, Provenance, TripleInsertPayload};
 pub use backend::{DagBackend, MemoryDagBackend};
 #[cfg(feature = "sled-backend")]
 pub use backend::SledDagBackend;

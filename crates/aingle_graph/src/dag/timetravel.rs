@@ -105,6 +105,7 @@ mod tests {
                     subject: subject.into(),
                     predicate: "knows".into(),
                     object: serde_json::json!(object),
+                    provenance: None,
                 }],
             },
             signature: None,
@@ -120,6 +121,7 @@ mod tests {
                 subject: "alice".into(),
                 predicate: "knows".into(),
                 object: serde_json::json!("bob"),
+                provenance: None,
             }],
         };
         replay_payload(&db, &payload).unwrap();
@@ -155,6 +157,7 @@ mod tests {
                         subject: "alice".into(),
                         predicate: "knows".into(),
                         object: serde_json::json!("bob"),
+                        provenance: None,
                     }],
                 },
                 DagPayload::TripleInsert {
@@ -162,6 +165,7 @@ mod tests {
                         subject: "bob".into(),
                         predicate: "knows".into(),
                         object: serde_json::json!("charlie"),
+                        provenance: None,
                     }],
                 },
             ],

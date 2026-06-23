@@ -421,6 +421,7 @@ impl GraphDB {
                     subject: triple.subject.to_string(),
                     predicate: triple.predicate.to_string(),
                     object: value_to_json(&triple.object),
+                    provenance: None,
                 }],
             },
             signature: None,

@@ -203,6 +203,7 @@ mod tests {
                     subject: "alice".into(),
                     predicate: "knows".into(),
                     object: serde_json::json!("bob"),
+                    provenance: None,
                 }],
             },
             signature: None,
