@@ -68,7 +68,9 @@ async fn oauth_resource_server_end_to_end() {
     let jwks_listener = tokio::net::TcpListener::bind(("127.0.0.1", jwks_port))
         .await
         .unwrap();
-    tokio::spawn(async move { axum::serve(jwks_listener, jwks_app).await.unwrap(); });
+    tokio::spawn(async move {
+        axum::serve(jwks_listener, jwks_app).await.unwrap();
+    });
 
     // 2) cortex with OAuth
     let cortex_port = free_port().await;
