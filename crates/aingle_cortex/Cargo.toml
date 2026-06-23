@@ -121,3 +121,6 @@ tokio-test = "0.4"
 # Enable the rmcp `client` feature for the in-process MCP integration test.
 # This is dev-only; the production `mcp` feature uses the server side only.
 rmcp = { version = "1.7", features = ["client", "transport-io"] }
+# OAuth integration test: derive a JWK from the test public key + base64url encode.
+rsa = { version = "0.9", features = ["pem"] }
+base64 = "0.22"
