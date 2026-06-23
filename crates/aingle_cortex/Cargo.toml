@@ -24,7 +24,8 @@ cluster = ["p2p", "dep:aingle_wal", "dep:aingle_raft", "dep:openraft", "dep:toki
 dag = ["cluster", "aingle_graph/dag", "aingle_graph/dag-sign", "aingle_raft/dag"]
 mcp = ["dep:rmcp", "dep:schemars"]
 mcp-http = ["mcp", "rmcp/transport-streamable-http-server", "rmcp/server-side-http"]
-full = ["rest", "graphql", "sparql", "auth", "dag"]
+mcp-oauth = ["mcp-http", "dep:jsonwebtoken"]
+full =["rest", "graphql", "sparql", "auth", "dag"]
 
 [[bin]]
 name = "aingle-cortex"
