@@ -261,8 +261,17 @@ pub async fn list_sources(state: &AppState) -> Result<Vec<SourceRecord>> {
     Ok(triples
         .iter()
         .filter_map(|t| {
+            // `NodeId::to_string` renders the IRI form `<path>`; strip the angle
+            // brackets so the path matches the clean form used by `ingest_path`'s
+            // report and the chunk provenance (round-trippable into other tools).
+            let path = t
+                .subject
+                .to_string()
+                .trim_start_matches('<')
+                .trim_end_matches('>')
+                .to_string();
             t.object_string().map(|h| SourceRecord {
-                path: t.subject.to_string(),
+                path,
                 content_hash: h.to_string(),
             })
         })
