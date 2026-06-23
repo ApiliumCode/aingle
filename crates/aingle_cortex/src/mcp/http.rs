@@ -34,13 +34,21 @@ pub fn mcp_http_router(
     token: Option<String>,
     allow_anonymous: bool,
     public_hosts: Vec<String>,
+    #[cfg(feature = "mcp-oauth")] oauth: Option<(
+        crate::mcp::oauth::OAuthConfig,
+        crate::mcp::oauth::JwksCache,
+    )>,
 ) -> Option<Router> {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
     use std::sync::Arc;
 
-    if token.is_none() && !allow_anonymous {
+    #[cfg(feature = "mcp-oauth")]
+    let oauth_enabled = oauth.is_some();
+    #[cfg(not(feature = "mcp-oauth"))]
+    let oauth_enabled = false;
+    if token.is_none() && !allow_anonymous && !oauth_enabled {
         return None;
     }
 
@@ -53,7 +61,7 @@ pub fn mcp_http_router(
         "127.0.0.1".to_string(),
         "::1".to_string(),
     ];
-    allowed_hosts.extend(public_hosts);
+    allowed_hosts.extend(public_hosts.clone());
 
     // StreamableHttpServerConfig is #[non_exhaustive]; build via Default + builder.
     let config = StreamableHttpServerConfig::default().with_allowed_hosts(allowed_hosts);
@@ -70,25 +78,52 @@ pub fn mcp_http_router(
     let mut router = Router::new().fallback_service(service);
 
     if !allow_anonymous {
-        let expected = token.expect("token present when not anonymous");
+        let static_token = token.clone();
+        #[cfg(feature = "mcp-oauth")]
+        let oauth_for_layer = oauth.clone();
+        let resource_metadata_url = public_hosts
+            .first()
+            .map(|h| format!("https://{h}/.well-known/oauth-protected-resource"))
+            .unwrap_or_default();
         router = router.layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {
-                let expected = expected.clone();
+                let static_token = static_token.clone();
+                #[cfg(feature = "mcp-oauth")]
+                let oauth_for_layer = oauth_for_layer.clone();
+                let rmu = resource_metadata_url.clone();
                 async move {
                     let hdr = req
                         .headers()
                         .get(axum::http::header::AUTHORIZATION)
                         .and_then(|v| v.to_str().ok());
-                    if bearer_ok(&expected, hdr) {
-                        next.run(req).await
-                    } else {
-                        (
-                            axum::http::StatusCode::UNAUTHORIZED,
-                            [(axum::http::header::WWW_AUTHENTICATE, "Bearer")],
-                            "unauthorized",
-                        )
-                            .into_response()
+                    if let Some(ref t) = static_token {
+                        if bearer_ok(t, hdr) {
+                            return next.run(req).await;
+                        }
                     }
+                    #[cfg(feature = "mcp-oauth")]
+                    if let Some((ref cfg, ref jwks)) = oauth_for_layer {
+                        if let Some(raw) = hdr.and_then(|h| h.strip_prefix("Bearer ")) {
+                            if let Some(kid) = crate::mcp::oauth::token_kid(raw) {
+                                if let Some(key) = jwks.key_for(&kid).await {
+                                    if crate::mcp::oauth::validate_jwt(raw, &key, cfg).is_ok() {
+                                        return next.run(req).await;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let www = if rmu.is_empty() {
+                        "Bearer".to_string()
+                    } else {
+                        format!("Bearer resource_metadata=\"{rmu}\", scope=\"mcp\"")
+                    };
+                    (
+                        axum::http::StatusCode::UNAUTHORIZED,
+                        [(axum::http::header::WWW_AUTHENTICATE, www)],
+                        "unauthorized",
+                    )
+                        .into_response()
                 }
             },
         ));

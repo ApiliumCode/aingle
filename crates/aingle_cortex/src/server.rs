@@ -182,6 +182,8 @@ impl CortexServer {
         // Only mounted when a bearer token or anonymous mode is configured.
         #[cfg(feature = "mcp-http")]
         let app = {
+            #[allow(unused_mut)]
+            let mut app = app;
             let public_hosts = std::env::var("AINGLE_PUBLIC_HOST")
                 .ok()
                 .map(|s| {
@@ -191,17 +193,65 @@ impl CortexServer {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            if let Some(mcp_router) = crate::mcp::http::mcp_http_router(
+
+            // Build the OAuth resource-server validator when issuer + resource are set.
+            #[cfg(feature = "mcp-oauth")]
+            let oauth_validator = match (
+                self.config.mcp_oauth_issuer.clone(),
+                self.config.mcp_oauth_resource.clone(),
+            ) {
+                (Some(issuer), Some(resource)) => {
+                    let jwks_url = self
+                        .config
+                        .mcp_oauth_jwks_url
+                        .clone()
+                        .unwrap_or_else(|| {
+                            format!("{}/protocol/openid-connect/certs", issuer.trim_end_matches('/'))
+                        });
+                    let cfg = crate::mcp::oauth::OAuthConfig {
+                        issuer,
+                        resource,
+                        jwks_url: jwks_url.clone(),
+                    };
+                    Some((cfg, crate::mcp::oauth::JwksCache::new(jwks_url)))
+                }
+                _ => None,
+            };
+
+            // RFC 9728 protected-resource metadata.
+            #[cfg(feature = "mcp-oauth")]
+            if let Some((ref cfg, _)) = oauth_validator {
+                let meta = crate::mcp::oauth::protected_resource_metadata(cfg);
+                app = app.route(
+                    "/.well-known/oauth-protected-resource",
+                    axum::routing::get(move || {
+                        let meta = meta.clone();
+                        async move { axum::Json(meta) }
+                    }),
+                );
+            }
+
+            #[cfg(feature = "mcp-oauth")]
+            let mcp_router = crate::mcp::http::mcp_http_router(
                 self.state.clone(),
                 self.config.mcp_http_token.clone(),
                 self.config.mcp_http_allow_anonymous,
                 public_hosts,
-            ) {
+                oauth_validator,
+            );
+            #[cfg(not(feature = "mcp-oauth"))]
+            let mcp_router = crate::mcp::http::mcp_http_router(
+                self.state.clone(),
+                self.config.mcp_http_token.clone(),
+                self.config.mcp_http_allow_anonymous,
+                public_hosts,
+            );
+
+            if let Some(mcp_router) = mcp_router {
                 tracing::info!("MCP HTTP endpoint mounted at /mcp");
-                app.nest("/mcp", mcp_router)
-            } else {
-                app
+                app = app.nest("/mcp", mcp_router);
             }
+            app
         };
 
         // Add middleware layers (note: layers are applied in reverse order of definition).
