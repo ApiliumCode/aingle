@@ -201,13 +201,12 @@ impl CortexServer {
                 self.config.mcp_oauth_resource.clone(),
             ) {
                 (Some(issuer), Some(resource)) => {
-                    let jwks_url = self
-                        .config
-                        .mcp_oauth_jwks_url
-                        .clone()
-                        .unwrap_or_else(|| {
-                            format!("{}/protocol/openid-connect/certs", issuer.trim_end_matches('/'))
-                        });
+                    let jwks_url = self.config.mcp_oauth_jwks_url.clone().unwrap_or_else(|| {
+                        format!(
+                            "{}/protocol/openid-connect/certs",
+                            issuer.trim_end_matches('/')
+                        )
+                    });
                     if jwks_url.starts_with("http://")
                         && !jwks_url.contains("127.0.0.1")
                         && !jwks_url.contains("localhost")

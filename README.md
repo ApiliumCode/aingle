@@ -452,6 +452,27 @@ AINGLE_MCP_HTTP_TOKEN=your-secret AINGLE_PUBLIC_HOST=your.domain \
 
 > Note: claude.ai's connector UI cannot attach a static bearer header; secured remote use from claude.ai needs OAuth (planned). Verify the deployed endpoint with `curl`/MCP Inspector using the bearer token.
 
+#### OAuth (secured remote access)
+
+Build with `--features "mcp dag mcp-http mcp-oauth"` and set an issuer; cortex then acts as an OAuth 2.0
+Resource Server for `/mcp` (e.g. for claude.ai remote connectors):
+
+```bash
+AINGLE_OAUTH_ISSUER=https://auth.example/realms/aingle \
+AINGLE_OAUTH_RESOURCE=https://mcp.example/mcp \
+  aingle-cortex --db ./data/graph.sled
+```
+
+- Serves `GET /.well-known/oauth-protected-resource` (RFC 9728); a request to `/mcp` without a valid token
+  gets `401` + `WWW-Authenticate: Bearer resource_metadata="…"` so clients can discover the authorization server.
+- `/mcp` accepts a Bearer **JWT** signed by the issuer — validated via its JWKS, algorithm pinned to RS256,
+  with `iss`, `aud` (must equal the resource), and `exp` all required.
+- The Phase-1 static bearer (`AINGLE_MCP_HTTP_TOKEN`) is still accepted alongside OAuth (handy for `curl`).
+  This dual-credential behavior is intentional; a leaked static token bypasses the JWT checks, so use it only
+  where appropriate.
+- For non-Keycloak issuers, set `AINGLE_OAUTH_JWKS_URL` explicitly (the default derives the Keycloak certs path).
+  The Authorization Server (login, PKCE, client registration) is external — see the private deploy repo.
+
 ---
 
 ## Contributing

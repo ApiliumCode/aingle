@@ -181,9 +181,12 @@ mod tests {
     #[test]
     fn wrong_aud_rejected() {
         let c = cfg();
-        assert!(
-            validate_jwt(&sign(&c.issuer, "https://evil/mcp", 4_000_000_000), &dkey(), &c).is_err()
-        );
+        assert!(validate_jwt(
+            &sign(&c.issuer, "https://evil/mcp", 4_000_000_000),
+            &dkey(),
+            &c
+        )
+        .is_err());
     }
     #[test]
     fn wrong_iss_rejected() {
@@ -256,6 +259,9 @@ mod tests {
     fn metadata_shape() {
         let m = protected_resource_metadata(&cfg());
         assert_eq!(m["resource"], "https://mcp.test/mcp");
-        assert_eq!(m["authorization_servers"][0], "https://auth.test/realms/aingle");
+        assert_eq!(
+            m["authorization_servers"][0],
+            "https://auth.test/realms/aingle"
+        );
     }
 }
