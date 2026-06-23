@@ -208,6 +208,13 @@ impl CortexServer {
                         .unwrap_or_else(|| {
                             format!("{}/protocol/openid-connect/certs", issuer.trim_end_matches('/'))
                         });
+                    if jwks_url.starts_with("http://")
+                        && !jwks_url.contains("127.0.0.1")
+                        && !jwks_url.contains("localhost")
+                        && !jwks_url.contains("[::1]")
+                    {
+                        tracing::warn!(jwks_url = %jwks_url, "OAuth JWKS URL is not HTTPS — keys could be MITM'd; use https in production");
+                    }
                     let cfg = crate::mcp::oauth::OAuthConfig {
                         issuer,
                         resource,

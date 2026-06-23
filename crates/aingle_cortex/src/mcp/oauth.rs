@@ -32,6 +32,7 @@ pub fn validate_jwt(
     cfg: &OAuthConfig,
 ) -> Result<Claims, jsonwebtoken::errors::Error> {
     let mut v = Validation::new(Algorithm::RS256);
+    v.set_required_spec_claims(&["exp", "iss", "aud"]);
     v.set_issuer(&[cfg.issuer.as_str()]);
     v.set_audience(&[cfg.resource.as_str()]);
     v.validate_exp = true;
@@ -42,6 +43,8 @@ pub fn validate_jwt(
 pub struct JwksCache {
     jwks_url: String,
     keys: Arc<RwLock<HashMap<String, DecodingKey>>>,
+    last_refresh: Arc<RwLock<Option<std::time::Instant>>>,
+    client: reqwest::Client,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +65,8 @@ impl JwksCache {
         Self {
             jwks_url: jwks_url.into(),
             keys: Arc::new(RwLock::new(HashMap::new())),
+            last_refresh: Arc::new(RwLock::new(None)),
+            client: reqwest::Client::new(),
         }
     }
     /// Test-only: pre-seed a kid -> key (no network).
@@ -71,18 +76,34 @@ impl JwksCache {
         Self {
             jwks_url: jwks_url.into(),
             keys: Arc::new(RwLock::new(m)),
+            last_refresh: Arc::new(RwLock::new(None)),
+            client: reqwest::Client::new(),
         }
     }
     /// Decoding key for `kid`, refreshing from JWKS on a miss (handles key rotation).
+    ///
+    /// Refreshes are debounced to at most one per 30s so that an attacker spamming
+    /// forged, unknown `kid` headers cannot trigger unbounded outbound JWKS fetches.
     pub async fn key_for(&self, kid: &str) -> Option<DecodingKey> {
         if let Some(k) = self.keys.read().await.get(kid).cloned() {
             return Some(k);
         }
+        // Debounce: at most one JWKS refresh per 30s, regardless of unknown-kid spam.
+        {
+            let last = *self.last_refresh.read().await;
+            if let Some(t) = last {
+                if t.elapsed() < std::time::Duration::from_secs(30) {
+                    return None;
+                }
+            }
+        }
+        *self.last_refresh.write().await = Some(std::time::Instant::now());
         let _ = self.refresh().await;
         self.keys.read().await.get(kid).cloned()
     }
     async fn refresh(&self) -> Result<(), String> {
-        let set: JwkSet = reqwest::Client::new()
+        let set: JwkSet = self
+            .client
             .get(&self.jwks_url)
             .send()
             .await
@@ -178,6 +199,58 @@ mod tests {
     fn expired_rejected() {
         let c = cfg();
         assert!(validate_jwt(&sign(&c.issuer, &c.resource, 1_000_000_000), &dkey(), &c).is_err());
+    }
+    #[test]
+    fn missing_aud_rejected() {
+        let c = cfg();
+        #[derive(serde::Serialize)]
+        struct C<'a> {
+            iss: &'a str,
+            exp: i64,
+            sub: &'a str,
+        }
+        let mut h = Header::new(Algorithm::RS256);
+        h.kid = Some("test-kid".into());
+        let tok = encode(
+            &h,
+            &C {
+                iss: &c.issuer,
+                exp: 4_000_000_000,
+                sub: "u",
+            },
+            &EncodingKey::from_rsa_pem(PRIV.as_bytes()).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            validate_jwt(&tok, &dkey(), &c).is_err(),
+            "token without aud must be rejected"
+        );
+    }
+    #[test]
+    fn missing_iss_rejected() {
+        let c = cfg();
+        #[derive(serde::Serialize)]
+        struct C<'a> {
+            aud: &'a str,
+            exp: i64,
+            sub: &'a str,
+        }
+        let mut h = Header::new(Algorithm::RS256);
+        h.kid = Some("test-kid".into());
+        let tok = encode(
+            &h,
+            &C {
+                aud: &c.resource,
+                exp: 4_000_000_000,
+                sub: "u",
+            },
+            &EncodingKey::from_rsa_pem(PRIV.as_bytes()).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            validate_jwt(&tok, &dkey(), &c).is_err(),
+            "token without iss must be rejected"
+        );
     }
     #[test]
     fn metadata_shape() {
