@@ -11,7 +11,7 @@ use crate::service::triples::{delete_triple, insert_triple_inner};
 use crate::state::AppState;
 use aingle_graph::{NodeId, Predicate, TriplePattern};
 use aingle_ingest::{extract, ObjectValue};
-use ineru::{Embedding, MemoryEntry, MemoryMetadata};
+use ineru::{Embedding, MemoryEntry, MemoryId, MemoryMetadata};
 
 // Bring the graph error type into scope for duplicate-matching in ingest logic.
 use aingle_graph::Error as GraphError;
@@ -130,24 +130,12 @@ pub async fn ingest_path(
 
         report.files_ingested += 1;
 
-        // Remove old registry triple if the hash changed
+        // The file changed (or it's a re-ingest with a different hash): purge all
+        // prior facts and chunks for this source before writing the fresh ones, so
+        // stale structural triples and Ineru chunks don't linger and leak into
+        // grounded retrieval.
         if existing_hash.is_some() {
-            // Delete by finding the triple's hex id
-            let old_triple_id = {
-                let graph = state.graph.read().await;
-                let pattern = TriplePattern::any()
-                    .with_subject(NodeId::named(&rel_path))
-                    .with_predicate(Predicate::named(PRED_SOURCE_HASH));
-                graph
-                    .find(pattern)
-                    .ok()
-                    .and_then(|v| v.into_iter().next())
-                    .map(|t| t.id().to_hex())
-            };
-            if let Some(hex_id) = old_triple_id {
-                // Best-effort: ignore NotFound
-                let _ = delete_triple(state, &hex_id, namespace.clone()).await;
-            }
+            purge_source(state, &rel_path, namespace.clone()).await?;
         }
 
         // Extract triples and chunks from the file
@@ -249,6 +237,49 @@ pub async fn ingest_path(
     }
 
     Ok(report)
+}
+
+/// Remove every fact and chunk previously ingested from `rel_path`, so a changed
+/// file's stale data can't survive a re-ingest.
+///
+/// Deletes all graph triples whose subject is `rel_path` (its structural facts
+/// plus the source-hash registry triple) and forgets every Ineru chunk whose
+/// `metadata.source` is `rel_path`. Inbound links from *other* files (where
+/// `rel_path` is the object, not the subject) are left untouched.
+async fn purge_source(state: &AppState, rel_path: &str, namespace: Option<String>) -> Result<()> {
+    // Graph: delete every triple authored by this source (subject == rel_path).
+    let stale_ids: Vec<String> = {
+        let graph = state.graph.read().await;
+        let pattern = TriplePattern::any().with_subject(NodeId::named(rel_path));
+        graph
+            .find(pattern)
+            .map_err(|e| Error::Internal(format!("graph find error: {e}")))?
+            .into_iter()
+            .map(|t| t.id().to_hex())
+            .collect()
+    };
+    for hex_id in stale_ids {
+        // Best-effort: a concurrently-removed triple is fine to skip.
+        let _ = delete_triple(state, &hex_id, namespace.clone()).await;
+    }
+
+    // Ineru: forget every chunk that came from this source.
+    {
+        let mut mem = state.memory.write().await;
+        let ids: Vec<MemoryId> = mem
+            .stm
+            .all_entries()
+            .into_iter()
+            .chain(mem.ltm.all_entries())
+            .filter(|e| e.entry_type == CHUNK_ENTRY_TYPE && e.metadata.source == rel_path)
+            .map(|e| e.id)
+            .collect();
+        for id in ids {
+            let _ = mem.forget(&id);
+        }
+    }
+
+    Ok(())
 }
 
 /// List all source files recorded in the signed registry (path + content hash).
@@ -358,5 +389,56 @@ mod tests {
         let report = ingest_path(&state, root, None).await.unwrap();
         assert_eq!(report.files_ingested, 1);
         assert_eq!(report.files_skipped, 0);
+    }
+
+    #[tokio::test]
+    async fn changed_file_purges_stale_chunks() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "note.md", "# A\n\nWe use sled for storage.\n");
+        let state = enabled_state().await;
+        let root = dir.path().to_str().unwrap();
+        ingest_path(&state, root, None).await.unwrap();
+
+        // Change the file so the old sentence no longer exists in the source.
+        write(dir.path(), "note.md", "# A\n\nWe use rocksdb now.\n");
+        ingest_path(&state, root, None).await.unwrap();
+
+        // Querying the OLD sentence verbatim must not surface the stale chunk:
+        // re-ingesting a changed file must forget the previous chunks for it.
+        let g = crate::service::ground::ground(&state, "We use sled for storage.", 5)
+            .await
+            .unwrap();
+        assert!(
+            !g.answer_context.iter().any(|c| c.text.contains("sled")),
+            "stale 'sled' chunk should be purged on re-ingest, got: {:?}",
+            g.answer_context
+        );
+    }
+
+    #[tokio::test]
+    async fn changed_file_purges_stale_triples() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "note.md", "# A\n\nSee [[sled]].\n");
+        let state = enabled_state().await;
+        let root = dir.path().to_str().unwrap();
+        ingest_path(&state, root, None).await.unwrap();
+
+        // Repoint the wikilink: the old links_to:sled triple must not linger.
+        write(dir.path(), "note.md", "# A\n\nSee [[rocksdb]].\n");
+        ingest_path(&state, root, None).await.unwrap();
+
+        let graph = state.graph.read().await;
+        let links = graph
+            .find(
+                TriplePattern::any()
+                    .with_subject(NodeId::named("note.md"))
+                    .with_predicate(Predicate::named("links_to")),
+            )
+            .unwrap();
+        assert_eq!(
+            links.len(),
+            1,
+            "stale links_to should be purged, leaving only the new link, got: {links:?}"
+        );
     }
 }
