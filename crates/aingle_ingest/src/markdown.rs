@@ -75,7 +75,8 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
                 object: ObjectValue::Text(c[1].trim().to_string()),
                 provenance: prov(path, hash, line_no),
             });
-            continue; // a heading line carries no wikilinks/tags worth extracting
+            // Fall through: a heading line may still contain wikilinks/tags
+            // (e.g. `# See also [[foo]]`), so keep scanning it below.
         }
 
         for c in WIKILINK.captures_iter(line) {
@@ -99,7 +100,9 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
     out
 }
 
-/// Parse a frontmatter tag value: either `[a, b]` or a bare `a, b` or single `a`.
+/// Parse a frontmatter tag value into individual tags. Strips a single `[`/`]`
+/// per side (not a balanced-bracket parse) then splits on commas, trimming
+/// surrounding quotes/whitespace. Handles `[a, b]`, bare `a, b`, and single `a`.
 fn parse_tag_list(val: &str) -> Vec<String> {
     let inner = val.trim().trim_start_matches('[').trim_end_matches(']');
     inner

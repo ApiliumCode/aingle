@@ -61,12 +61,10 @@ pub fn chunk_markdown(path: &str, content: &str, hash: &str) -> Vec<Chunk> {
     let mut out = Vec::new();
     for (n, &start) in starts.iter().enumerate() {
         let end = if n + 1 < starts.len() { starts[n + 1] } else { lines.len() };
-        if start >= end {
-            continue;
-        }
         let section = &lines[start..end];
         if section.len() > 80 {
-            // Re-window large sections, offsetting line numbers by `start`.
+            // chunk_fixed returns 1-based lines within the section; adding the
+            // 0-based section offset `start` yields correct absolute 1-based lines.
             let joined = section.join("\n");
             for mut c in chunk_fixed(path, &joined, hash, 50) {
                 c.provenance.line_start += start as u32;
@@ -83,8 +81,12 @@ pub fn chunk_markdown(path: &str, content: &str, hash: &str) -> Vec<Chunk> {
     out
 }
 
+/// True for an ATX markdown heading line: optional leading whitespace, 1–6 `#`
+/// characters, then at least one whitespace character. Mirrors the `HEADING`
+/// regex used by triple extraction so chunk boundaries and `has_section`
+/// triples agree on what a heading is.
 fn is_heading(line: &str) -> bool {
     let t = line.trim_start();
     let hashes = t.chars().take_while(|c| *c == '#').count();
-    (1..=6).contains(&hashes) && t.chars().nth(hashes) == Some(' ')
+    (1..=6).contains(&hashes) && t.chars().nth(hashes).is_some_and(|c| c.is_whitespace())
 }
