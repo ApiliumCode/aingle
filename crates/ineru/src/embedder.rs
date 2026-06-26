@@ -206,4 +206,35 @@ mod neural_tests {
         assert_eq!(v.0.len(), 384);
         assert!(v.0.iter().any(|x| *x != 0.0));
     }
+
+    #[test]
+    fn neural_embedder_captures_semantic_similarity() {
+        let Some(dir) = model_dir() else { return };
+        let e = NeuralEmbedder::from_path(&dir).expect("load model");
+
+        let perro = e.embed_query("perro");
+        let can = e.embed_passage("can");
+        let finanzas = e.embed_passage("finanzas");
+
+        let near = perro.cosine_similarity(&can);
+        let far = perro.cosine_similarity(&finanzas);
+
+        // "perro" (dog) is semantically closer to "can" (dog, formal/archaic ES)
+        // than to "finanzas" (finance). A real model captures this; the hash one can't.
+        assert!(
+            near > far,
+            "expected sim(perro,can)={near} > sim(perro,finanzas)={far}"
+        );
+    }
+
+    #[test]
+    fn neural_embedder_applies_distinct_prefixes() {
+        let Some(dir) = model_dir() else { return };
+        let e = NeuralEmbedder::from_path(&dir).expect("load model");
+
+        // Same raw text, different prefixes → different vectors.
+        let as_query = e.embed_query("documento");
+        let as_passage = e.embed_passage("documento");
+        assert_ne!(as_query.0, as_passage.0);
+    }
 }
