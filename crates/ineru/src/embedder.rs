@@ -175,7 +175,7 @@ mod neural_tests {
     /// Returns the model dir, or `None` (test skips) if it isn't present.
     fn model_dir() -> Option<PathBuf> {
         let dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
-            "crates/ineru/test-models/multilingual-e5-small".to_string()
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test-models/multilingual-e5-small").to_string()
         });
         let p = PathBuf::from(dir);
         if p.join("onnx/model.onnx").exists() {
