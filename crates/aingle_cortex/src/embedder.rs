@@ -20,7 +20,7 @@ pub fn build_embedder(model_dir: Option<&str>) -> Arc<dyn Embedder> {
     if let Some(dir) = model_dir {
         match ineru::NeuralEmbedder::from_path(std::path::Path::new(dir)) {
             Ok(e) => {
-                log::info!("Using neural embedder (multilingual-e5-small) from {dir}");
+                log::info!("Using neural embedder from {dir}");
                 return Arc::new(e);
             }
             Err(e) => {
@@ -40,7 +40,7 @@ pub fn build_embedder(model_dir: Option<&str>) -> Arc<dyn Embedder> {
 
 /// Reads the persisted embedder dimensionality from `<dir>/embedder.dims`.
 /// Returns `None` if the sidecar is absent or unparseable.
-pub fn read_persisted_dims(dir: &std::path::Path) -> Option<usize> {
+pub fn read_dims(dir: &std::path::Path) -> Option<usize> {
     let raw = std::fs::read_to_string(dir.join("embedder.dims")).ok()?;
     raw.trim().parse::<usize>().ok()
 }
@@ -54,24 +54,20 @@ pub fn write_dims(dir: &std::path::Path, dims: usize) {
 
 /// Deletes every `aingle:source_hash` registry triple so the next ingest treats
 /// all files as new and re-embeds them. Returns the number removed.
-pub fn clear_source_registry(graph: &aingle_graph::GraphDB) -> usize {
+pub fn clear_source_registry(graph: &aingle_graph::GraphDB) -> Result<usize, aingle_graph::Error> {
     use aingle_graph::{Predicate, TriplePattern};
-    let pattern =
-        TriplePattern::any().with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH));
-    let ids: Vec<_> = match graph.find(pattern) {
-        Ok(ts) => ts.into_iter().map(|t| t.id()).collect(),
-        Err(e) => {
-            log::warn!("clear_source_registry: graph find failed: {e}");
-            return 0;
-        }
-    };
+    let pattern = TriplePattern::any()
+        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH));
+    let ids: Vec<_> = graph.find(pattern)?.into_iter().map(|t| t.id()).collect();
     let mut removed = 0;
     for id in &ids {
-        if matches!(graph.delete(id), Ok(true)) {
-            removed += 1;
+        match graph.delete(id) {
+            Ok(true) => removed += 1,
+            Ok(false) => {} // already gone — fine
+            Err(e) => log::warn!("clear_source_registry: delete failed for {id:?}: {e}"),
         }
     }
-    removed
+    Ok(removed)
 }
 
 #[cfg(test)]
@@ -88,5 +84,24 @@ mod tests {
     fn build_embedder_missing_dir_falls_back_to_hash() {
         let e = build_embedder(Some("/nonexistent/model/dir"));
         assert_eq!(e.dimensions(), 64);
+    }
+
+    #[test]
+    fn dims_sidecar_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        write_dims(dir.path(), 384);
+        assert_eq!(read_dims(dir.path()), Some(384));
+    }
+
+    #[test]
+    fn read_dims_absent_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_dims(dir.path()), None);
+    }
+
+    #[test]
+    fn clear_source_registry_on_empty_graph_is_zero() {
+        let graph = aingle_graph::GraphDB::memory().unwrap();
+        assert_eq!(clear_source_registry(&graph).unwrap(), 0);
     }
 }
