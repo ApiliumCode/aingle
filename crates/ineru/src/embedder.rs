@@ -66,6 +66,7 @@ use fastembed::{
 ///
 /// fastembed's `embed` takes `&mut self`, so the model is held behind a `Mutex`
 /// to satisfy the `&self` trait methods while staying `Send + Sync`.
+/// Concurrent callers serialize through this lock for the duration of inference.
 #[cfg(feature = "neural-embeddings")]
 pub struct NeuralEmbedder {
     model: Mutex<TextEmbedding>,
@@ -112,7 +113,11 @@ impl NeuralEmbedder {
         let out = guard
             .embed(vec![prefixed], None)
             .expect("e5 embed failed");
-        Embedding::new(out.into_iter().next().unwrap_or_default())
+        let vector = out
+            .into_iter()
+            .next()
+            .expect("e5 returned empty batch for single-item input");
+        Embedding::new(vector)
     }
 }
 
