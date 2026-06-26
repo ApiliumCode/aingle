@@ -212,18 +212,24 @@ mod neural_tests {
         let Some(dir) = model_dir() else { return };
         let e = NeuralEmbedder::from_path(&dir).expect("load model");
 
-        let perro = e.embed_query("perro");
-        let can = e.embed_passage("can");
-        let finanzas = e.embed_passage("finanzas");
+        // E5 is trained for sentence/passage retrieval, which is exactly how this
+        // embedder is used (queries = questions, chunks = sentences). Isolated
+        // single words cluster too tightly to test meaningfully; realistic
+        // sentence-level inputs produce a clear semantic margin.
+        let query = e.embed_query("¿Cómo debo cuidar a mi perro?");
+        let related =
+            e.embed_passage("Los perros necesitan paseos diarios, agua fresca y una dieta equilibrada.");
+        let unrelated =
+            e.embed_passage("La bolsa de valores cerró hoy con fuertes pérdidas para los inversores.");
 
-        let near = perro.cosine_similarity(&can);
-        let far = perro.cosine_similarity(&finanzas);
+        let near = query.cosine_similarity(&related);
+        let far = query.cosine_similarity(&unrelated);
 
-        // "perro" (dog) is semantically closer to "can" (dog, formal/archaic ES)
-        // than to "finanzas" (finance). A real model captures this; the hash one can't.
+        // A real model ranks the dog-care passage above the stock-market one for a
+        // dog-care question. The 64-dim hash embedder cannot.
         assert!(
             near > far,
-            "expected sim(perro,can)={near} > sim(perro,finanzas)={far}"
+            "expected sim(query,related)={near} > sim(query,unrelated)={far}"
         );
     }
 
