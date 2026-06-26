@@ -341,6 +341,16 @@ impl MemoryQuery {
         self.min_importance = Some(importance);
         self
     }
+
+    /// Attaches (or replaces) the embedding vector used for similarity search.
+    ///
+    /// Callers that own an [`crate::Embedder`] use this to inject a vector computed
+    /// by a real model, overriding the default lexical-hash embedding that
+    /// [`MemoryQuery::text`] currently attaches.
+    pub fn with_embedding(mut self, embedding: Embedding) -> Self {
+        self.embedding = Some(embedding);
+        self
+    }
 }
 
 /// A single result returned from a memory query.
@@ -579,5 +589,16 @@ mod tests {
         assert_eq!(entity.entity_type, "sensor");
         assert_eq!(entity.name, "temp_001");
         assert!(entity.properties.contains_key("location"));
+    }
+
+    #[test]
+    fn with_embedding_overrides_query_vector() {
+        let injected = Embedding::new(vec![0.25; 384]);
+        let q = MemoryQuery::text("perro").with_embedding(injected.clone());
+        let emb = q.embedding.expect("embedding present");
+        assert_eq!(emb.0.len(), 384);
+        assert_eq!(emb.0, injected.0);
+        // text is still retained
+        assert_eq!(q.text.as_deref(), Some("perro"));
     }
 }
