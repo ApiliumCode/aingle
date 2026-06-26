@@ -19,6 +19,13 @@ pub trait Embedder: Send + Sync {
     fn embed_query(&self, text: &str) -> Embedding;
     /// Dimensionality of the vectors this embedder produces.
     fn dimensions(&self) -> usize;
+    /// `(strong, weak)` cosine-similarity cutoffs for this embedder's score
+    /// distribution: at/above `strong` a match corroborates; below `weak` it is
+    /// noise. The default suits the lexical-hash scale; model-based embedders
+    /// override it.
+    fn relevance_thresholds(&self) -> (f32, f32) {
+        (0.55, 0.30)
+    }
 }
 
 /// 64-dimensional fallback embedder built on the lexical hash scheme
@@ -134,6 +141,10 @@ impl Embedder for NeuralEmbedder {
     fn dimensions(&self) -> usize {
         Self::DIM
     }
+
+    fn relevance_thresholds(&self) -> (f32, f32) {
+        (0.80, 0.77)
+    }
 }
 
 #[cfg(test)]
@@ -169,6 +180,12 @@ mod tests {
         let p = e.embed_passage("test input");
         let q = e.embed_query("test input");
         assert_eq!(p.0, q.0);
+    }
+
+    #[test]
+    fn hash_embedder_relevance_thresholds() {
+        let e = HashEmbedder::new();
+        assert_eq!(e.relevance_thresholds(), (0.55, 0.30));
     }
 }
 
@@ -242,5 +259,14 @@ mod neural_tests {
         let as_query = e.embed_query("documento");
         let as_passage = e.embed_passage("documento");
         assert_ne!(as_query.0, as_passage.0);
+    }
+
+    #[test]
+    fn neural_embedder_relevance_thresholds() {
+        // Calibrated to multilingual-e5-small's anisotropic cosine scale:
+        // unrelated sentence pairs ceil ~0.76, related floor ~0.81.
+        let Some(dir) = model_dir() else { return };
+        let e = NeuralEmbedder::from_path(&dir).expect("load model");
+        assert_eq!(e.relevance_thresholds(), (0.80, 0.77));
     }
 }
