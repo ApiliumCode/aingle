@@ -65,6 +65,7 @@
 
 pub mod config;
 pub mod consolidation;
+mod embedder;
 pub mod error;
 pub mod hnsw;
 pub mod ltm;
@@ -73,6 +74,7 @@ pub mod types;
 
 pub use config::{ConsolidationConfig, LtmConfig, MemoryConfig, StmConfig};
 pub use consolidation::Consolidator;
+pub use embedder::{Embedder, HashEmbedder};
 pub use error::{Error, Result};
 pub use ltm::{KnowledgeGraph, LongTermMemory};
 pub use stm::ShortTermMemory;
@@ -102,7 +104,7 @@ impl IneruMemory {
     /// # Arguments
     ///
     /// * `config` - The `MemoryConfig` that defines the behavior and capacity
-    ///              of the STM, LTM, and consolidation process.
+    ///   of the STM, LTM, and consolidation process.
     pub fn new(config: MemoryConfig) -> Self {
         Self {
             stm: ShortTermMemory::new(config.stm.clone()),
@@ -148,7 +150,7 @@ impl IneruMemory {
     ///
     /// * `entry` - The `MemoryEntry` to store.
     /// * `importance` - A float score determining the entry's importance. Higher values
-    ///                  make it more likely to be consolidated into LTM.
+    ///   make it more likely to be consolidated into LTM.
     ///
     /// # Returns
     ///
@@ -531,9 +533,8 @@ mod tests {
             memory.remember_important(entry, 0.9).unwrap();
         }
 
-        let consolidated = memory.consolidate().unwrap();
-        // Consolidation may or may not move entries depending on thresholds
-        assert!(consolidated >= 0);
+        // Consolidation may or may not move entries depending on thresholds; just ensure it runs.
+        let _consolidated = memory.consolidate().unwrap();
     }
 
     #[test]
@@ -600,9 +601,8 @@ mod tests {
             memory.remember(entry).unwrap();
         }
 
-        let pruned = memory.prune_stm().unwrap();
-        // Should have pruned some entries
-        assert!(pruned >= 0);
+        // Should have pruned some entries (result is usize, always valid).
+        let _pruned = memory.prune_stm().unwrap();
     }
 
     #[test]

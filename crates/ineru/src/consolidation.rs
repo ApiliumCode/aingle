@@ -199,7 +199,7 @@ pub struct ConsolidationStats {
 }
 
 /// Defines the strategy used to select memories for consolidation.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub enum ConsolidationStrategy {
     /// Consolidates memories that are accessed most frequently.
     FrequencyBased,
@@ -208,13 +208,8 @@ pub enum ConsolidationStrategy {
     /// Consolidates memories that are semantically novel compared to existing LTM content.
     NoveltyBased,
     /// A default strategy that combines importance, frequency, recency, and novelty.
+    #[default]
     Combined,
-}
-
-impl Default for ConsolidationStrategy {
-    fn default() -> Self {
-        Self::Combined
-    }
 }
 
 /// An advanced consolidator that can apply different strategies for selecting memories.
@@ -259,7 +254,7 @@ impl AdvancedConsolidator {
             .cloned()
             .collect();
 
-        candidates.sort_by(|a, b| b.metadata.access_count.cmp(&a.metadata.access_count));
+        candidates.sort_by_key(|b| std::cmp::Reverse(b.metadata.access_count));
 
         let mut count = 0;
         for entry in candidates.into_iter().take(self.base.config.batch_size) {

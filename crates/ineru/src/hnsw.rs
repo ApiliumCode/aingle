@@ -676,7 +676,7 @@ struct HnswSnapshotLegacy {
 fn rand_f64() -> f64 {
     use std::cell::Cell;
     thread_local! {
-        static SEED: Cell<u64> = Cell::new(0x12345678_9abcdef0);
+        static SEED: Cell<u64> = const { Cell::new(0x12345678_9abcdef0) };
     }
     SEED.with(|s| {
         let mut x = s.get();
