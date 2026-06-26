@@ -75,4 +75,12 @@ mod tests {
         let b = e.embed_passage("hello world");
         assert_eq!(a.0, b.0);
     }
+
+    #[test]
+    fn hash_embedder_passage_and_query_are_identical() {
+        let e = HashEmbedder::new();
+        let p = e.embed_passage("test input");
+        let q = e.embed_query("test input");
+        assert_eq!(p.0, q.0);
+    }
 }
