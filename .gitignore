@@ -24,6 +24,7 @@ CLAUDE.md
 .claudeignore
 .mcp.json
 docs/superpowers/
+.superpowers/
 
 # GitHub Copilot
 .copilot/
@@ -132,3 +133,6 @@ data/
 .secrets
 contexto/
 contexto/*
+
+# Local neural-embedder test models (never commit — ~120MB, fetched on demand)
+crates/ineru/test-models/
