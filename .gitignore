@@ -134,5 +134,5 @@ data/
 contexto/
 contexto/*
 
-# Local neural-embedder test models (never commit — ~120MB, fetched on demand)
+# Local neural-embedder test models (never commit — ~470MB fp32 e5-small, fetched on demand)
 crates/ineru/test-models/
