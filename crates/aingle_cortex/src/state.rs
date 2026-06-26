@@ -5,7 +5,7 @@
 
 use aingle_graph::GraphDB;
 use aingle_logic::RuleEngine;
-use ineru::IneruMemory;
+use ineru::{Embedder, HashEmbedder, IneruMemory};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -27,6 +27,8 @@ pub struct AppState {
     pub logic: Arc<RwLock<RuleEngine>>,
     /// The Ineru dual-memory system (STM + LTM with consolidation).
     pub memory: Arc<RwLock<IneruMemory>>,
+    /// The active text embedder (hash fallback or neural). Shared, thread-safe.
+    pub embedder: std::sync::Arc<dyn Embedder>,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
@@ -94,6 +96,7 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
+            embedder: std::sync::Arc::new(HashEmbedder::new()),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -138,6 +141,7 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
+            embedder: std::sync::Arc::new(HashEmbedder::new()),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -182,6 +186,7 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
+            embedder: std::sync::Arc::new(HashEmbedder::new()),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -295,6 +300,7 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
+            embedder: std::sync::Arc::new(HashEmbedder::new()),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store,
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -550,5 +556,16 @@ impl SandboxManager {
 impl Default for SandboxManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appstate_has_default_hash_embedder() {
+        let state = AppState::new().unwrap();
+        assert_eq!(state.embedder.dimensions(), 64);
     }
 }
