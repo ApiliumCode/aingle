@@ -164,6 +164,7 @@
 #[cfg(feature = "auth")]
 pub mod auth;
 pub mod client;
+pub mod embedder;
 #[cfg(feature = "cluster")]
 pub mod cluster_init;
 pub mod error;

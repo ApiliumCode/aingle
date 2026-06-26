@@ -25,6 +25,9 @@ dag = ["cluster", "aingle_graph/dag", "aingle_graph/dag-sign", "aingle_raft/dag"
 mcp = ["dep:rmcp", "dep:schemars"]
 mcp-http = ["mcp", "rmcp/transport-streamable-http-server", "rmcp/server-side-http"]
 mcp-oauth = ["mcp-http", "dep:jsonwebtoken"]
+# Real neural embeddings: forwards to ineru's fastembed-backed embedder.
+# Off by default — default cortex build stays hash-only (MSRV 1.83 unaffected).
+neural-embeddings = ["ineru/neural-embeddings"]
 full =["rest", "graphql", "sparql", "auth", "dag"]
 
 [[bin]]
