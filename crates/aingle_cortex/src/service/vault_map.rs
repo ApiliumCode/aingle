@@ -93,6 +93,11 @@ pub(crate) fn basename(path: &str) -> String {
     file.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(file).to_string()
 }
 
+/// True for paths under the generated maps folder (excluded from the vault map).
+pub(crate) fn is_maps_path(path: &str) -> bool {
+    path.starts_with("_maps/") || path.starts_with("_maps\\")
+}
+
 /// Structural inputs derived from the graph (no embeddings).
 #[derive(Debug, Default)]
 pub(crate) struct Structural {
@@ -128,6 +133,7 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
         .collect();
     notes.sort();
     notes.dedup();
+    notes.retain(|n| !is_maps_path(n));
 
     // O(log n) membership set — avoids linear scans during link/tag resolution.
     let note_set: std::collections::BTreeSet<&str> = notes.iter().map(|s| s.as_str()).collect();
@@ -361,7 +367,11 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
     // Semantic topics (capped).
     let topics = if s.notes.len() <= SEMANTIC_NOTE_CAP {
         let mem = state.memory.read().await;
-        let vecs = per_note_vectors(&mem);
+        let all_vecs = per_note_vectors(&mem);
+        let vecs: std::collections::BTreeMap<String, Vec<f32>> = all_vecs
+            .into_iter()
+            .filter(|(p, _)| s.notes.iter().any(|n| n == p))
+            .collect();
         if vecs.len() >= 2 {
             cluster_semantic(&vecs, SEMANTIC_THRESHOLD)
         } else {
@@ -598,6 +608,25 @@ mod tests {
         // Cached: no graph change → identical totals (and cheap).
         let m2 = super::vault_map_cached(&state).await;
         assert_eq!(m2.totals.notes, m1.totals.notes);
+    }
+
+    #[tokio::test]
+    async fn excludes_maps_folder_notes() {
+        let state = graph_with(&[
+            ("real.md", "aingle:source_hash", "h1"),
+            ("hub.md", "aingle:source_hash", "h2"),
+            ("_maps/vault-map.md", "aingle:source_hash", "h3"),
+            ("_maps/vault-map.md", "links_to", "hub"),
+            ("real.md", "links_to", "hub"),
+        ])
+        .await;
+
+        let map = super::vault_map_cached(&state).await;
+        assert_eq!(map.totals.notes, 2, "_maps/ notes excluded from the count");
+        assert!(!map.graph.nodes.iter().any(|n| n.id.starts_with("_maps/")));
+        assert!(!map.entry_points.iter().any(|e| e.path.starts_with("_maps/")));
+        let hub = map.entry_points.iter().find(|e| e.path == "hub.md").expect("hub");
+        assert_eq!(hub.in_links, 1, "the _maps link to hub must be excluded");
     }
 
     #[tokio::test]
