@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::service::triple_util::obj_string;
+use crate::service::triple_util::{obj_string, resolve_link_target};
 
 /// The semantic context for one note — the semantically related notes, even
 /// when never explicitly linked.
@@ -43,6 +43,14 @@ pub struct Neighbor {
 /// The 64-d hash embedder does not produce meaningful cosine similarity for
 /// cross-note retrieval; this gate keeps the result honest.
 const SEMANTIC_MIN_DIMS: usize = 128;
+
+/// Minimum cosine for a note to count as a semantic neighbor. Calibrated for
+/// note-to-note neural similarity: multilingual-e5 assigns a high baseline
+/// (~0.83) to any same-language text, so the embedder's grounding `low`
+/// threshold (0.77) is too permissive here. Mirrors vault_map's
+/// SEMANTIC_THRESHOLD rationale (related notes ~0.90+, unrelated ~0.81-0.83).
+/// Follow-up: make this per-embedder if more neural models are added.
+const NEIGHBOR_FLOOR: f32 = 0.88;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -87,8 +95,6 @@ pub async fn note_context(
         };
     }
 
-    let (_, low) = state.embedder.relevance_thresholds();
-
     // 2. Build the note set (subjects of PRED_SOURCE_HASH) + basename index,
     //    and collect all links_to triples.
     let strip =
@@ -126,13 +132,7 @@ pub async fn note_context(
     }
 
     let resolve = |target: &str| -> Option<String> {
-        if note_set.contains(target) {
-            Some(target.to_string())
-        } else {
-            by_base
-                .get(&crate::service::vault_map::basename(target))
-                .cloned()
-        }
+        resolve_link_target(target, &note_set, &by_base)
     };
 
     // 3. Compute `outgoing_set`: full paths that the active `note` links to.
@@ -198,7 +198,7 @@ pub async fn note_context(
             None => continue,
         };
         let rel = q.cosine_similarity(emb);
-        if rel < low {
+        if rel < NEIGHBOR_FLOOR {
             continue;
         }
         let d = &r.entry.data;
@@ -279,10 +279,8 @@ pub async fn note_context(
 
 /// Like [`note_context`] but memoised on `(triple_count, total_memory_bytes)`.
 ///
-/// The cache key does NOT include `limit` — keep it simple and document the
-/// assumption: callers should use a stable `limit` for the same note. If
-/// `limit` varies per call, the first winning result is served. For Akashi's
-/// use-case (fixed sidebar top-N) this is always correct.
+/// The map key is `(note_path, limit)` so that MCP calls with different `limit`
+/// values are cached independently and never serve a stale neighbor count.
 pub async fn note_context_cached(
     state: &crate::state::AppState,
     note: &str,
@@ -290,7 +288,8 @@ pub async fn note_context_cached(
 ) -> NoteContext {
     let tc = { state.graph.read().await.stats().triple_count };
     let mem_bytes = { state.memory.read().await.stats().total_memory_bytes };
-    let key = (tc, mem_bytes);
+    let version_key = (tc, mem_bytes);
+    let map_key = (note.to_string(), limit);
 
     // Check cache — release lock before any await.
     {
@@ -298,8 +297,8 @@ pub async fn note_context_cached(
             .note_context_cache
             .lock()
             .expect("note_context cache poisoned");
-        if let Some((cached_key, ctx)) = cache.get(note) {
-            if *cached_key == key {
+        if let Some((cached_key, ctx)) = cache.get(&map_key) {
+            if *cached_key == version_key {
                 return ctx.clone();
             }
         }
@@ -314,13 +313,13 @@ pub async fn note_context_cached(
             .note_context_cache
             .lock()
             .expect("note_context cache poisoned");
-        // Simple growth cap: if more than 256 notes are cached, clear entirely
+        // Simple growth cap: if more than 256 entries are cached, clear entirely
         // before inserting. This bounds memory without per-entry LRU bookkeeping;
-        // a typical Akashi session edits far fewer than 256 notes in one run.
+        // a typical Akashi session edits far fewer than 256 (note, limit) pairs.
         if cache.len() > 256 {
             cache.clear();
         }
-        cache.insert(note.to_string(), (key, result.clone()));
+        cache.insert(map_key, (version_key, result.clone()));
     }
 
     result
@@ -789,7 +788,7 @@ mod tests {
             let mut cache = state.note_context_cache.lock().unwrap();
             for i in 0..257usize {
                 cache.insert(
-                    format!("dummy_{i}.md"),
+                    (format!("dummy_{i}.md"), 0usize),
                     ((0, 0), super::NoteContext { semantic_ready: false, neighbors: vec![] }),
                 );
             }
@@ -812,7 +811,7 @@ mod tests {
             cache.len()
         );
         assert!(
-            cache.contains_key("fresh.md"),
+            cache.contains_key(&("fresh.md".to_string(), 5usize)),
             "fresh.md must be in the cache after the cap-and-insert"
         );
     }
@@ -946,10 +945,10 @@ mod tests {
         );
 
         // elecciones.md is semantically orthogonal to dog care; its cosine against
-        // the perros1.md query vector should not reach the low threshold (0.77).
+        // the perros1.md query vector (~0.83) must not reach NEIGHBOR_FLOOR (0.88).
         assert!(
             !ctx.neighbors.iter().any(|n| n.path == "elecciones.md"),
-            "off-topic elecciones.md must not appear as a neighbor (below low=0.77 floor): {:?}",
+            "off-topic elecciones.md must not appear as a neighbor (below NEIGHBOR_FLOOR=0.88): {:?}",
             ctx.neighbors
         );
     }

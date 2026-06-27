@@ -8,7 +8,7 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-use crate::service::triple_util::obj_string;
+use crate::service::triple_util::{obj_string, resolve_link_target};
 
 /// Verified link context for one note.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -109,11 +109,7 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
         by_base.entry(basename(n)).or_insert_with(|| n.clone());
     }
     let resolve = |target: &str| -> Option<String> {
-        if note_set.contains(target) {
-            Some(target.to_string())
-        } else {
-            by_base.get(&basename(target)).cloned()
-        }
+        resolve_link_target(target, &note_set, &by_base)
     };
     let active_base = basename(note);
     let active_base_lc = active_base.to_lowercase();

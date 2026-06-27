@@ -34,15 +34,15 @@ pub struct AppState {
     pub vault_map_cache: std::sync::Arc<
         std::sync::Mutex<Option<((usize, usize), crate::service::vault_map::VaultMap)>>,
     >,
-    /// Per-note semantic-neighbor cache, keyed by note path, storing
+    /// Per-note semantic-neighbor cache, keyed by `(note_path, limit)`, storing
     /// `(graph_triple_count, total_memory_bytes) → NoteContext`. Invalidated
     /// whenever the graph or memory changes — same staleness signal as
-    /// vault_map_cache. Cache key does not include `limit`; callers should
-    /// use a consistent limit for the same note.
+    /// vault_map_cache. `limit` is part of the key so that MCP calls with
+    /// different limits do not serve stale neighbor counts from cache.
     pub note_context_cache: std::sync::Arc<
         std::sync::Mutex<
             std::collections::HashMap<
-                String,
+                (String, usize),
                 ((usize, usize), crate::service::context::NoteContext),
             >,
         >,
