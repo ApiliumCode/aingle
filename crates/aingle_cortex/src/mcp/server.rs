@@ -127,6 +127,22 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// Verified backlinks + outgoing links + unlinked mentions for a note.
+    #[tool(
+        description = "Verified backlinks, outgoing links, and unlinked mentions for a note. \
+            Each backlink includes the source's context line and a signed-provenance anchor \
+            when available. Use for accurate reverse navigation.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_backlinks(
+        &self,
+        params: Parameters<BacklinksParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::backlinks::backlinks(&self.state, &p.note).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// List ingested sources and their signed content hashes.
     #[tool(
         description = "List ingested source files with their content hashes (the \
@@ -620,6 +636,13 @@ fn default_ground_k() -> usize {
     6
 }
 
+/// Parameters for the `aingle_backlinks` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct BacklinksParams {
+    /// Note path (vault-relative) to get backlinks for, e.g. "ideas/sled.md".
+    pub note: String,
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for AingleMcp {
     fn get_info(&self) -> ServerInfo {
@@ -648,7 +671,7 @@ mod ingest_tools_tests {
             .into_iter()
             .map(|t| t.name.to_string())
             .collect();
-        for expected in ["aingle_ingest", "aingle_ground", "aingle_sources", "aingle_vault_map"] {
+        for expected in ["aingle_ingest", "aingle_ground", "aingle_sources", "aingle_vault_map", "aingle_backlinks"] {
             assert!(
                 names.contains(&expected.to_string()),
                 "missing tool {expected}"
