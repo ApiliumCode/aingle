@@ -8,7 +8,7 @@
 //! the dimension-sidecar bookkeeping used to detect an embedder change and the
 //! registry-clear that forces a re-ingest after one.
 
-use ineru::{Embedder, HashEmbedder};
+use ineru::{Embedder, Embedding, HashEmbedder};
 use std::sync::Arc;
 
 /// Builds the active embedder. Returns a `NeuralEmbedder` only when cortex is
@@ -70,6 +70,71 @@ pub fn clear_source_registry(graph: &aingle_graph::GraphDB) -> Result<usize, ain
     Ok(removed)
 }
 
+/// An embedder whose inner delegate can be hot-swapped at runtime while its
+/// reported dimensionality stays FIXED. Lets a UI start immediately with a
+/// "pending" embedder and install the real (slow-to-load) model later WITHOUT
+/// ever changing the vector dimension — so a dimension-keyed index (HNSW) stays
+/// consistent. Stored vectors must only be produced AFTER a real delegate is
+/// installed; the caller gates ingest on readiness.
+pub struct SwappableEmbedder {
+    inner: std::sync::RwLock<Arc<dyn Embedder>>,
+    dims: usize,
+}
+
+/// Placeholder delegate before the real model is installed. Returns a zero vector
+/// of the fixed dims — harmless for queries (cosine 0 → "ungrounded") and never
+/// used for stored passages because ingest is gated on readiness.
+struct PendingEmbedder {
+    dims: usize,
+}
+
+impl Embedder for PendingEmbedder {
+    fn embed_passage(&self, _text: &str) -> Embedding { Embedding::new(vec![0.0; self.dims]) }
+    fn embed_query(&self, _text: &str) -> Embedding { Embedding::new(vec![0.0; self.dims]) }
+    fn dimensions(&self) -> usize { self.dims }
+}
+
+impl SwappableEmbedder {
+    /// Creates a swappable embedder in the pending state with a fixed dimension.
+    pub fn new_pending(dims: usize) -> Self {
+        Self {
+            inner: std::sync::RwLock::new(Arc::new(PendingEmbedder { dims })),
+            dims,
+        }
+    }
+
+    /// Installs the real delegate. The delegate MUST report the same dimension
+    /// this swappable was created with; a mismatch is logged and ignored so the
+    /// index dimension can never change underneath stored vectors.
+    pub fn install(&self, delegate: Arc<dyn Embedder>) {
+        if delegate.dimensions() != self.dims {
+            log::warn!(
+                "SwappableEmbedder.install rejected: delegate dims {} != fixed {}",
+                delegate.dimensions(),
+                self.dims
+            );
+            return;
+        }
+        *self.inner.write().expect("swappable embedder poisoned") = delegate;
+    }
+}
+
+impl Embedder for SwappableEmbedder {
+    fn embed_passage(&self, text: &str) -> Embedding {
+        let inner = self.inner.read().expect("swappable embedder poisoned").clone();
+        inner.embed_passage(text)
+    }
+    fn embed_query(&self, text: &str) -> Embedding {
+        let inner = self.inner.read().expect("swappable embedder poisoned").clone();
+        inner.embed_query(text)
+    }
+    fn dimensions(&self) -> usize { self.dims }
+    fn relevance_thresholds(&self) -> (f32, f32) {
+        let inner = self.inner.read().expect("swappable embedder poisoned").clone();
+        inner.relevance_thresholds()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +168,44 @@ mod tests {
     fn clear_source_registry_on_empty_graph_is_zero() {
         let graph = aingle_graph::GraphDB::memory().unwrap();
         assert_eq!(clear_source_registry(&graph).unwrap(), 0);
+    }
+
+    #[test]
+    fn swappable_reports_fixed_dims_before_and_after_install() {
+        let s = SwappableEmbedder::new_pending(384);
+        assert_eq!(s.dimensions(), 384);
+        let q = s.embed_query("hola");
+        assert_eq!(q.0.len(), 384);
+        assert!(q.0.iter().all(|x| *x == 0.0));
+        s.install(std::sync::Arc::new(Fake384));
+        assert_eq!(s.dimensions(), 384);
+        let q2 = s.embed_query("hola");
+        assert_eq!(q2.0.len(), 384);
+        assert!(q2.0.iter().any(|x| *x != 0.0));
+    }
+
+    #[test]
+    fn swappable_rejects_mismatched_dims_install() {
+        let s = SwappableEmbedder::new_pending(384);
+        s.install(std::sync::Arc::new(ineru::HashEmbedder::new())); // 64d → rejected
+        let q = s.embed_query("x");
+        assert_eq!(q.0.len(), 384);
+        assert!(q.0.iter().all(|x| *x == 0.0));
+    }
+
+    #[test]
+    fn swappable_delegates_relevance_thresholds_after_install() {
+        let s = SwappableEmbedder::new_pending(384);
+        s.install(std::sync::Arc::new(Fake384));
+        assert_eq!(s.relevance_thresholds(), (0.80, 0.77));
+    }
+
+    /// 384-dim test delegate with non-zero output and the e5 thresholds.
+    struct Fake384;
+    impl ineru::Embedder for Fake384 {
+        fn embed_passage(&self, _t: &str) -> ineru::Embedding { ineru::Embedding::new(vec![0.5; 384]) }
+        fn embed_query(&self, _t: &str) -> ineru::Embedding { ineru::Embedding::new(vec![0.5; 384]) }
+        fn dimensions(&self) -> usize { 384 }
+        fn relevance_thresholds(&self) -> (f32, f32) { (0.80, 0.77) }
     }
 }
