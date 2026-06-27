@@ -11,7 +11,7 @@ use crate::service::triples::{delete_triple, insert_triple_inner};
 use crate::state::AppState;
 use aingle_graph::{NodeId, Predicate, TriplePattern};
 use aingle_ingest::{extract, ObjectValue};
-use ineru::{Embedding, MemoryEntry, MemoryId, MemoryMetadata};
+use ineru::{MemoryEntry, MemoryId, MemoryMetadata};
 
 // Bring the graph error type into scope for duplicate-matching in ingest logic.
 use aingle_graph::Error as GraphError;
@@ -182,7 +182,7 @@ pub async fn ingest_path(
 
         // Write text chunks to Ineru memory
         for chunk in &extraction.chunks {
-            let embedding = Embedding::from_text_simple(&chunk.text);
+            let embedding = state.embedder.embed_passage(&chunk.text);
             let mut entry = MemoryEntry::new(
                 CHUNK_ENTRY_TYPE,
                 serde_json::json!({
