@@ -30,13 +30,31 @@ fn basename(path: &str) -> String {
     file.rsplit_once('.').map(|(s, _)| s).unwrap_or(file).to_string()
 }
 
-/// True if `text` mentions `word` as a whole (case-insensitive) token — avoids
-/// "cat" matching "category". Tokens split on non-alphanumeric.
+/// True if `text` contains `word` (case-insensitive) as a whole token — bounded
+/// by non-alphanumeric chars or string ends. Handles multi-token names like
+/// "meeting-notes" while NOT matching "note" inside "notebook".
 fn mentions_word(text: &str, word: &str) -> bool {
-    let w = word.to_lowercase();
-    text.to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .any(|tok| tok == w)
+    let w = word.trim().to_lowercase();
+    if w.is_empty() {
+        return false;
+    }
+    let hay = text.to_lowercase();
+    let hb = hay.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = hay[from..].find(w.as_str()) {
+        let start = from + rel;
+        let end = start + w.len();
+        let before_ok = start == 0 || !(hb[start - 1] as char).is_alphanumeric();
+        let after_ok = end >= hb.len() || !(hb[end] as char).is_alphanumeric();
+        if before_ok && after_ok {
+            return true;
+        }
+        from = start + 1;
+        if from >= hb.len() {
+            break;
+        }
+    }
+    false
 }
 
 /// Retrieve a signed provenance anchor hash for a note path, if available.
@@ -97,6 +115,7 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
         }
     };
     let active_base = basename(note);
+    let active_base_lc = active_base.to_lowercase();
 
     // Per-note chunk text (for context + unlinked scan).
     let mut text_of: BTreeMap<String, String> = BTreeMap::new();
@@ -120,19 +139,18 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
     }
 
     // Backlinks: sources linking to `note`.
-    let mut seen = std::collections::BTreeSet::new();
-    let mut backlinks: Vec<BacklinkRef> = Vec::new();
     let mut backlink_paths = std::collections::BTreeSet::new();
+    let mut backlinks: Vec<BacklinkRef> = Vec::new();
     for (src, target) in &links {
         if src == note || !note_set.contains(src.as_str()) {
             continue;
         }
-        if resolve(target).as_deref() == Some(note) && seen.insert(src.clone()) {
+        if resolve(target).as_deref() == Some(note) && backlink_paths.insert(src.clone()) {
             let context = text_of.get(src).and_then(|txt| {
                 txt.lines()
                     .find(|l| {
                         l.contains("[[")
-                            && l.to_lowercase().contains(&active_base.to_lowercase())
+                            && l.to_lowercase().contains(&active_base_lc)
                     })
                     .map(|l| {
                         let t = l.trim();
@@ -145,7 +163,6 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
                     })
             });
             let anchor = provenance_anchor_for(state, src).await;
-            backlink_paths.insert(src.clone());
             backlinks.push(BacklinkRef {
                 path: src.clone(),
                 context,
@@ -230,6 +247,36 @@ mod tests {
         assert!(r.outgoing.contains(&"b.md".to_string()), "target links to b");
         assert!(r.unlinked.contains(&"c.md".to_string()), "c mentions target unlinked");
         assert!(!r.unlinked.contains(&"a.md".to_string()), "a is a backlink, not unlinked");
+    }
+
+    #[tokio::test]
+    async fn unlinked_detects_hyphenated_basename() {
+        let state = graph_with(&[
+            ("meeting-notes.md", "aingle:source_hash", "h1"),
+            ("c.md", "aingle:source_hash", "h2"),
+        ])
+        .await;
+        {
+            let mut mem = state.memory.write().await;
+            let mut e = ineru::MemoryEntry::new(
+                crate::service::ingest::CHUNK_ENTRY_TYPE,
+                serde_json::json!({ "text": "Discussed in meeting-notes yesterday.", "source_path": "c.md" }),
+            );
+            e.embedding = Some(ineru::Embedding::new(vec![0.0; 8]));
+            mem.remember(e).unwrap();
+        }
+        let r = super::backlinks(&state, "meeting-notes.md").await;
+        assert!(
+            r.unlinked.contains(&"c.md".to_string()),
+            "hyphenated name must be detected: {r:?}"
+        );
+    }
+
+    #[test]
+    fn mentions_word_is_bounded() {
+        assert!(super::mentions_word("a meeting-notes b", "meeting-notes"));
+        assert!(!super::mentions_word("my notebook here", "note"));
+        assert!(super::mentions_word("see Target.", "target"));
     }
 
     #[tokio::test]
