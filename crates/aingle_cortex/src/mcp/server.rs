@@ -140,6 +140,19 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// Vault Map & Navigation Manual: entry points, topics, orphans, indices,
+    /// and guidance for navigating the vault accurately before answering.
+    #[tool(
+        description = "Vault map & navigation manual: hub entry-points, semantic topic \
+            clusters, orphan notes, tag/type indices, and guidance. Call this FIRST to \
+            navigate a vault accurately, then aingle_ground each claim.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_vault_map(&self) -> Result<CallToolResult, ErrorData> {
+        let resp = crate::service::vault_map::vault_map_cached(&self.state).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// Query the semantic graph by triple pattern (any field omitted = wildcard).
     #[tool(
         description = "Query the semantic graph by triple pattern. Omit a field to wildcard it.",
@@ -635,7 +648,7 @@ mod ingest_tools_tests {
             .into_iter()
             .map(|t| t.name.to_string())
             .collect();
-        for expected in ["aingle_ingest", "aingle_ground", "aingle_sources"] {
+        for expected in ["aingle_ingest", "aingle_ground", "aingle_sources", "aingle_vault_map"] {
             assert!(
                 names.contains(&expected.to_string()),
                 "missing tool {expected}"
