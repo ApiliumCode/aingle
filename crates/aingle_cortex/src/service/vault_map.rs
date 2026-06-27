@@ -64,14 +64,12 @@ pub struct TypeCount {
     pub count: usize,
 }
 
-#[allow(dead_code)] // used in MM-1 assembly
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct GraphView {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
 }
 
-#[allow(dead_code)] // used in MM-1 assembly
 #[derive(Debug, Clone, Serialize)]
 pub struct GraphNode {
     pub id: String,
@@ -80,7 +78,6 @@ pub struct GraphNode {
     pub degree: usize,
 }
 
-#[allow(dead_code)] // used in MM-1 assembly
 #[derive(Debug, Clone, Serialize)]
 pub struct GraphEdge {
     pub source: String,
@@ -88,7 +85,6 @@ pub struct GraphEdge {
 }
 
 /// Max nodes rendered in the visual graph (top-degree); larger vaults are capped.
-#[allow(dead_code)] // used in MM-1 assembly
 const GRAPH_NODE_CAP: usize = 600;
 
 /// Basename without directory or extension, for wikilink resolution + titles.
@@ -314,6 +310,177 @@ pub(crate) fn per_note_vectors(mem: &ineru::IneruMemory) -> BTreeMap<String, Vec
         .collect()
 }
 
+/// Cosine threshold for semantic topic membership (note-level mean vectors).
+/// Calibrated for E5; the hash embedder produces denser similarities but topics
+/// remain a useful secondary facet.
+const SEMANTIC_THRESHOLD: f32 = 0.82;
+/// Above this note count, skip O(n^2) semantic clustering (tag clusters remain).
+const SEMANTIC_NOTE_CAP: usize = 2000;
+
+/// Compute the full vault map (uncached).
+pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
+    let s = {
+        let g = state.graph.read().await;
+        derive_structural(&g)
+    };
+
+    // Hubs / entry points: top by in-degree, tie-break out-degree.
+    let mut entry_points: Vec<EntryPoint> = s
+        .notes
+        .iter()
+        .map(|p| EntryPoint {
+            path: p.clone(),
+            title: basename(p),
+            in_links: s.in_deg.get(p).copied().unwrap_or(0),
+            out_links: s.out_deg.get(p).copied().unwrap_or(0),
+        })
+        .collect();
+    entry_points.sort_by(|a, b| {
+        b.in_links
+            .cmp(&a.in_links)
+            .then(b.out_links.cmp(&a.out_links))
+            .then(a.path.cmp(&b.path))
+    });
+    entry_points.retain(|e| e.in_links > 0 || e.out_links > 0);
+    entry_points.truncate(20);
+
+    // Orphans.
+    let orphans: Vec<String> = s
+        .notes
+        .iter()
+        .filter(|p| {
+            s.in_deg.get(*p).copied().unwrap_or(0) == 0
+                && s.out_deg.get(*p).copied().unwrap_or(0) == 0
+        })
+        .cloned()
+        .collect();
+
+    // Semantic topics (capped).
+    let topics = if s.notes.len() <= SEMANTIC_NOTE_CAP {
+        let mem = state.memory.read().await;
+        let vecs = per_note_vectors(&mem);
+        if vecs.len() >= 2 {
+            cluster_semantic(&vecs, SEMANTIC_THRESHOLD)
+        } else {
+            Vec::new()
+        }
+    } else {
+        log::info!(
+            "vault_map: {} notes > cap {}, skipping semantic clustering (tag clusters used)",
+            s.notes.len(),
+            SEMANTIC_NOTE_CAP
+        );
+        Vec::new()
+    };
+
+    // Tag clusters + tag index.
+    let mut tag_clusters: Vec<TagGroup> = s
+        .tag_notes
+        .iter()
+        .map(|(tag, notes)| TagGroup { tag: tag.clone(), notes: notes.clone() })
+        .collect();
+    tag_clusters.sort_by(|a, b| b.notes.len().cmp(&a.notes.len()).then(a.tag.cmp(&b.tag)));
+    let mut tags: Vec<TagCount> = s
+        .tag_notes
+        .iter()
+        .map(|(tag, notes)| TagCount { tag: tag.clone(), count: notes.len() })
+        .collect();
+    tags.sort_by(|a, b| b.count.cmp(&a.count).then(a.tag.cmp(&b.tag)));
+
+    let mut types: Vec<TypeCount> = s
+        .type_counts
+        .iter()
+        .map(|(ty, count)| TypeCount { ty: ty.clone(), count: *count })
+        .collect();
+    types.sort_by(|a, b| b.count.cmp(&a.count).then(a.ty.cmp(&b.ty)));
+
+    // Cluster id per note (for graph coloring).
+    let mut cluster_of: BTreeMap<String, i64> = BTreeMap::new();
+    for t in &topics {
+        for npath in &t.notes {
+            cluster_of.insert(npath.clone(), t.id as i64);
+        }
+    }
+
+    // GraphView (cap by degree).
+    let mut ranked: Vec<&String> = s.notes.iter().collect();
+    ranked.sort_by(|a, b| {
+        let da =
+            s.in_deg.get(*a).copied().unwrap_or(0) + s.out_deg.get(*a).copied().unwrap_or(0);
+        let db =
+            s.in_deg.get(*b).copied().unwrap_or(0) + s.out_deg.get(*b).copied().unwrap_or(0);
+        db.cmp(&da).then(a.cmp(b))
+    });
+    let kept: std::collections::BTreeSet<String> =
+        ranked.into_iter().take(GRAPH_NODE_CAP).cloned().collect();
+    let nodes: Vec<GraphNode> = kept
+        .iter()
+        .map(|p| GraphNode {
+            id: p.clone(),
+            label: basename(p),
+            cluster: cluster_of.get(p).copied().unwrap_or(-1),
+            degree: s.in_deg.get(p).copied().unwrap_or(0)
+                + s.out_deg.get(p).copied().unwrap_or(0),
+        })
+        .collect();
+    let edges: Vec<GraphEdge> = s
+        .edges
+        .iter()
+        .filter(|(a, b)| kept.contains(a) && kept.contains(b))
+        .map(|(a, b)| GraphEdge { source: a.clone(), target: b.clone() })
+        .collect();
+
+    let totals = Totals {
+        notes: s.notes.len(),
+        links: s.link_count,
+        clusters: topics.len(),
+        orphans: orphans.len(),
+    };
+
+    let guidance = if totals.notes == 0 {
+        "Vault not yet indexed. Once notes are ingested, this map lists entry-point (hub) \
+         notes, topic clusters, and orphans so you can navigate accurately."
+            .to_string()
+    } else {
+        format!(
+            "This vault has {} notes, {} links, {} topics, {} orphans. To answer about a topic, \
+             start at its entry_points and the topic's representative note, then follow links. \
+             Ground every claim with aingle_ground (it returns signed provenance). Orphan notes \
+             are unconnected and may be incomplete.",
+            totals.notes, totals.links, totals.clusters, totals.orphans
+        )
+    };
+
+    VaultMap {
+        totals,
+        entry_points,
+        topics,
+        tag_clusters,
+        orphans,
+        tags,
+        types,
+        graph: GraphView { nodes, edges },
+        guidance,
+    }
+}
+
+/// Cached vault map, keyed on the graph's triple count (auto-invalidated on ingest).
+pub async fn vault_map_cached(state: &crate::state::AppState) -> VaultMap {
+    let tc = { state.graph.read().await.stats().triple_count };
+    {
+        let cache = state.vault_map_cache.lock().expect("vault_map cache poisoned");
+        if let Some((cached_tc, map)) = cache.as_ref() {
+            if *cached_tc == tc {
+                return map.clone();
+            }
+        }
+    }
+    let map = compute_vault_map(state).await;
+    let mut cache = state.vault_map_cache.lock().expect("vault_map cache poisoned");
+    *cache = Some((tc, map.clone()));
+    map
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,5 +549,30 @@ mod tests {
             big.notes.contains(&"a.md".to_string())
                 && big.notes.contains(&"b.md".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn vault_map_cached_assembles_and_caches() {
+        let state = graph_with(&[
+            ("a.md", "aingle:source_hash", "h1"),
+            ("hub.md", "aingle:source_hash", "h2"),
+            ("orphan.md", "aingle:source_hash", "h3"),
+            ("a.md", "links_to", "hub"),
+            ("a.md", "tagged", "storage"),
+        ])
+        .await;
+
+        let m1 = super::vault_map_cached(&state).await;
+        assert_eq!(m1.totals.notes, 3);
+        assert_eq!(m1.totals.links, 1);
+        assert_eq!(m1.totals.orphans, 1); // orphan.md
+        assert!(m1.entry_points.iter().any(|e| e.path == "hub.md" && e.in_links == 1));
+        assert!(m1.tag_clusters.iter().any(|t| t.tag == "storage"));
+        assert!(!m1.guidance.is_empty());
+        assert!(!m1.graph.nodes.is_empty());
+
+        // Cached: no graph change → identical totals (and cheap).
+        let m2 = super::vault_map_cached(&state).await;
+        assert_eq!(m2.totals.notes, m1.totals.notes);
     }
 }

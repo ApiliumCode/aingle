@@ -29,6 +29,9 @@ pub struct AppState {
     pub memory: Arc<RwLock<IneruMemory>>,
     /// The active text embedder (hash fallback or neural). Shared, thread-safe.
     pub embedder: std::sync::Arc<dyn Embedder>,
+    /// Cached vault map, keyed on graph triple-count (see service::vault_map).
+    pub vault_map_cache:
+        std::sync::Arc<std::sync::Mutex<Option<(usize, crate::service::vault_map::VaultMap)>>>,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
@@ -97,6 +100,7 @@ impl AppState {
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
+            vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -142,6 +146,7 @@ impl AppState {
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
+            vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -187,6 +192,7 @@ impl AppState {
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
+            vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -329,6 +335,7 @@ impl AppState {
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
             embedder,
+            vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store,
             sandbox_manager: Arc::new(SandboxManager::new()),
