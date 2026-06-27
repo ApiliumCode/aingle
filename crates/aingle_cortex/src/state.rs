@@ -47,6 +47,17 @@ pub struct AppState {
             >,
         >,
     >,
+    /// Per-note local-graph cache, keyed by `(note_path, depth)`, storing
+    /// `(graph_triple_count, total_memory_bytes) → LocalGraph`. Invalidated
+    /// on any graph or memory change — mirrors note_context_cache semantics.
+    pub local_graph_cache: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                (String, usize),
+                ((usize, usize), crate::service::local_graph::LocalGraph),
+            >,
+        >,
+    >,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
@@ -117,6 +128,7 @@ impl AppState {
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -164,6 +176,7 @@ impl AppState {
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -211,6 +224,7 @@ impl AppState {
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -355,6 +369,7 @@ impl AppState {
             embedder,
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store,
             sandbox_manager: Arc::new(SandboxManager::new()),

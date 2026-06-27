@@ -5,6 +5,7 @@
 
 pub mod backlinks;
 pub mod context;
+pub mod local_graph;
 #[cfg(feature = "dag")]
 pub mod dag;
 pub mod ground;

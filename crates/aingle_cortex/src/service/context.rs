@@ -50,7 +50,7 @@ const SEMANTIC_MIN_DIMS: usize = 128;
 /// threshold (0.77) is too permissive here. Mirrors vault_map's
 /// SEMANTIC_THRESHOLD rationale (related notes ~0.90+, unrelated ~0.81-0.83).
 /// Follow-up: make this per-embedder if more neural models are added.
-const NEIGHBOR_FLOOR: f32 = 0.88;
+pub const NEIGHBOR_FLOOR: f32 = 0.88;
 
 // ---------------------------------------------------------------------------
 // Helpers
