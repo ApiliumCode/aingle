@@ -192,6 +192,128 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
     }
 }
 
+use ineru::Embedding;
+
+/// Cosine similarity between two raw vectors (same length).
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    Embedding::new(a.to_vec()).cosine_similarity(&Embedding::new(b.to_vec()))
+}
+
+/// Connected-components clustering over a cosine-similarity graph: notes whose
+/// cosine >= `threshold` are linked; each connected component is a topic. Labeled
+/// by the most central note (highest mean cosine to its component). Deterministic
+/// (inputs are a sorted BTreeMap). O(n^2) — the caller caps n.
+pub(crate) fn cluster_semantic(vecs: &BTreeMap<String, Vec<f32>>, threshold: f32) -> Vec<Topic> {
+    let names: Vec<&String> = vecs.keys().collect();
+    let n = names.len();
+    // union-find
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if cosine(&vecs[names[i]], &vecs[names[j]]) >= threshold {
+                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                if ri != rj {
+                    parent[ri] = rj;
+                }
+            }
+        }
+    }
+    // group by root
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for i in 0..n {
+        let r = find(&mut parent, i);
+        groups.entry(r).or_default().push(i);
+    }
+    let mut topics: Vec<Topic> = Vec::new();
+    for (id, (_root, members)) in groups.into_iter().enumerate() {
+        // central note = max mean cosine to the rest of its group
+        let central = *members
+            .iter()
+            .max_by(|&&x, &&y| {
+                let mx = mean_sim(&vecs[names[x]], &members, &names, vecs);
+                let my = mean_sim(&vecs[names[y]], &members, &names, vecs);
+                mx.partial_cmp(&my).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap();
+        let mut notes: Vec<String> = members.iter().map(|&m| names[m].clone()).collect();
+        notes.sort();
+        let rep = names[central].clone();
+        topics.push(Topic {
+            id,
+            label: basename(&rep),
+            representative: rep,
+            size: notes.len(),
+            notes,
+        });
+    }
+    topics.sort_by(|a, b| b.size.cmp(&a.size).then(a.label.cmp(&b.label)));
+    topics
+}
+
+fn mean_sim(
+    v: &[f32],
+    members: &[usize],
+    names: &[&String],
+    vecs: &BTreeMap<String, Vec<f32>>,
+) -> f32 {
+    if members.len() <= 1 {
+        return 1.0;
+    }
+    let mut sum = 0.0;
+    let mut cnt = 0;
+    for &m in members {
+        let other = &vecs[names[m]];
+        if !std::ptr::eq(other.as_ptr(), v.as_ptr()) {
+            sum += cosine(v, other);
+            cnt += 1;
+        }
+    }
+    if cnt == 0 {
+        1.0
+    } else {
+        sum / cnt as f32
+    }
+}
+
+/// Mean per-note embedding from Ineru `doc_chunk` entries, grouped by source_path.
+pub(crate) fn per_note_vectors(mem: &ineru::IneruMemory) -> BTreeMap<String, Vec<f32>> {
+    let mut sums: BTreeMap<String, (Vec<f32>, usize)> = BTreeMap::new();
+    let mut entries = mem.stm.all_entries();
+    entries.extend(mem.ltm.all_entries());
+    for e in entries {
+        if e.entry_type != crate::service::ingest::CHUNK_ENTRY_TYPE {
+            continue;
+        }
+        let Some(path) = e.data.get("source_path").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(emb) = e.embedding.as_ref() else { continue };
+        let entry = sums.entry(path.to_string()).or_insert_with(|| (vec![0.0; emb.0.len()], 0));
+        if entry.0.len() == emb.0.len() {
+            for (acc, x) in entry.0.iter_mut().zip(&emb.0) {
+                *acc += *x;
+            }
+            entry.1 += 1;
+        }
+    }
+    sums.into_iter()
+        .filter(|(_, (_, c))| *c > 0)
+        .map(|(p, (mut v, c))| {
+            for x in &mut v {
+                *x /= c as f32;
+            }
+            (p, v)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,5 +363,24 @@ mod tests {
         assert_eq!(s.out_deg.get("a.md").copied().unwrap_or(0), 1);
         assert_eq!(s.tag_notes.get("storage").map(|v| v.len()), Some(2));
         assert_eq!(s.link_count, 2);
+    }
+
+    #[test]
+    fn semantic_clusters_group_similar_notes() {
+        // Three notes: a & b have near-identical vectors, c is far.
+        let mut vecs: BTreeMap<String, Vec<f32>> = BTreeMap::new();
+        vecs.insert("a.md".into(), vec![1.0, 0.0, 0.0]);
+        vecs.insert("b.md".into(), vec![0.99, 0.01, 0.0]);
+        vecs.insert("c.md".into(), vec![0.0, 0.0, 1.0]);
+
+        let topics = super::cluster_semantic(&vecs, 0.9);
+        // a & b together, c alone → 2 topics
+        assert_eq!(topics.len(), 2);
+        let big = topics.iter().max_by_key(|t| t.size).unwrap();
+        assert_eq!(big.size, 2);
+        assert!(
+            big.notes.contains(&"a.md".to_string())
+                && big.notes.contains(&"b.md".to_string())
+        );
     }
 }
