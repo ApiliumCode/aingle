@@ -143,6 +143,29 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// Verified context bundle for a note: semantically-related notes (by meaning,
+    /// not just links) with the matching passage and signed provenance.
+    #[tool(
+        description = "Verified context bundle for a note: notes that are semantically \
+            related by meaning (not just by explicit links), each with the matching \
+            passage as evidence and a signed-provenance anchor when available. Use to \
+            answer grounded in a note's verified neighborhood without hallucinating.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_note_context(
+        &self,
+        params: Parameters<NoteContextParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::context::note_context_cached(
+            &self.state,
+            &p.note,
+            p.limit.unwrap_or(8),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// List ingested sources and their signed content hashes.
     #[tool(
         description = "List ingested source files with their content hashes (the \
@@ -643,6 +666,15 @@ pub struct BacklinksParams {
     pub note: String,
 }
 
+/// Parameters for the `aingle_note_context` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct NoteContextParams {
+    /// Note path (vault-relative) to get the verified context bundle for.
+    pub note: String,
+    /// Max number of related neighbors to return (default 8).
+    pub limit: Option<usize>,
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for AingleMcp {
     fn get_info(&self) -> ServerInfo {
@@ -671,7 +703,7 @@ mod ingest_tools_tests {
             .into_iter()
             .map(|t| t.name.to_string())
             .collect();
-        for expected in ["aingle_ingest", "aingle_ground", "aingle_sources", "aingle_vault_map", "aingle_backlinks"] {
+        for expected in ["aingle_ingest", "aingle_ground", "aingle_sources", "aingle_vault_map", "aingle_backlinks", "aingle_note_context"] {
             assert!(
                 names.contains(&expected.to_string()),
                 "missing tool {expected}"
