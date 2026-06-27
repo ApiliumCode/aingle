@@ -19,6 +19,10 @@ pub struct VaultMap {
     pub types: Vec<TypeCount>,
     pub graph: GraphView,
     pub guidance: String,
+    /// Path to the user's identity note (`me.md`) if present — read this first.
+    pub identity: Option<String>,
+    /// Note paths tagged as reusable skills/processes (the "skill map").
+    pub skills: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -86,6 +90,9 @@ pub struct GraphEdge {
 
 /// Max nodes rendered in the visual graph (top-degree); larger vaults are capped.
 const GRAPH_NODE_CAP: usize = 600;
+
+/// Tags (case-insensitive) that mark a note as a reusable skill/process.
+const SKILL_TAGS: [&str; 6] = ["skill", "process", "sop", "workflow", "how-to", "howto"];
 
 /// Basename without directory or extension, for wikilink resolution + titles.
 pub(crate) fn basename(path: &str) -> String {
@@ -458,18 +465,43 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
         orphans: orphans.len(),
     };
 
+    // Identity: the root `me.md` (exact rel_path), read first by the AI.
+    let identity = s
+        .notes
+        .iter()
+        .find(|n| n.as_str() == "me.md" || n.as_str() == "me.markdown")
+        .cloned();
+
+    // Skills: notes tagged with any SKILL_TAGS value (case-insensitive).
+    let mut skills: Vec<String> = Vec::new();
+    for (tag, notes) in &s.tag_notes {
+        if SKILL_TAGS.contains(&tag.to_lowercase().as_str()) {
+            skills.extend(notes.iter().cloned());
+        }
+    }
+    skills.sort();
+    skills.dedup();
+
     let guidance = if totals.notes == 0 {
         "Vault not yet indexed. Once notes are ingested, this map lists entry-point (hub) \
          notes, topic clusters, and orphans so you can navigate accurately."
             .to_string()
     } else {
-        format!(
+        let mut g = String::new();
+        if identity.is_some() {
+            g.push_str("Read me.md first for the user's identity and preferences. ");
+        }
+        g.push_str(&format!(
             "This vault has {} notes, {} links, {} topics, {} orphans. To answer about a topic, \
              start at its entry_points and the topic's representative note, then follow links. \
              Ground every claim with aingle_ground (it returns signed provenance). Orphan notes \
              are unconnected and may be incomplete.",
             totals.notes, totals.links, totals.clusters, totals.orphans
-        )
+        ));
+        if !skills.is_empty() {
+            g.push_str(" Follow the skill notes (skill-map) for the user's documented processes.");
+        }
+        g
     };
 
     VaultMap {
@@ -482,6 +514,8 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
         types,
         graph: GraphView { nodes, edges },
         guidance,
+        identity,
+        skills,
     }
 }
 
@@ -627,6 +661,27 @@ mod tests {
         assert!(!map.entry_points.iter().any(|e| e.path.starts_with("_maps/")));
         let hub = map.entry_points.iter().find(|e| e.path == "hub.md").expect("hub");
         assert_eq!(hub.in_links, 1, "the _maps link to hub must be excluded");
+    }
+
+    #[tokio::test]
+    async fn detects_identity_and_skills() {
+        let state = graph_with(&[
+            ("me.md", "aingle:source_hash", "h0"),
+            ("note.md", "aingle:source_hash", "h1"),
+            ("deploy.md", "aingle:source_hash", "h2"),
+            ("writing.md", "aingle:source_hash", "h3"),
+            ("deploy.md", "tagged", "sop"),
+            ("writing.md", "tagged", "process"),
+            ("note.md", "tagged", "misc"),
+        ])
+        .await;
+
+        let map = super::vault_map_cached(&state).await;
+        assert_eq!(map.identity.as_deref(), Some("me.md"));
+        assert!(map.skills.contains(&"deploy.md".to_string()));
+        assert!(map.skills.contains(&"writing.md".to_string()));
+        assert!(!map.skills.contains(&"note.md".to_string()), "non-skill tag excluded");
+        assert!(map.guidance.contains("me.md"), "guidance points at identity");
     }
 
     #[tokio::test]
