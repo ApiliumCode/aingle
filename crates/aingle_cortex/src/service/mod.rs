@@ -3,6 +3,7 @@
 
 //! Business-logic layer shared by REST handlers and the MCP server.
 
+pub mod backlinks;
 #[cfg(feature = "dag")]
 pub mod dag;
 pub mod ground;
