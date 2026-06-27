@@ -860,4 +860,97 @@ mod tests {
             ctx.neighbors
         );
     }
+
+    /// End-to-end acceptance test for the real neural embedder: same-topic notes
+    /// must surface as semantic neighbors while an off-topic note is filtered out.
+    /// Gated on the `neural-embeddings` feature and skips if the model files are
+    /// absent. Requires `ORT_DYLIB_PATH` to point at an onnxruntime shared library.
+    #[cfg(feature = "neural-embeddings")]
+    #[tokio::test]
+    async fn neural_note_context_finds_same_topic() {
+        let model_dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../ineru/test-models/multilingual-e5-small"
+            )
+            .to_string()
+        });
+        if !std::path::Path::new(&model_dir)
+            .join("onnx/model.onnx")
+            .exists()
+        {
+            eprintln!("skipping neural_note_context_finds_same_topic: e5 model not found at {model_dir}");
+            return;
+        }
+
+        let embedder = crate::embedder::build_embedder(Some(&model_dir));
+        assert_eq!(
+            embedder.dimensions(),
+            384,
+            "neural embedder must be active (384d)"
+        );
+
+        let state =
+            AppState::with_db_path_and_embedder(":memory:", None, embedder).unwrap();
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        // Two same-topic notes about dog care — sentences reused from
+        // neural_grounding_is_topical in ground.rs for reliable embedding behaviour.
+        std::fs::write(
+            dir.path().join("perros1.md"),
+            "# Cuidado de perros\n\nLos perros necesitan paseos diarios, agua fresca y una dieta equilibrada para estar sanos.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("perros2.md"),
+            "# Mascotas\n\nUn perro sano requiere ejercicio diario, hidratación constante y alimentación balanceada.\n",
+        )
+        .unwrap();
+        // Off-topic note: elections have no semantic overlap with dog care.
+        std::fs::write(
+            dir.path().join("elecciones.md"),
+            "# Elecciones\n\nLos resultados de las elecciones presidenciales determinan el futuro del país.\n",
+        )
+        .unwrap();
+
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+
+        let ctx = super::note_context(&state, "perros1.md", 5).await;
+
+        assert!(
+            ctx.semantic_ready,
+            "neural embedder (384d) must set semantic_ready=true"
+        );
+
+        assert!(
+            ctx.neighbors.iter().any(|n| n.path == "perros2.md"),
+            "perros2.md (same-topic sibling) must be a semantic neighbor of perros1.md: {:?}",
+            ctx.neighbors
+        );
+
+        let sibling = ctx
+            .neighbors
+            .iter()
+            .find(|n| n.path == "perros2.md")
+            .unwrap();
+        assert!(
+            sibling.passage.is_some(),
+            "perros2.md neighbor must include a matching passage: {:?}",
+            sibling
+        );
+
+        // elecciones.md is semantically orthogonal to dog care; its cosine against
+        // the perros1.md query vector should not reach the low threshold (0.77).
+        assert!(
+            !ctx.neighbors.iter().any(|n| n.path == "elecciones.md"),
+            "off-topic elecciones.md must not appear as a neighbor (below low=0.77 floor): {:?}",
+            ctx.neighbors
+        );
+    }
 }
