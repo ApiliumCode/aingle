@@ -129,6 +129,9 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
     notes.sort();
     notes.dedup();
 
+    // O(log n) membership set — avoids linear scans during link/tag resolution.
+    let note_set: std::collections::BTreeSet<&str> = notes.iter().map(|s| s.as_str()).collect();
+
     // Basename -> note path index for wikilink resolution.
     let mut by_base: BTreeMap<String, String> = BTreeMap::new();
     for n in &notes {
@@ -136,7 +139,7 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
     }
     let resolve = |target: &str| -> Option<String> {
         // exact path first, else basename match
-        if notes.iter().any(|n| n == target) {
+        if note_set.contains(target) {
             Some(target.to_string())
         } else {
             by_base.get(&basename(target)).cloned()
@@ -147,7 +150,7 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
     let mut out_deg: BTreeMap<String, usize> = BTreeMap::new();
     let mut edges: Vec<(String, String)> = Vec::new();
     for (src, target) in find("links_to") {
-        if !notes.iter().any(|n| n == &src) {
+        if !note_set.contains(src.as_str()) {
             continue;
         }
         if let Some(dst) = resolve(&target) {
@@ -163,7 +166,7 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
 
     let mut tag_notes: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (note, tag) in find("tagged") {
-        if notes.iter().any(|n| n == &note) {
+        if note_set.contains(note.as_str()) {
             tag_notes.entry(tag).or_default().push(note);
         }
     }
@@ -188,11 +191,19 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
     }
 }
 
-use ineru::Embedding;
-
 /// Cosine similarity between two raw vectors (same length).
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
-    Embedding::new(a.to_vec()).cosine_similarity(&Embedding::new(b.to_vec()))
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let ma = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let mb = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if ma == 0.0 || mb == 0.0 {
+        0.0
+    } else {
+        dot / (ma * mb)
+    }
 }
 
 /// Connected-components clustering over a cosine-similarity graph: notes whose
@@ -233,8 +244,8 @@ pub(crate) fn cluster_semantic(vecs: &BTreeMap<String, Vec<f32>>, threshold: f32
         let central = *members
             .iter()
             .max_by(|&&x, &&y| {
-                let mx = mean_sim(&vecs[names[x]], &members, &names, vecs);
-                let my = mean_sim(&vecs[names[y]], &members, &names, vecs);
+                let mx = mean_sim(x, &members, &names, vecs);
+                let my = mean_sim(y, &members, &names, vecs);
                 mx.partial_cmp(&my).unwrap_or(std::cmp::Ordering::Equal)
             })
             .unwrap();
@@ -253,29 +264,21 @@ pub(crate) fn cluster_semantic(vecs: &BTreeMap<String, Vec<f32>>, threshold: f32
     topics
 }
 
-fn mean_sim(
-    v: &[f32],
-    members: &[usize],
-    names: &[&String],
-    vecs: &BTreeMap<String, Vec<f32>>,
-) -> f32 {
+fn mean_sim(self_idx: usize, members: &[usize], names: &[&String], vecs: &BTreeMap<String, Vec<f32>>) -> f32 {
     if members.len() <= 1 {
         return 1.0;
     }
+    let v = &vecs[names[self_idx]];
     let mut sum = 0.0;
     let mut cnt = 0;
     for &m in members {
-        let other = &vecs[names[m]];
-        if !std::ptr::eq(other.as_ptr(), v.as_ptr()) {
-            sum += cosine(v, other);
-            cnt += 1;
+        if m == self_idx {
+            continue;
         }
+        sum += cosine(v, &vecs[names[m]]);
+        cnt += 1;
     }
-    if cnt == 0 {
-        1.0
-    } else {
-        sum / cnt as f32
-    }
+    if cnt == 0 { 1.0 } else { sum / cnt as f32 }
 }
 
 /// Mean per-note embedding from Ineru `doc_chunk` entries, grouped by source_path.
@@ -475,6 +478,8 @@ pub async fn vault_map_cached(state: &crate::state::AppState) -> VaultMap {
             }
         }
     }
+    // The cache mutex is intentionally released before the async compute to avoid
+    // holding it across an `.await` point.
     let map = compute_vault_map(state).await;
     let mut cache = state.vault_map_cache.lock().expect("vault_map cache poisoned");
     *cache = Some((tc, map.clone()));
@@ -515,6 +520,8 @@ mod tests {
             ("orphan.md", "aingle:source_hash", "h4"),
             ("a.md", "links_to", "hub"),
             ("b.md", "links_to", "hub"),
+            // self-link: "a" resolves to "a.md" via basename → must be skipped
+            ("a.md", "links_to", "a"),
             ("a.md", "tagged", "storage"),
             ("b.md", "tagged", "storage"),
             ("a.md", "type", "note"),
@@ -530,6 +537,10 @@ mod tests {
         assert_eq!(s.out_deg.get("a.md").copied().unwrap_or(0), 1);
         assert_eq!(s.tag_notes.get("storage").map(|v| v.len()), Some(2));
         assert_eq!(s.link_count, 2);
+        // Self-link must not be counted as incoming for a.md.
+        assert_eq!(s.in_deg.get("a.md").copied().unwrap_or(0), 0, "self-link must not count as incoming");
+        // type_counts must reflect the triple ("a.md","type","note").
+        assert_eq!(s.type_counts.get("note"), Some(&1));
     }
 
     #[test]
@@ -574,5 +585,23 @@ mod tests {
         // Cached: no graph change → identical totals (and cheap).
         let m2 = super::vault_map_cached(&state).await;
         assert_eq!(m2.totals.notes, m1.totals.notes);
+    }
+
+    #[tokio::test]
+    async fn vault_map_cache_invalidates_on_change() {
+        let state = graph_with(&[("a.md", "aingle:source_hash", "h1")]).await;
+        let m1 = super::vault_map_cached(&state).await;
+        assert_eq!(m1.totals.notes, 1);
+        {
+            let g = state.graph.write().await;
+            g.insert(Triple::new(
+                NodeId::named("b.md"),
+                Predicate::named("aingle:source_hash"),
+                Value::literal("h2"),
+            ))
+            .unwrap();
+        }
+        let m2 = super::vault_map_cached(&state).await;
+        assert_eq!(m2.totals.notes, 2, "cache must invalidate when triple_count changes");
     }
 }
