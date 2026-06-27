@@ -16,3 +16,4 @@ pub mod sparql;
 pub mod stats;
 pub mod triples;
 pub mod validate;
+pub mod vault_map;
