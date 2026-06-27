@@ -1,4 +1,4 @@
-// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+﻿// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0 OR Commercial
 
 //! Local graph neighborhood for a single note: typed edges (link / semantic / tag)
@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use crate::service::triple_util::{obj_string, resolve_link_target};
 use crate::service::vault_map::{basename, is_maps_path};
-use crate::service::context::{note_context, NEIGHBOR_FLOOR};
+use crate::service::context::{note_context_cached, NEIGHBOR_FLOOR};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -66,6 +66,11 @@ const SEM_PER_NODE: usize = 5;
 const MAX_DEPTH: usize = 2;
 /// Max tag-edges added per (node, tag) pair — prevents explosion on popular tags.
 const TAG_FANOUT_CAP: usize = 6;
+/// Maximum frontier size before the per-node semantic pass at each BFS level.
+/// Caps the depth-2 semantic N+1: a hub with many link-neighbors would otherwise
+/// trigger one `note_context_cached` call per frontier node. Sorting the frontier
+/// first ensures deterministic behavior when truncating.
+const SEM_FRONTIER_CAP: usize = 16;
 
 // ---------------------------------------------------------------------------
 // Core function
@@ -136,6 +141,15 @@ pub async fn local_graph(
         .filter(|(_, dst)| note_set.contains(dst.as_str()) && !is_maps_path(dst))
         .collect();
 
+    // Pre-index links for O(1) per-node lookup in the BFS loop — avoids
+    // re-scanning the full `links` vec twice per node.
+    let mut by_src: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut by_dst: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (src, dst) in &links {
+        by_src.entry(src.clone()).or_default().push(dst.clone());
+        by_dst.entry(dst.clone()).or_default().push(src.clone());
+    }
+
     // tag_of_note: note → set<tag>
     // notes_of_tag: tag → vec<note> (sorted, deduped)
     let mut tag_of_note: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -177,39 +191,43 @@ pub async fn local_graph(
             }
 
             // --- link edges (outgoing from n) ---
-            for (src, dst) in links.iter().filter(|(s, _)| s == &n) {
-                edges.push(TypedEdge {
-                    source: src.clone(),
-                    target: dst.clone(),
-                    kind: "link".to_string(),
-                    score: None,
-                    label: None,
-                    provenance_anchor: None,
-                });
-                if !visited.contains(dst) {
-                    visited.insert(dst.clone());
-                    next_frontier.push(dst.clone());
+            if let Some(dsts) = by_src.get(&n) {
+                for dst in dsts {
+                    edges.push(TypedEdge {
+                        source: n.clone(),
+                        target: dst.clone(),
+                        kind: "link".to_string(),
+                        score: None,
+                        label: None,
+                        provenance_anchor: None,
+                    });
+                    if !visited.contains(dst) {
+                        visited.insert(dst.clone());
+                        next_frontier.push(dst.clone());
+                    }
                 }
             }
             // --- link edges (incoming to n) ---
-            for (src, dst) in links.iter().filter(|(_, d)| d == &n) {
-                edges.push(TypedEdge {
-                    source: src.clone(),
-                    target: dst.clone(),
-                    kind: "link".to_string(),
-                    score: None,
-                    label: None,
-                    provenance_anchor: None,
-                });
-                if !visited.contains(src) {
-                    visited.insert(src.clone());
-                    next_frontier.push(src.clone());
+            if let Some(srcs) = by_dst.get(&n) {
+                for src in srcs {
+                    edges.push(TypedEdge {
+                        source: src.clone(),
+                        target: n.clone(),
+                        kind: "link".to_string(),
+                        score: None,
+                        label: None,
+                        provenance_anchor: None,
+                    });
+                    if !visited.contains(src) {
+                        visited.insert(src.clone());
+                        next_frontier.push(src.clone());
+                    }
                 }
             }
 
             // --- semantic edges ---
             if semantic_grade {
-                let ctx = note_context(state, &n, SEM_PER_NODE).await;
+                let ctx = note_context_cached(state, &n, SEM_PER_NODE).await;
                 if !ctx.semantic_ready {
                     semantic_ready = false;
                 } else {
@@ -267,6 +285,11 @@ pub async fn local_graph(
             }
         }
 
+        // Cap the next frontier before promoting to bound semantic cost at the
+        // next level (≤ SEM_FRONTIER_CAP × note_context_cached calls).
+        // Depth-1 behavior is identical: next_frontier is never used again.
+        next_frontier.sort();
+        next_frontier.truncate(SEM_FRONTIER_CAP);
         for n in next_frontier {
             frontier.push_back(n);
         }
@@ -278,7 +301,7 @@ pub async fn local_graph(
     // Links are directional — dedupe by (source, target, kind).
     // Semantic/tag are symmetric — dedupe order-insensitively by (min,max,kind).
     let mut seen_link: HashSet<(String, String)> = HashSet::new();
-    let mut seen_sym: HashSet<(String, String, String)> = HashSet::new();
+    let mut seen_sym: HashSet<(String, String, String, String)> = HashSet::new();
     let mut deduped: Vec<TypedEdge> = Vec::new();
 
     for e in edges {
@@ -300,7 +323,14 @@ pub async fn local_graph(
                 } else {
                     (e.target.clone(), e.source.clone())
                 };
-                let key = (lo, hi, e.kind.clone());
+                // Include the tag label so a pair sharing two distinct tags
+                // yields two edges. Semantic label is always None → "" → no clash.
+                let tag_label = if e.kind == "tag" {
+                    e.label.clone().unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                let key = (lo, hi, e.kind.clone(), tag_label);
                 if seen_sym.insert(key) {
                     deduped.push(e);
                 }
@@ -349,10 +379,17 @@ pub async fn local_graph(
     };
 
     // Drop edges that reference removed nodes.
-    let final_edges: Vec<TypedEdge> = deduped
+    let mut final_edges: Vec<TypedEdge> = deduped
         .into_iter()
         .filter(|e| kept_ids.contains(&e.source) && kept_ids.contains(&e.target))
         .collect();
+    // Sort for stable cross-run output.
+    final_edges.sort_by(|a, b| {
+        a.source
+            .cmp(&b.source)
+            .then(a.target.cmp(&b.target))
+            .then(a.kind.cmp(&b.kind))
+    });
 
     // Recompute degree map for final kept set.
     let mut final_degree: HashMap<String, usize> = HashMap::new();
@@ -733,6 +770,237 @@ mod tests {
             g.nodes.iter().any(|n| n.id == "center.md"),
             "center must always be in the graph: {:?}",
             g.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. depth_two_expands_frontier
+    // -----------------------------------------------------------------------
+    /// A→B→C via wikilinks: depth=2 reaches c.md, depth=1 does not.
+    #[tokio::test]
+    async fn depth_two_expands_frontier() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        register_note(&state, "a.md").await;
+        register_note(&state, "b.md").await;
+        register_note(&state, "c.md").await;
+        insert_triple_node(&state, "a.md", "links_to", "b").await;
+        insert_triple_node(&state, "b.md", "links_to", "c").await;
+
+        let g1 = super::local_graph(&state, "a.md", 1).await;
+        assert!(
+            !g1.nodes.iter().any(|n| n.id == "c.md"),
+            "depth=1 must NOT include c.md: {:?}",
+            g1.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()
+        );
+
+        let g2 = super::local_graph(&state, "a.md", 2).await;
+        assert!(
+            g2.nodes.iter().any(|n| n.id == "c.md"),
+            "depth=2 must include c.md (reached via a→b→c): {:?}",
+            g2.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()
+        );
+    }
+
+
+    // -----------------------------------------------------------------------
+    // 9. incoming_link_edge
+    // -----------------------------------------------------------------------
+    /// X links_to A (incoming); local_graph("a.md", 1) must include x→a link edge.
+    #[tokio::test]
+    async fn incoming_link_edge() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        register_note(&state, "x.md").await;
+        register_note(&state, "a.md").await;
+        insert_triple_node(&state, "x.md", "links_to", "a").await;
+
+        let g = super::local_graph(&state, "a.md", 1).await;
+        let link = g
+            .edges
+            .iter()
+            .find(|e| e.kind == "link" && e.source == "x.md" && e.target == "a.md");
+        assert!(
+            link.is_some(),
+            "incoming link x→a must appear in graph centered on a.md: {:?}",
+            g.edges
+        );
+    }
+
+
+    // -----------------------------------------------------------------------
+    // 10. pair_with_link_and_semantic_keeps_both
+    // -----------------------------------------------------------------------
+    /// A links_to B AND B is A's semantic neighbor → both a link edge AND a
+    /// semantic edge must be present for the pair (different dedup sets).
+    #[tokio::test]
+    async fn pair_with_link_and_semantic_keeps_both() {
+        let state = stub_state();
+        register_note(&state, "a.md").await;
+        register_note(&state, "b.md").await;
+        insert_triple_node(&state, "a.md", "links_to", "b").await;
+        insert_chunk(&state, "a.md", "alpha content for a", e0()).await;
+        insert_chunk(&state, "b.md", "alpha content for b", e0()).await;
+
+        let g = super::local_graph(&state, "a.md", 1).await;
+        let has_link = g
+            .edges
+            .iter()
+            .any(|e| e.kind == "link" && e.source == "a.md" && e.target == "b.md");
+        let has_sem = g.edges.iter().any(|e| {
+            e.kind == "semantic"
+                && ((e.source == "a.md" && e.target == "b.md")
+                    || (e.source == "b.md" && e.target == "a.md"))
+        });
+        assert!(has_link, "link edge a→b must be present: {:?}", g.edges);
+        assert!(has_sem, "semantic edge a↔b must be present: {:?}", g.edges);
+    }
+
+
+    // -----------------------------------------------------------------------
+    // 11. symmetric_semantic_dedup
+    // -----------------------------------------------------------------------
+    /// With a→b and b→a semantic edges produced at different BFS levels, dedup
+    /// must yield exactly ONE semantic edge for the pair.
+    #[tokio::test]
+    async fn symmetric_semantic_dedup() {
+        let state = stub_state();
+        register_note(&state, "a.md").await;
+        register_note(&state, "b.md").await;
+        insert_chunk(&state, "a.md", "alpha content for a", e0()).await;
+        insert_chunk(&state, "b.md", "alpha content for b", e0()).await;
+
+        // depth=2: level-1 processes a.md → finds b.md; level-2 processes b.md → finds a.md.
+        // Both produce a↔b semantic edge candidates. Dedup keeps exactly one.
+        let g = super::local_graph(&state, "a.md", 2).await;
+        let sem_count = g
+            .edges
+            .iter()
+            .filter(|e| {
+                e.kind == "semantic"
+                    && ((e.source == "a.md" && e.target == "b.md")
+                        || (e.source == "b.md" && e.target == "a.md"))
+            })
+            .count();
+        assert_eq!(
+            sem_count,
+            1,
+            "symmetric a↔b semantic must yield exactly ONE edge, got {sem_count}: {:?}",
+            g.edges
+        );
+    }
+
+
+    // -----------------------------------------------------------------------
+    // 12. local_graph_cached_hit_and_invalidation
+    // -----------------------------------------------------------------------
+    /// Cache hit: second call with unchanged graph returns same result.
+    /// Invalidation: after a graph mutation, the next call recomputes.
+    #[tokio::test]
+    async fn local_graph_cached_hit_and_invalidation() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        register_note(&state, "a.md").await;
+        register_note(&state, "b.md").await;
+        insert_triple_node(&state, "a.md", "links_to", "b").await;
+
+        // First call: computes and caches.
+        let g1 = super::local_graph_cached(&state, "a.md", 1).await;
+        assert!(g1.nodes.iter().any(|n| n.id == "b.md"), "b.md must be in graph");
+
+        // Second call: graph/memory unchanged → cache hit → identical result.
+        let g2 = super::local_graph_cached(&state, "a.md", 1).await;
+        assert_eq!(
+            g1.nodes.len(),
+            g2.nodes.len(),
+            "cache hit must return same node count"
+        );
+
+        // Mutate: add c.md and a link a→c (changes triple_count).
+        register_note(&state, "c.md").await;
+        insert_triple_node(&state, "a.md", "links_to", "c").await;
+
+        // Third call: version mismatch → invalidated → c.md appears.
+        let g3 = super::local_graph_cached(&state, "a.md", 1).await;
+        assert!(
+            g3.nodes.iter().any(|n| n.id == "c.md"),
+            "after mutation, c.md must appear in recomputed result: {:?}",
+            g3.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()
+        );
+    }
+
+
+    // -----------------------------------------------------------------------
+    // 13. cache_cap_clears_when_exceeded
+    // -----------------------------------------------------------------------
+    /// When local_graph_cache exceeds 256 entries, the next insert clears the map
+    /// first, then inserts the new entry — so len() == 1 afterward.
+    #[tokio::test]
+    async fn cache_cap_clears_when_exceeded() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+
+        // Pre-fill with 257 dummy entries to exceed the cap.
+        {
+            let mut cache = state.local_graph_cache.lock().unwrap();
+            for i in 0..257usize {
+                cache.insert(
+                    (format!("dummy_{i}.md"), 1usize),
+                    ((0, 0), super::LocalGraph::default()),
+                );
+            }
+        }
+        assert_eq!(
+            state.local_graph_cache.lock().unwrap().len(),
+            257,
+            "pre-condition: cache must have 257 dummy entries"
+        );
+
+        // Call for a key not in the cache; cap fires before insert.
+        let _ = super::local_graph_cached(&state, "fresh.md", 1).await;
+
+        let cache = state.local_graph_cache.lock().unwrap();
+        assert_eq!(
+            cache.len(),
+            1,
+            "cap must clear oversized cache then insert one entry; got {} entries",
+            cache.len()
+        );
+        assert!(
+            cache.contains_key(&("fresh.md".to_string(), 1usize)),
+            "fresh.md must be in cache after cap-and-insert"
+        );
+    }
+
+
+    // -----------------------------------------------------------------------
+    // 14. frontier_cap_bounds_semantic (optional perf guard)
+    // -----------------------------------------------------------------------
+    /// A hub with >SEM_FRONTIER_CAP link-neighbors at depth=2 still completes
+    /// and the result satisfies NODE_CAP and includes the center.
+    #[tokio::test]
+    async fn frontier_cap_bounds_semantic() {
+        let state = stub_state();
+        register_note(&state, "center.md").await;
+        register_note(&state, "hub.md").await;
+        insert_triple_node(&state, "center.md", "links_to", "hub").await;
+        insert_chunk(&state, "center.md", "alpha content center", e0()).await;
+        insert_chunk(&state, "hub.md", "alpha content hub", e0()).await;
+
+        // 20 spokes — more than SEM_FRONTIER_CAP (16).
+        for i in 0..20usize {
+            let path = format!("spoke{i}.md");
+            register_note(&state, &path).await;
+            insert_triple_node(&state, "hub.md", "links_to", &format!("spoke{i}")).await;
+            insert_chunk(&state, &path, "alpha content spoke", e0()).await;
+        }
+
+        let g = super::local_graph(&state, "center.md", 2).await;
+        assert!(
+            g.nodes.len() <= super::NODE_CAP,
+            "nodes must be ≤ NODE_CAP ({}), got {}",
+            super::NODE_CAP,
+            g.nodes.len()
+        );
+        assert!(
+            g.nodes.iter().any(|n| n.id == "center.md"),
+            "center must always be in the graph"
         );
     }
 }
