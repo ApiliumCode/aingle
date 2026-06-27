@@ -1003,4 +1003,100 @@ mod tests {
             "center must always be in the graph"
         );
     }
+
+
+    // -----------------------------------------------------------------------
+    // 15. neural_local_graph_has_semantic_edge  (real e5 model, gated)
+    // -----------------------------------------------------------------------
+    /// End-to-end acceptance test using the real multilingual-e5-small model.
+    /// Skipped when the model files are absent. Requires `ORT_DYLIB_PATH`.
+    ///
+    /// Two same-topic Spanish notes (dog care) must share a semantic edge;
+    /// an off-topic note (elections) must not appear (below NEIGHBOR_FLOOR=0.88).
+    #[cfg(feature = "neural-embeddings")]
+    #[tokio::test]
+    async fn neural_local_graph_has_semantic_edge() {
+        let model_dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../ineru/test-models/multilingual-e5-small"
+            )
+            .to_string()
+        });
+        if !std::path::Path::new(&model_dir)
+            .join("onnx/model.onnx")
+            .exists()
+        {
+            eprintln!(
+                "skipping neural_local_graph_has_semantic_edge: e5 model not found at {model_dir}"
+            );
+            return;
+        }
+
+        let embedder = crate::embedder::build_embedder(Some(&model_dir));
+        assert_eq!(
+            embedder.dimensions(),
+            384,
+            "neural embedder must be active (384d)"
+        );
+
+        let state =
+            AppState::with_db_path_and_embedder(":memory:", None, embedder).unwrap();
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        // Two same-topic notes about dog care (reused from neural_note_context_finds_same_topic).
+        std::fs::write(
+            dir.path().join("perros1.md"),
+            "# Cuidado de perros\n\nLos perros necesitan paseos diarios, agua fresca y una dieta equilibrada para estar sanos.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("perros2.md"),
+            "# Mascotas\n\nUn perro sano requiere ejercicio diario, hidratación constante y alimentación balanceada.\n",
+        )
+        .unwrap();
+        // Off-topic note: elections have no semantic overlap with dog care.
+        std::fs::write(
+            dir.path().join("elecciones.md"),
+            "# Elecciones\n\nLos resultados de las elecciones presidenciales determinan el futuro del país.\n",
+        )
+        .unwrap();
+
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+
+        let g = super::local_graph(&state, "perros1.md", 1).await;
+
+        assert!(
+            g.semantic_ready,
+            "neural embedder (384d) must set semantic_ready=true"
+        );
+
+        // There must be a semantic edge connecting perros1↔perros2 (either orientation).
+        let has_sem_edge = g.edges.iter().any(|e| {
+            e.kind == "semantic"
+                && ((e.source == "perros1.md" && e.target == "perros2.md")
+                    || (e.source == "perros2.md" && e.target == "perros1.md"))
+        });
+        assert!(
+            has_sem_edge,
+            "perros1.md and perros2.md (same-topic) must share a semantic edge: {:?}",
+            g.edges
+        );
+
+        // elecciones.md is off-topic; cosine vs perros1 is below NEIGHBOR_FLOOR (0.88).
+        assert!(
+            !g.edges.iter().any(|e| {
+                e.kind == "semantic"
+                    && (e.source == "elecciones.md" || e.target == "elecciones.md")
+            }),
+            "off-topic elecciones.md must not have a semantic edge (below NEIGHBOR_FLOOR=0.88): {:?}",
+            g.edges
+        );
+    }
 }
