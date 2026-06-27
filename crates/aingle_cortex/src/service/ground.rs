@@ -49,23 +49,34 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
     let (ground_high, ground_low) = state.embedder.relevance_thresholds();
 
     let query_vec = state.embedder.embed_query(question);
+    // Fetch a broad candidate pool: Ineru's composite recall score is keyword-
+    // and importance-weighted (embedding is only a minor term), so we over-fetch
+    // and re-rank by pure embedding cosine below. That makes grounding a true
+    // semantic search whose scores match the embedder's `relevance_thresholds`.
+    let fetch_limit = k.max(24);
     let results = {
         let mem = state.memory.read().await;
         mem.recall(
             &MemoryQuery::text(question)
-                .with_limit(k)
-                .with_embedding(query_vec),
+                .with_limit(fetch_limit)
+                .with_embedding(query_vec.clone()),
         )
         .map_err(|e| crate::error::Error::Internal(e.to_string()))?
     };
 
     let mut answer_context = Vec::new();
-    let mut best: f32 = 0.0;
     for r in &results {
         // Only consider chunk memories produced by ingestion.
         if r.entry.entry_type != crate::service::ingest::CHUNK_ENTRY_TYPE {
             continue;
         }
+        // Semantic relevance = cosine(query, chunk) from the active embedder,
+        // not Ineru's composite recall score. Skip chunks lacking an embedding
+        // (dimension-mismatched legacy data scores 0 via cosine_similarity).
+        let relevance = match &r.entry.embedding {
+            Some(emb) => query_vec.cosine_similarity(emb),
+            None => continue,
+        };
         let d = &r.entry.data;
         let source = d
             .get("source_path")
@@ -82,16 +93,24 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
 
         let (sig, ingested_at) = signed_provenance(state, &source).await;
 
-        best = best.max(r.relevance);
         answer_context.push(ContextChunk {
             text,
             source,
             lines: format!("{ls}-{le}"),
-            relevance: r.relevance,
+            relevance,
             provenance_anchor: sig,
             ingested_at,
         });
     }
+
+    // Re-rank by semantic relevance and keep the top-k.
+    answer_context.sort_by(|a, b| {
+        b.relevance
+            .partial_cmp(&a.relevance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    answer_context.truncate(k);
+    let best: f32 = answer_context.first().map(|c| c.relevance).unwrap_or(0.0);
 
     // Require at least MIN_CORROBORATING_CHUNKS strong matches for "grounded";
     // a single strong chunk is only "weak" (independent corroboration guard).
@@ -273,5 +292,62 @@ mod tests {
         );
         assert_eq!(g.answer_context[0].source, "adr.md");
         assert_ne!(g.groundedness, "ungrounded");
+    }
+
+    /// End-to-end acceptance test for the real neural embedder: a topical query
+    /// must be grounded while an off-topic query is ungrounded. Gated on the
+    /// `neural-embeddings` feature and skips if the model files are absent.
+    /// Requires `ORT_DYLIB_PATH` to point at an onnxruntime dynamic library.
+    #[cfg(feature = "neural-embeddings")]
+    #[tokio::test]
+    async fn neural_grounding_is_topical() {
+        let model_dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../ineru/test-models/multilingual-e5-small")
+                .to_string()
+        });
+        if !std::path::Path::new(&model_dir).join("onnx/model.onnx").exists() {
+            eprintln!("skipping: e5 model not found at {model_dir}");
+            return;
+        }
+
+        let embedder = crate::embedder::build_embedder(Some(&model_dir));
+        assert_eq!(embedder.dimensions(), 384, "neural embedder must be active");
+
+        let state = AppState::with_db_path_and_embedder(":memory:", None, embedder).unwrap();
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("dogs.md"),
+            "# Cuidado de perros\n\nLos perros necesitan paseos diarios, agua fresca y una dieta equilibrada para estar sanos.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("dogs2.md"),
+            "# Mascotas\n\nUn perro sano requiere ejercicio diario, hidratación constante y alimentación balanceada.\n",
+        )
+        .unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+
+        let topical = ground(&state, "¿Cómo debo cuidar a mi perro?", 5).await.unwrap();
+        assert_ne!(
+            topical.groundedness, "ungrounded",
+            "a dog-care question must find the dog-care notes; ctx: {:?}",
+            topical.answer_context
+        );
+
+        let off_topic = ground(&state, "¿Cuál fue el resultado de las elecciones presidenciales?", 5)
+            .await
+            .unwrap();
+        assert_eq!(
+            off_topic.groundedness, "ungrounded",
+            "an unrelated question must be ungrounded; ctx: {:?}",
+            off_topic.answer_context
+        );
     }
 }
