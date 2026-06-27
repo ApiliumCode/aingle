@@ -7,6 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::service::triple_util::obj_string;
+
 /// The semantic context for one note — the semantically related notes, even
 /// when never explicitly linked.
 #[derive(Debug, Clone, serde::Serialize, Default)]
@@ -43,21 +45,8 @@ pub struct Neighbor {
 const SEMANTIC_MIN_DIMS: usize = 128;
 
 // ---------------------------------------------------------------------------
-// Helpers (mirrored verbatim from backlinks.rs)
+// Helpers
 // ---------------------------------------------------------------------------
-
-/// Return the object of a triple as a plain `String`, handling both literal
-/// strings (`Value::Str`) and graph nodes (`Value::Node`). Node IDs are stored
-/// with `<…>` angle-bracket wrappers; this strips them so the result matches
-/// the bare names used everywhere else in this module.
-fn obj_string(t: &aingle_graph::Triple) -> Option<String> {
-    if let Some(s) = t.object_string() {
-        Some(s.to_string())
-    } else {
-        t.object_node()
-            .map(|n| n.to_string().trim_start_matches('<').trim_end_matches('>').to_string())
-    }
-}
 
 /// Retrieve a signed provenance anchor hash for a note path, if available.
 async fn provenance_anchor_for(state: &crate::state::AppState, src: &str) -> Option<String> {
@@ -155,15 +144,14 @@ pub async fn note_context(
         .collect();
 
     // 4. Build the active note's query text from its own chunks.
+    //    Read STM and LTM separately and filter to `note` immediately — avoids
+    //    allocating a merged Vec of every entry in memory.
     let mut own_text = String::new();
-    let all_entries: Vec<ineru::MemoryEntry> = {
+    let (stm_entries, ltm_entries) = {
         let mem = state.memory.read().await;
-        let mut v = mem.stm.all_entries();
-        v.extend(mem.ltm.all_entries());
-        v
+        (mem.stm.all_entries(), mem.ltm.all_entries())
     };
-
-    for e in &all_entries {
+    for e in stm_entries.iter().chain(ltm_entries.iter()) {
         if e.entry_type != crate::service::ingest::CHUNK_ENTRY_TYPE {
             continue;
         }
@@ -227,19 +215,24 @@ pub async fn note_context(
         if !note_set.contains(src.as_str()) {
             continue;
         }
-        let text = d
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        let entry = best_by_src.entry(src).or_insert((rel, text.clone()));
-        if rel > entry.0 {
-            *entry = (rel, text);
+        // Only clone the chunk text when actually inserting or replacing the
+        // best entry — avoids a clone on every already-occupied iteration.
+        let text = d.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        match best_by_src.entry(src) {
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert((rel, text.to_string()));
+            }
+            std::collections::btree_map::Entry::Occupied(mut e) => {
+                if rel > e.get().0 {
+                    *e.get_mut() = (rel, text.to_string());
+                }
+            }
         }
     }
 
-    // 6. Build Neighbor list, resolve provenance, sort, truncate.
+    // 6. Build Neighbor list (provenance is None for now), sort by score desc,
+    //    truncate to `limit`, then resolve provenance only for the survivors.
+    //    This cuts up to ~48 DAG reads (fetch_limit) down to `limit` (≤ 10).
     let mut neighbors: Vec<Neighbor> = Vec::with_capacity(best_by_src.len());
     for (src, (rel, chunk_text)) in best_by_src {
         let passage = Some({
@@ -252,12 +245,11 @@ pub async fn note_context(
             }
         });
         let already_linked = outgoing_set.contains(&src);
-        let provenance_anchor = provenance_anchor_for(state, &src).await;
         neighbors.push(Neighbor {
             path: src,
             score: rel,
             passage,
-            provenance_anchor,
+            provenance_anchor: None,
             already_linked,
         });
     }
@@ -269,6 +261,11 @@ pub async fn note_context(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     neighbors.truncate(limit);
+
+    // Resolve provenance only for the survivors (typically ≤ limit DAG reads).
+    for n in &mut neighbors {
+        n.provenance_anchor = provenance_anchor_for(state, &n.path).await;
+    }
 
     NoteContext {
         semantic_ready: true,
@@ -317,6 +314,12 @@ pub async fn note_context_cached(
             .note_context_cache
             .lock()
             .expect("note_context cache poisoned");
+        // Simple growth cap: if more than 256 notes are cached, clear entirely
+        // before inserting. This bounds memory without per-entry LRU bookkeeping;
+        // a typical Akashi session edits far fewer than 256 notes in one run.
+        if cache.len() > 256 {
+            cache.clear();
+        }
         cache.insert(note.to_string(), (key, result.clone()));
     }
 
@@ -713,6 +716,148 @@ mod tests {
             n.provenance_anchor.is_some(),
             "provenance_anchor must be Some when a signed DAG action is recorded for the source: {:?}",
             n
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Cache tests (item 1 + item 5)
+    // -----------------------------------------------------------------------
+
+    /// `note_context_cached` must return an identical result on the second call
+    /// (cache hit), and a fresh result after graph/memory mutation (invalidation).
+    /// This test locks both the hit path and the version-change recompute path.
+    #[tokio::test]
+    async fn note_context_cached_hit_and_invalidation() {
+        let state = stub_state();
+
+        insert_triples(
+            &state,
+            &[
+                ("active.md", "aingle:source_hash", "h0"),
+                ("alpha.md", "aingle:source_hash", "h1"),
+            ],
+        )
+        .await;
+
+        let e0: Vec<f32> = {
+            let mut v = vec![0.0_f32; 128];
+            v[0] = 1.0;
+            v
+        };
+        insert_chunk(&state, "active.md", "alpha active note", e0.clone()).await;
+        insert_chunk(&state, "alpha.md", "alpha related content", e0.clone()).await;
+
+        // First call: computes and caches.
+        let ctx1 = super::note_context_cached(&state, "active.md", 10).await;
+        assert!(ctx1.semantic_ready, "StubEmbedder is 128d → semantic_ready");
+        assert!(!ctx1.neighbors.is_empty(), "alpha.md must be a neighbor");
+
+        // Second call: graph/memory unchanged → must return the cached result.
+        let ctx2 = super::note_context_cached(&state, "active.md", 10).await;
+        assert_eq!(
+            ctx1.neighbors.len(),
+            ctx2.neighbors.len(),
+            "cache hit: neighbor count must be identical"
+        );
+        assert_eq!(
+            ctx1.neighbors[0].path,
+            ctx2.neighbors[0].path,
+            "cache hit: top neighbor must be identical"
+        );
+
+        // Mutate: add beta.md (changes triple_count AND total_memory_bytes).
+        insert_triples(&state, &[("beta.md", "aingle:source_hash", "h2")]).await;
+        insert_chunk(&state, "beta.md", "alpha beta content", e0.clone()).await;
+
+        // Third call: version mismatch → cache must be invalidated; beta.md appears.
+        let ctx3 = super::note_context_cached(&state, "active.md", 10).await;
+        assert!(
+            ctx3.neighbors.iter().any(|n| n.path == "beta.md"),
+            "after mutation (triple_count+memory_bytes changed), beta.md must appear: {:?}",
+            ctx3.neighbors
+        );
+    }
+
+    /// When the note_context_cache exceeds 256 entries, inserting a new result
+    /// must clear the map first so the cache never grows without bound.
+    #[tokio::test]
+    async fn cache_cap_clears_when_exceeded() {
+        let state = stub_state();
+
+        // Pre-fill the cache with 257 dummy entries to exceed the cap.
+        {
+            let mut cache = state.note_context_cache.lock().unwrap();
+            for i in 0..257usize {
+                cache.insert(
+                    format!("dummy_{i}.md"),
+                    ((0, 0), super::NoteContext { semantic_ready: false, neighbors: vec![] }),
+                );
+            }
+        }
+        assert_eq!(
+            state.note_context_cache.lock().unwrap().len(),
+            257,
+            "pre-condition: cache must have 257 dummy entries"
+        );
+
+        // Call note_context_cached for a fresh note (not in cache).
+        // The cap must clear the map before inserting this new entry.
+        let _ = super::note_context_cached(&state, "fresh.md", 5).await;
+
+        let cache = state.note_context_cache.lock().unwrap();
+        assert_eq!(
+            cache.len(),
+            1,
+            "cap must clear the oversized cache before inserting; got {} entries",
+            cache.len()
+        );
+        assert!(
+            cache.contains_key("fresh.md"),
+            "fresh.md must be in the cache after the cap-and-insert"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Optional nit
+    // -----------------------------------------------------------------------
+
+    /// An active note with NO chunks falls back to the basename as query text
+    /// and still surfaces neighbors. The active note must never appear as its
+    /// own neighbor (self-match guard).
+    #[tokio::test]
+    async fn no_chunks_falls_back_to_basename_and_never_self_matches() {
+        let state = stub_state();
+
+        insert_triples(
+            &state,
+            &[
+                ("active.md", "aingle:source_hash", "h0"),
+                ("related.md", "aingle:source_hash", "h1"),
+            ],
+        )
+        .await;
+
+        // active.md has NO chunks. StubEmbedder: basename("active.md") = "active"
+        // → v[2] = 1.0 (default case, no "alpha" or "zzz"). related.md chunk
+        // "general content" → v[2] = 1.0. Cosine = 1.0 ≥ low threshold (0.1).
+        let e_default: Vec<f32> = {
+            let mut v = vec![0.0_f32; 128];
+            v[2] = 1.0;
+            v
+        };
+        insert_chunk(&state, "related.md", "general related content", e_default).await;
+
+        let ctx = super::note_context(&state, "active.md", 10).await;
+        assert!(ctx.semantic_ready, "StubEmbedder is 128d → semantic_ready");
+        assert!(
+            !ctx.neighbors.iter().any(|n| n.path == "active.md"),
+            "active.md must never be its own neighbor: {:?}",
+            ctx.neighbors
+        );
+        assert!(
+            ctx.neighbors.iter().any(|n| n.path == "related.md"),
+            "basename-fallback must still surface related.md: {:?}",
+            ctx.neighbors
         );
     }
 }

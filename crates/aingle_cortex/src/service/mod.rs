@@ -16,6 +16,7 @@ pub mod skill;
 #[cfg(feature = "sparql")]
 pub mod sparql;
 pub mod stats;
+pub(crate) mod triple_util;
 pub mod triples;
 pub mod validate;
 pub mod vault_map;

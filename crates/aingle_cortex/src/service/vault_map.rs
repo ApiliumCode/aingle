@@ -7,6 +7,8 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+use crate::service::triple_util::obj_string;
+
 /// The full vault map returned to the UI and the connected AI.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct VaultMap {
@@ -103,19 +105,6 @@ pub(crate) fn basename(path: &str) -> String {
 /// True for paths under the generated maps folder (excluded from the vault map).
 pub(crate) fn is_maps_path(path: &str) -> bool {
     path.starts_with("_maps/") || path.starts_with("_maps\\")
-}
-
-/// Return the object of a triple as a plain `String`, handling both literal
-/// strings (`Value::Str`) and graph nodes (`Value::Node`). Node IDs are stored
-/// with `<…>` angle-bracket wrappers; this strips them so the result matches
-/// the bare names used everywhere else in this module.
-fn obj_string(t: &aingle_graph::Triple) -> Option<String> {
-    if let Some(s) = t.object_string() {
-        Some(s.to_string())
-    } else {
-        t.object_node()
-            .map(|n| n.to_string().trim_start_matches('<').trim_end_matches('>').to_string())
-    }
 }
 
 /// Structural inputs derived from the graph (no embeddings).

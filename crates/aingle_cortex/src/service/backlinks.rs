@@ -8,6 +8,8 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+use crate::service::triple_util::obj_string;
+
 /// Verified link context for one note.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Backlinks {
@@ -22,19 +24,6 @@ pub struct BacklinkRef {
     pub path: String,
     pub context: Option<String>,
     pub provenance_anchor: Option<String>,
-}
-
-/// Return the object of a triple as a plain `String`, handling both literal
-/// strings (`Value::Str`) and graph nodes (`Value::Node`). Node IDs are stored
-/// with `<…>` angle-bracket wrappers; this strips them so the result matches
-/// the bare names used everywhere else in this module.
-fn obj_string(t: &aingle_graph::Triple) -> Option<String> {
-    if let Some(s) = t.object_string() {
-        Some(s.to_string())
-    } else {
-        t.object_node()
-            .map(|n| n.to_string().trim_start_matches('<').trim_end_matches('>').to_string())
-    }
 }
 
 /// Basename without directory or extension (wikilink resolution + titles).
