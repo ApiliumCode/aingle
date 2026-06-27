@@ -88,10 +88,18 @@ pub struct GraphNode {
 pub struct GraphEdge {
     pub source: String,
     pub target: String,
+    /// Edge type: `"link"` for explicit wikilinks, `"semantic"` for cosine-similar pairs
+    /// discovered during topic clustering.
+    pub kind: String,
 }
 
 /// Max nodes rendered in the visual graph (top-degree); larger vaults are capped.
 const GRAPH_NODE_CAP: usize = 600;
+
+/// Hard cap on semantic edges in the graph view. Dense clusters can produce O(n²)
+/// pairs; beyond this limit only the highest-cosine pairs are kept (the sorting
+/// happens inside `compute_vault_map` before truncation).
+const SEMANTIC_EDGE_CAP: usize = 1200;
 
 /// Tags (case-insensitive) that mark a note as a reusable skill/process.
 const SKILL_TAGS: [&str; 6] = ["skill", "process", "sop", "workflow", "how-to", "howto"];
@@ -225,7 +233,14 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 /// cosine >= `threshold` are linked; each connected component is a topic. Labeled
 /// by the most central note (highest mean cosine to its component). Deterministic
 /// (inputs are a sorted BTreeMap). O(n^2) — the caller caps n.
-pub(crate) fn cluster_semantic(vecs: &BTreeMap<String, Vec<f32>>, threshold: f32) -> Vec<Topic> {
+///
+/// Returns `(topics, sem_pairs)` where `sem_pairs` is the list of
+/// `(note_a, note_b, cosine)` pairs that met the threshold. These are captured
+/// during the union-find pass so no additional O(n²) scan is needed.
+pub(crate) fn cluster_semantic(
+    vecs: &BTreeMap<String, Vec<f32>>,
+    threshold: f32,
+) -> (Vec<Topic>, Vec<(String, String, f32)>) {
     let names: Vec<&String> = vecs.keys().collect();
     let n = names.len();
     // union-find
@@ -237,13 +252,18 @@ pub(crate) fn cluster_semantic(vecs: &BTreeMap<String, Vec<f32>>, threshold: f32
         }
         x
     }
+    // Pairs above threshold — captured here so `compute_vault_map` can emit
+    // semantic edges without an additional O(n²) pass.
+    let mut sem_pairs: Vec<(String, String, f32)> = Vec::new();
     for i in 0..n {
         for j in (i + 1)..n {
-            if cosine(&vecs[names[i]], &vecs[names[j]]) >= threshold {
+            let c = cosine(&vecs[names[i]], &vecs[names[j]]);
+            if c >= threshold {
                 let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
                 if ri != rj {
                     parent[ri] = rj;
                 }
+                sem_pairs.push((names[i].clone(), names[j].clone(), c));
             }
         }
     }
@@ -276,7 +296,7 @@ pub(crate) fn cluster_semantic(vecs: &BTreeMap<String, Vec<f32>>, threshold: f32
         });
     }
     topics.sort_by(|a, b| b.size.cmp(&a.size).then(a.label.cmp(&b.label)));
-    topics
+    (topics, sem_pairs)
 }
 
 fn mean_sim(self_idx: usize, members: &[usize], names: &[&String], vecs: &BTreeMap<String, Vec<f32>>) -> f32 {
@@ -373,8 +393,10 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
         .cloned()
         .collect();
 
-    // Semantic topics (capped).
-    let topics = if s.notes.len() <= SEMANTIC_NOTE_CAP {
+    // Semantic topics (capped) + raw pairs for semantic-edge emission.
+    // `raw_sem_pairs` holds (note_a, note_b, cosine) captured during the O(n²)
+    // union-find pass — no additional scan is needed to produce semantic edges.
+    let (topics, raw_sem_pairs) = if s.notes.len() <= SEMANTIC_NOTE_CAP {
         let mem = state.memory.read().await;
         let all_vecs = per_note_vectors(&mem);
         let vecs: std::collections::BTreeMap<String, Vec<f32>> = all_vecs
@@ -384,7 +406,7 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
         if vecs.len() >= 2 {
             cluster_semantic(&vecs, SEMANTIC_THRESHOLD)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         }
     } else {
         log::info!(
@@ -392,7 +414,7 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
             s.notes.len(),
             SEMANTIC_NOTE_CAP
         );
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
 
     // Tag clusters + tag index.
@@ -453,13 +475,58 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
                 + s.out_deg.get(p).copied().unwrap_or(0),
         })
         .collect();
-    let edges: Vec<GraphEdge> = s
+    // Link edges (explicit wikilinks), typed "link".
+    let mut edges: Vec<GraphEdge> = s
         .edges
         .iter()
         .filter(|(a, b)| kept.contains(a) && kept.contains(b))
-        .map(|(a, b)| GraphEdge { source: a.clone(), target: b.clone() })
+        .map(|(a, b)| GraphEdge { source: a.clone(), target: b.clone(), kind: "link".into() })
         .collect();
 
+    // Semantic edges from the clustering pass — no new O(n²) scan; cosines were
+    // already captured in `raw_sem_pairs`. Rules:
+    //  1. Both endpoints must be in the rendered node set (`kept`).
+    //  2. Skip pairs that already have an explicit link (order-insensitive).
+    //  3. Deduplicate order-insensitively (BTreeMap keys are sorted so i<j gives
+    //     a < b already, but we normalise defensively).
+    //  4. Keep the highest-cosine pairs up to SEMANTIC_EDGE_CAP.
+    {
+        // Canonical (min, max) keys for dedup against existing link edges.
+        let link_pair_set: std::collections::BTreeSet<(String, String)> = s
+            .edges
+            .iter()
+            .map(|(a, b)| {
+                if a <= b { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) }
+            })
+            .collect();
+
+        // Normalise pair order, filter to the rendered node set, sort by cosine desc.
+        let mut candidates: Vec<(String, String, f32)> = raw_sem_pairs
+            .into_iter()
+            .filter(|(a, b, _)| kept.contains(a) && kept.contains(b))
+            .map(|(a, b, c)| if a <= b { (a, b, c) } else { (b, a, c) })
+            .collect();
+        candidates
+            .sort_by(|x, y| y.2.partial_cmp(&x.2).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut seen: std::collections::BTreeSet<(String, String)> =
+            std::collections::BTreeSet::new();
+        let mut sem_count = 0usize;
+        for (a, b, _c) in candidates {
+            if sem_count >= SEMANTIC_EDGE_CAP {
+                break;
+            }
+            let key = (a.clone(), b.clone());
+            if link_pair_set.contains(&key) || seen.contains(&key) {
+                continue;
+            }
+            seen.insert(key);
+            edges.push(GraphEdge { source: a, target: b, kind: "semantic".into() });
+            sem_count += 1;
+        }
+    }
+
+    // `totals.links` counts only explicit wikilinks (s.link_count), not semantic edges.
     let totals = Totals {
         notes: s.notes.len(),
         links: s.link_count,
@@ -610,7 +677,7 @@ mod tests {
         vecs.insert("b.md".into(), vec![0.99, 0.01, 0.0]);
         vecs.insert("c.md".into(), vec![0.0, 0.0, 1.0]);
 
-        let topics = super::cluster_semantic(&vecs, 0.9);
+        let (topics, sem_pairs) = super::cluster_semantic(&vecs, 0.9);
         // a & b together, c alone → 2 topics
         assert_eq!(topics.len(), 2);
         let big = topics.iter().max_by_key(|t| t.size).unwrap();
@@ -618,6 +685,14 @@ mod tests {
         assert!(
             big.notes.contains(&"a.md".to_string())
                 && big.notes.contains(&"b.md".to_string())
+        );
+        // The pair (a.md, b.md) must be captured in sem_pairs with cosine ≥ 0.9.
+        assert!(
+            sem_pairs.iter().any(|(a, b, c)| {
+                ((a == "a.md" && b == "b.md") || (a == "b.md" && b == "a.md")) && *c >= 0.9
+            }),
+            "sem_pairs must contain (a.md, b.md) pair: {:?}",
+            sem_pairs
         );
     }
 
@@ -730,5 +805,141 @@ mod tests {
         }
         let m2 = super::vault_map_cached(&state).await;
         assert_eq!(m2.totals.notes, 2, "cache must invalidate when triple_count changes");
+    }
+
+    // -----------------------------------------------------------------
+    // VC-2 Task 2: typed edges + semantic edge emission
+    // -----------------------------------------------------------------
+
+    /// Every explicit wikilink must produce a GraphEdge with `kind == "link"`.
+    #[tokio::test]
+    async fn link_edges_have_link_kind() {
+        let state = graph_with(&[
+            ("a.md", "aingle:source_hash", "h1"),
+            ("b.md", "aingle:source_hash", "h2"),
+            ("a.md", "links_to", "b"),
+        ])
+        .await;
+        let map = super::vault_map_cached(&state).await;
+        let edge = map.graph.edges.iter().find(|e| {
+            (e.source == "a.md" && e.target == "b.md")
+                || (e.source == "b.md" && e.target == "a.md")
+        });
+        let edge = edge.expect("link edge between a.md and b.md must exist");
+        assert_eq!(edge.kind, "link", "wikilink edges must carry kind='link'");
+    }
+
+    /// Clustering must emit `kind == "semantic"` edges for similar notes, and must
+    /// NOT duplicate a pair that already has an explicit link edge.
+    #[tokio::test]
+    async fn clustering_emits_semantic_edges() {
+        use ineru::{Embedding, MemoryEntry};
+
+        // --- variant A: no explicit link; semantic edge must appear ----------------
+        let state = graph_with(&[
+            ("a.md", "aingle:source_hash", "h1"),
+            ("b.md", "aingle:source_hash", "h2"),
+        ])
+        .await;
+        {
+            let mut mem = state.memory.write().await;
+            // Identical embeddings → cosine 1.0 ≥ SEMANTIC_THRESHOLD (0.88).
+            for path in ["a.md", "b.md"] {
+                let mut e = MemoryEntry::new(
+                    crate::service::ingest::CHUNK_ENTRY_TYPE,
+                    serde_json::json!({ "text": "content", "source_path": path }),
+                );
+                e.embedding = Some(Embedding::new(vec![1.0_f32, 0.0, 0.0]));
+                mem.remember(e).unwrap();
+            }
+        }
+        let map = super::compute_vault_map(&state).await;
+        let sem_ab = map.graph.edges.iter().find(|e| {
+            e.kind == "semantic"
+                && ((e.source == "a.md" && e.target == "b.md")
+                    || (e.source == "b.md" && e.target == "a.md"))
+        });
+        assert!(
+            sem_ab.is_some(),
+            "semantic edge between a.md and b.md must exist: {:?}",
+            map.graph.edges
+        );
+
+        // --- variant B: also linked explicitly; must not produce a semantic dup ---
+        let state2 = graph_with(&[
+            ("a.md", "aingle:source_hash", "h1"),
+            ("b.md", "aingle:source_hash", "h2"),
+            ("a.md", "links_to", "b"), // explicit wikilink
+        ])
+        .await;
+        {
+            let mut mem = state2.memory.write().await;
+            for path in ["a.md", "b.md"] {
+                let mut e = MemoryEntry::new(
+                    crate::service::ingest::CHUNK_ENTRY_TYPE,
+                    serde_json::json!({ "text": "content", "source_path": path }),
+                );
+                e.embedding = Some(Embedding::new(vec![1.0_f32, 0.0, 0.0]));
+                mem.remember(e).unwrap();
+            }
+        }
+        let map2 = super::compute_vault_map(&state2).await;
+        let edges_ab: Vec<_> = map2.graph.edges.iter().filter(|e| {
+            (e.source == "a.md" && e.target == "b.md")
+                || (e.source == "b.md" && e.target == "a.md")
+        }).collect();
+        assert_eq!(
+            edges_ab.len(),
+            1,
+            "a.md-b.md pair must appear exactly once (no semantic dup): {:?}",
+            map2.graph.edges
+        );
+        assert_eq!(
+            edges_ab[0].kind,
+            "link",
+            "the single edge must have kind='link', not 'semantic': {:?}",
+            edges_ab[0]
+        );
+    }
+
+    /// `totals.links` must count only explicit wikilinks, not semantic edges.
+    #[tokio::test]
+    async fn totals_links_counts_only_explicit() {
+        use ineru::{Embedding, MemoryEntry};
+
+        // One explicit link between a and b; a and c are semantically similar but
+        // not wikilinked. `totals.links` must stay 1.
+        let state = graph_with(&[
+            ("a.md", "aingle:source_hash", "h1"),
+            ("b.md", "aingle:source_hash", "h2"),
+            ("c.md", "aingle:source_hash", "h3"),
+            ("a.md", "links_to", "b"),
+        ])
+        .await;
+        {
+            let mut mem = state.memory.write().await;
+            // a and c share a near-identical embedding → cosine 1.0 ≥ threshold.
+            for path in ["a.md", "c.md"] {
+                let mut e = MemoryEntry::new(
+                    crate::service::ingest::CHUNK_ENTRY_TYPE,
+                    serde_json::json!({ "text": "content", "source_path": path }),
+                );
+                e.embedding = Some(Embedding::new(vec![1.0_f32, 0.0, 0.0]));
+                mem.remember(e).unwrap();
+            }
+        }
+        let map = super::compute_vault_map(&state).await;
+        assert_eq!(
+            map.totals.links,
+            1,
+            "totals.links must count only explicit wikilinks, not semantic edges: {:?}",
+            map.totals
+        );
+        let sem_edges: Vec<_> =
+            map.graph.edges.iter().filter(|e| e.kind == "semantic").collect();
+        assert!(
+            !sem_edges.is_empty(),
+            "semantic edges between similar notes must exist even when totals.links is 1"
+        );
     }
 }
