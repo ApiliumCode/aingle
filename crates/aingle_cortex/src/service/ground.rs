@@ -8,14 +8,11 @@ use crate::error::Result;
 use crate::state::AppState;
 use serde::Serialize;
 
-/// Similarity at/above which a chunk counts as a strong, corroborating match.
-const GROUND_HIGH: f32 = 0.55;
-/// Similarity below which retrieval is considered ungrounded.
-const GROUND_LOW: f32 = 0.30;
-/// Number of strong chunks required to call retrieval "grounded". A lone strong
-/// chunk is treated as "weak": with the current placeholder embedder a single
-/// high score can be spurious, so we require independent corroboration rather
-/// than blind-tuning `GROUND_HIGH`. Revisit once a real embedder lands.
+/// Number of strong chunks required to call retrieval "grounded". Requiring two
+/// independent corroborating sources is a deliberate anti-hallucination policy:
+/// a lone strong chunk is surfaced as "weak", not "grounded". The strong/weak
+/// similarity cutoffs themselves come from the active embedder via
+/// [`ineru::Embedder::relevance_thresholds`].
 const MIN_CORROBORATING_CHUNKS: usize = 2;
 
 /// A cited chunk of source context.
@@ -49,11 +46,17 @@ use ineru::MemoryQuery;
 /// groundedness signal from the best similarity.
 pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<GroundedContext> {
     let k = k.max(1);
+    let (ground_high, ground_low) = state.embedder.relevance_thresholds();
 
+    let query_vec = state.embedder.embed_query(question);
     let results = {
         let mem = state.memory.read().await;
-        mem.recall(&MemoryQuery::text(question).with_limit(k))
-            .map_err(|e| crate::error::Error::Internal(e.to_string()))?
+        mem.recall(
+            &MemoryQuery::text(question)
+                .with_limit(k)
+                .with_embedding(query_vec),
+        )
+        .map_err(|e| crate::error::Error::Internal(e.to_string()))?
     };
 
     let mut answer_context = Vec::new();
@@ -94,11 +97,11 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
     // a single strong chunk is only "weak" (independent corroboration guard).
     let strong = answer_context
         .iter()
-        .filter(|c| c.relevance >= GROUND_HIGH)
+        .filter(|c| c.relevance >= ground_high)
         .count();
-    let groundedness = if best >= GROUND_HIGH && strong >= MIN_CORROBORATING_CHUNKS {
+    let groundedness = if best >= ground_high && strong >= MIN_CORROBORATING_CHUNKS {
         "grounded"
-    } else if best >= GROUND_LOW && !answer_context.is_empty() {
+    } else if best >= ground_low && !answer_context.is_empty() {
         "weak"
     } else {
         "ungrounded"
@@ -108,7 +111,7 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
     if answer_context.is_empty() {
         gaps.push(format!("No ingested source matches: {question:?}."));
     } else if groundedness == "weak" {
-        if best >= GROUND_HIGH && strong < MIN_CORROBORATING_CHUNKS {
+        if best >= ground_high && strong < MIN_CORROBORATING_CHUNKS {
             gaps.push(
                 "Only one source corroborates this; a second is needed to be grounded.".to_string(),
             );
