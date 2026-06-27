@@ -34,6 +34,19 @@ pub struct AppState {
     pub vault_map_cache: std::sync::Arc<
         std::sync::Mutex<Option<((usize, usize), crate::service::vault_map::VaultMap)>>,
     >,
+    /// Per-note semantic-neighbor cache, keyed by note path, storing
+    /// `(graph_triple_count, total_memory_bytes) → NoteContext`. Invalidated
+    /// whenever the graph or memory changes — same staleness signal as
+    /// vault_map_cache. Cache key does not include `limit`; callers should
+    /// use a consistent limit for the same note.
+    pub note_context_cache: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                String,
+                ((usize, usize), crate::service::context::NoteContext),
+            >,
+        >,
+    >,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
@@ -103,6 +116,7 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -149,6 +163,7 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -195,6 +210,7 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -338,6 +354,7 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             embedder,
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store,
             sandbox_manager: Arc::new(SandboxManager::new()),
