@@ -645,7 +645,6 @@ mod tests {
     #[cfg(feature = "dag")]
     #[tokio::test]
     async fn provenance_present_when_signed() {
-        // Build a state with DAG enabled and a signing key so actions are signed.
         let state = AppState::with_db_path_and_embedder(
             ":memory:",
             None,
@@ -674,27 +673,46 @@ mod tests {
         insert_chunk(&state, "active.md", "alpha active", e0.clone()).await;
         insert_chunk(&state, "alpha.md", "alpha related", e0).await;
 
-        // Record a DAG action for alpha.md. Because DAG is enabled but there is
-        // no signing key on this state (key is None), the action will be unsigned
-        // and provenance_anchor_for returns None for unsigned actions. This proves
-        // the cfg(feature="dag") path compiles and runs; a signed action requires
-        // a proper DagSigningKey that is complex to wire in a unit test.
-        // The critical assertion: no panic, code path exercised.
+        // Record a signed Custom DAG action whose subject is "alpha.md" so that
+        // history_by_subject("alpha.md") returns a signed entry and
+        // provenance_anchor_for returns Some(hash_hex).
+        {
+            let graph = state.graph.read().await;
+            let dag_store = graph.dag_store().expect("DAG must be enabled");
+            let parents = dag_store.tips().expect("tips must be readable");
+            let mut action = aingle_graph::dag::DagAction {
+                parents,
+                author: aingle_graph::NodeId::named("test"),
+                seq: 0,
+                timestamp: chrono::Utc::now(),
+                payload: aingle_graph::dag::DagPayload::Custom {
+                    payload_type: "ingest".to_string(),
+                    payload_summary: "alpha.md ingested".to_string(),
+                    payload: None,
+                    subject: Some("alpha.md".to_string()),
+                },
+                signature: None,
+            };
+            let key = aingle_graph::dag::DagSigningKey::generate();
+            key.sign(&mut action);
+            dag_store.put(&action).expect("put signed action must succeed");
+        }
+
         let ctx = super::note_context(&state, "active.md", 10).await;
-        // alpha.md is a semantic neighbor regardless of provenance.
         assert!(
             ctx.neighbors.iter().any(|n| n.path == "alpha.md"),
             "alpha.md must be a semantic neighbor with dag feature: {:?}",
             ctx.neighbors
         );
-        // provenance_anchor is None because no signing key is configured (unsigned action).
-        // This is the correct behavior for an unsigned DAG node.
         let n = ctx
             .neighbors
             .iter()
             .find(|n| n.path == "alpha.md")
             .unwrap();
-        // We assert the Option is coherent (not that it's Some, since no signing key).
-        let _ = n.provenance_anchor.as_deref();
+        assert!(
+            n.provenance_anchor.is_some(),
+            "provenance_anchor must be Some when a signed DAG action is recorded for the source: {:?}",
+            n
+        );
     }
 }
