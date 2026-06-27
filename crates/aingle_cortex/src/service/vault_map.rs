@@ -316,7 +316,7 @@ pub(crate) fn per_note_vectors(mem: &ineru::IneruMemory) -> BTreeMap<String, Vec
 /// Cosine threshold for semantic topic membership (note-level mean vectors).
 /// Calibrated for E5; the hash embedder produces denser similarities but topics
 /// remain a useful secondary facet.
-const SEMANTIC_THRESHOLD: f32 = 0.82;
+const SEMANTIC_THRESHOLD: f32 = 0.88;
 /// Above this note count, skip O(n^2) semantic clustering (tag clusters remain).
 const SEMANTIC_NOTE_CAP: usize = 2000;
 
