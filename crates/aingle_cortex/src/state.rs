@@ -255,19 +255,20 @@ impl AppState {
             let dbdir = Path::new(db_path).parent().unwrap_or(Path::new("."));
             let snapshot_path = dbdir.join("ineru.snapshot");
             let active_dims = embedder.dimensions();
-            let persisted_dims = crate::embedder::read_dims(dbdir);
-            let dim_mismatch = snapshot_path.exists()
-                && persisted_dims.map(|d| d != active_dims).unwrap_or(false);
+            // Pre-sidecar databases were written by the 64d hash embedder.
+            let persisted_dims = crate::embedder::read_dims(dbdir).unwrap_or(64);
+            let snapshot_exists = snapshot_path.exists();
+            let dim_mismatch = snapshot_exists && persisted_dims != active_dims;
 
             if dim_mismatch {
                 let removed = crate::embedder::clear_source_registry(&graph)
                     .map_err(|e| crate::error::Error::Internal(format!("clear registry: {e}")))?;
                 log::warn!(
-                    "Embedder changed ({:?}d → {}d): cleared {} source-hash entries; re-ingest required.",
+                    "Embedder changed ({}d → {}d): cleared {} source-hash entries; re-ingest required.",
                     persisted_dims, active_dims, removed
                 );
                 IneruMemory::agent_mode()
-            } else if snapshot_path.exists() {
+            } else if snapshot_exists {
                 match IneruMemory::load_from_file(&snapshot_path) {
                     Ok(mem) => {
                         log::info!("Loaded Ineru snapshot from {}", snapshot_path.display());
@@ -644,6 +645,79 @@ mod tests {
                 .unwrap()
                 .len();
             assert_eq!(n, 0, "registry must be cleared on embedder dim change");
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_snapshot_without_sidecar_migrates_on_dim_change() {
+        use aingle_graph::{Predicate, TriplePattern};
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+
+        // First boot with default hash (64d): ingest + flush (writes snapshot + sidecar).
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            {
+                let mut g = state.graph.write().await;
+                g.enable_dag();
+            }
+            std::fs::write(dir.path().join("n.md"), "# N\n\nsled has exclusive locks.\n").unwrap();
+            crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+                .await
+                .unwrap();
+            state.flush(Some(db.parent().unwrap())).await.unwrap();
+        }
+
+        // Simulate a legacy DB: delete the sidecar so persisted_dims is absent.
+        std::fs::remove_file(db.parent().unwrap().join("embedder.dims")).unwrap();
+
+        // Boot with a 384d embedder: absent sidecar must be treated as 64d → mismatch → cleared.
+        {
+            let fake_384: std::sync::Arc<dyn Embedder> = std::sync::Arc::new(Fake384);
+            let state = AppState::with_db_path_and_embedder(db_str, None, fake_384).unwrap();
+            let g = state.graph.read().await;
+            let n = g
+                .find(TriplePattern::any().with_predicate(Predicate::named(
+                    crate::service::ingest::PRED_SOURCE_HASH,
+                )))
+                .unwrap()
+                .len();
+            assert_eq!(n, 0, "legacy snapshot without sidecar must migrate when dims differ");
+        }
+    }
+
+    #[tokio::test]
+    async fn same_dims_preserves_snapshot_and_registry() {
+        use aingle_graph::{Predicate, TriplePattern};
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            {
+                let mut g = state.graph.write().await;
+                g.enable_dag();
+            }
+            std::fs::write(dir.path().join("n.md"), "# N\n\nsled has exclusive locks.\n").unwrap();
+            crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+                .await
+                .unwrap();
+            state.flush(Some(db.parent().unwrap())).await.unwrap();
+        }
+
+        // Second boot with the same default 64d hash embedder: no migration.
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            let g = state.graph.read().await;
+            let n = g
+                .find(TriplePattern::any().with_predicate(Predicate::named(
+                    crate::service::ingest::PRED_SOURCE_HASH,
+                )))
+                .unwrap()
+                .len();
+            assert!(n >= 1, "same-dims boot must preserve the registry");
         }
     }
 
