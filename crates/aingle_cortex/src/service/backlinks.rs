@@ -136,8 +136,9 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
                     })
                     .map(|l| {
                         let t = l.trim();
-                        if t.len() > 200 {
-                            format!("{}…", &t[..200])
+                        if t.chars().count() > 200 {
+                            let cut: String = t.chars().take(200).collect();
+                            format!("{cut}…")
                         } else {
                             t.to_string()
                         }
@@ -229,5 +230,31 @@ mod tests {
         assert!(r.outgoing.contains(&"b.md".to_string()), "target links to b");
         assert!(r.unlinked.contains(&"c.md".to_string()), "c mentions target unlinked");
         assert!(!r.unlinked.contains(&"a.md".to_string()), "a is a backlink, not unlinked");
+    }
+
+    #[tokio::test]
+    async fn context_truncation_is_char_safe() {
+        let state = graph_with(&[
+            ("t.md", "aingle:source_hash", "h1"),
+            ("src.md", "aingle:source_hash", "h2"),
+            ("src.md", "links_to", "t"),
+        ])
+        .await;
+        {
+            let mut mem = state.memory.write().await;
+            // A line with accented chars whose byte length far exceeds 200 around the cut.
+            let long = format!("[[t]] {}", "áéíóú ".repeat(80));
+            let mut e = ineru::MemoryEntry::new(
+                crate::service::ingest::CHUNK_ENTRY_TYPE,
+                serde_json::json!({ "text": long, "source_path": "src.md" }),
+            );
+            e.embedding = Some(ineru::Embedding::new(vec![0.0; 8]));
+            mem.remember(e).unwrap();
+        }
+        // Must not panic; context should be present and ≤ 201 chars (200 + ellipsis).
+        let r = super::backlinks(&state, "t.md").await;
+        let b = r.backlinks.iter().find(|b| b.path == "src.md").expect("backlink");
+        let ctx = b.context.as_ref().expect("context");
+        assert!(ctx.chars().count() <= 201);
     }
 }
