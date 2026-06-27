@@ -414,6 +414,14 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
             s.in_deg.get(*b).copied().unwrap_or(0) + s.out_deg.get(*b).copied().unwrap_or(0);
         db.cmp(&da).then(a.cmp(b))
     });
+    if s.notes.len() > GRAPH_NODE_CAP {
+        log::info!(
+            "vault_map: {} notes > graph cap {}, rendering the {} most-connected",
+            s.notes.len(),
+            GRAPH_NODE_CAP,
+            GRAPH_NODE_CAP
+        );
+    }
     let kept: std::collections::BTreeSet<String> =
         ranked.into_iter().take(GRAPH_NODE_CAP).cloned().collect();
     let nodes: Vec<GraphNode> = kept
@@ -467,13 +475,18 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
     }
 }
 
-/// Cached vault map, keyed on the graph's triple count (auto-invalidated on ingest).
+/// Cached vault map, keyed on `(graph triple_count, memory bytes)`. The graph
+/// count invalidates on structural change; the memory-bytes signal invalidates
+/// when chunk content/embeddings change even if the triple count is unchanged
+/// (e.g. a same-structure prose edit) — so semantic topics don't go stale.
 pub async fn vault_map_cached(state: &crate::state::AppState) -> VaultMap {
     let tc = { state.graph.read().await.stats().triple_count };
+    let mem_bytes = { state.memory.read().await.stats().total_memory_bytes };
+    let key = (tc, mem_bytes);
     {
         let cache = state.vault_map_cache.lock().expect("vault_map cache poisoned");
-        if let Some((cached_tc, map)) = cache.as_ref() {
-            if *cached_tc == tc {
+        if let Some((cached_key, map)) = cache.as_ref() {
+            if *cached_key == key {
                 return map.clone();
             }
         }
@@ -482,7 +495,7 @@ pub async fn vault_map_cached(state: &crate::state::AppState) -> VaultMap {
     // holding it across an `.await` point.
     let map = compute_vault_map(state).await;
     let mut cache = state.vault_map_cache.lock().expect("vault_map cache poisoned");
-    *cache = Some((tc, map.clone()));
+    *cache = Some((key, map.clone()));
     map
 }
 

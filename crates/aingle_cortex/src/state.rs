@@ -29,9 +29,11 @@ pub struct AppState {
     pub memory: Arc<RwLock<IneruMemory>>,
     /// The active text embedder (hash fallback or neural). Shared, thread-safe.
     pub embedder: std::sync::Arc<dyn Embedder>,
-    /// Cached vault map, keyed on graph triple-count (see service::vault_map).
-    pub vault_map_cache:
-        std::sync::Arc<std::sync::Mutex<Option<(usize, crate::service::vault_map::VaultMap)>>>,
+    /// Cached vault map, keyed on (graph triple-count, memory bytes) — see
+    /// service::vault_map::vault_map_cached.
+    pub vault_map_cache: std::sync::Arc<
+        std::sync::Mutex<Option<((usize, usize), crate::service::vault_map::VaultMap)>>,
+    >,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
