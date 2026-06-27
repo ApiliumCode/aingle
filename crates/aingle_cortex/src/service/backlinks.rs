@@ -24,6 +24,19 @@ pub struct BacklinkRef {
     pub provenance_anchor: Option<String>,
 }
 
+/// Return the object of a triple as a plain `String`, handling both literal
+/// strings (`Value::Str`) and graph nodes (`Value::Node`). Node IDs are stored
+/// with `<…>` angle-bracket wrappers; this strips them so the result matches
+/// the bare names used everywhere else in this module.
+fn obj_string(t: &aingle_graph::Triple) -> Option<String> {
+    if let Some(s) = t.object_string() {
+        Some(s.to_string())
+    } else {
+        t.object_node()
+            .map(|n| n.to_string().trim_start_matches('<').trim_end_matches('>').to_string())
+    }
+}
+
 /// Basename without directory or extension (wikilink resolution + titles).
 fn basename(path: &str) -> String {
     let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
@@ -87,8 +100,7 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|t| {
-                    t.object_string()
-                        .map(|o| (strip(t.subject.to_string()), o.to_string()))
+                    obj_string(&t).map(|o| (strip(t.subject.to_string()), o))
                 })
                 .collect()
         };
@@ -277,6 +289,38 @@ mod tests {
         assert!(super::mentions_word("a meeting-notes b", "meeting-notes"));
         assert!(!super::mentions_word("my notebook here", "note"));
         assert!(super::mentions_word("see Target.", "target"));
+    }
+
+    #[tokio::test]
+    async fn links_to_node_objects_are_captured() {
+        // Real ingest stores wikilink targets as Value::Node, not Value::literal.
+        // This test locks the fix: node-valued links_to objects must be read as
+        // backlinks/outgoing, not silently dropped.
+        let state = crate::state::AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let g = state.graph.write().await;
+            for (s, p) in [("a.md", "aingle:source_hash"), ("hub.md", "aingle:source_hash")] {
+                g.insert(Triple::new(NodeId::named(s), Predicate::named(p), Value::literal("h")))
+                    .unwrap();
+            }
+            // links_to stored as a NODE object — how real ingest produces it.
+            g.insert(Triple::new(
+                NodeId::named("a.md"),
+                Predicate::named("links_to"),
+                Value::Node(NodeId::named("hub")),
+            ))
+            .unwrap();
+        }
+        let r = super::backlinks(&state, "hub.md").await;
+        assert!(
+            r.backlinks.iter().any(|b| b.path == "a.md"),
+            "node-valued links_to must appear as a backlink: {r:?}"
+        );
+        let r2 = super::backlinks(&state, "a.md").await;
+        assert!(
+            r2.outgoing.contains(&"hub.md".to_string()),
+            "node-valued links_to must appear as outgoing: {r2:?}"
+        );
     }
 
     #[tokio::test]

@@ -105,6 +105,19 @@ pub(crate) fn is_maps_path(path: &str) -> bool {
     path.starts_with("_maps/") || path.starts_with("_maps\\")
 }
 
+/// Return the object of a triple as a plain `String`, handling both literal
+/// strings (`Value::Str`) and graph nodes (`Value::Node`). Node IDs are stored
+/// with `<…>` angle-bracket wrappers; this strips them so the result matches
+/// the bare names used everywhere else in this module.
+fn obj_string(t: &aingle_graph::Triple) -> Option<String> {
+    if let Some(s) = t.object_string() {
+        Some(s.to_string())
+    } else {
+        t.object_node()
+            .map(|n| n.to_string().trim_start_matches('<').trim_end_matches('>').to_string())
+    }
+}
+
 /// Structural inputs derived from the graph (no embeddings).
 #[derive(Debug, Default)]
 pub(crate) struct Structural {
@@ -128,7 +141,7 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
             .into_iter()
             .filter_map(|t| {
                 let subj = strip(t.subject.to_string());
-                t.object_string().map(|o| (subj, o.to_string()))
+                obj_string(&t).map(|o| (subj, o))
             })
             .collect()
     };
@@ -682,6 +695,34 @@ mod tests {
         assert!(map.skills.contains(&"writing.md".to_string()));
         assert!(!map.skills.contains(&"note.md".to_string()), "non-skill tag excluded");
         assert!(map.guidance.contains("me.md"), "guidance points at identity");
+    }
+
+    #[tokio::test]
+    async fn links_to_node_objects_are_read() {
+        // Real ingest stores wikilink targets as Value::Node, not Value::literal.
+        // All link-counting and hub detection must work for node-valued objects.
+        let state = crate::state::AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let g = state.graph.write().await;
+            for (s, p) in [("a.md", "aingle:source_hash"), ("hub.md", "aingle:source_hash")] {
+                g.insert(Triple::new(NodeId::named(s), Predicate::named(p), Value::literal("h")))
+                    .unwrap();
+            }
+            // links_to as a NODE object — how real ingest produces it.
+            g.insert(Triple::new(
+                NodeId::named("a.md"),
+                Predicate::named("links_to"),
+                Value::Node(NodeId::named("hub")),
+            ))
+            .unwrap();
+        }
+        let map = super::vault_map_cached(&state).await;
+        assert_eq!(map.totals.links, 1, "node-valued links_to must be counted: {:?}", map.totals);
+        assert!(
+            map.entry_points.iter().any(|e| e.path == "hub.md" && e.in_links == 1),
+            "hub.md must appear as a hub with 1 incoming link: {:?}",
+            map.entry_points
+        );
     }
 
     #[tokio::test]
