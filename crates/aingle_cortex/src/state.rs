@@ -222,6 +222,22 @@ impl AppState {
         db_path: &str,
         audit_log_path: Option<std::path::PathBuf>,
     ) -> crate::error::Result<Self> {
+        Self::with_db_path_and_embedder(
+            db_path,
+            audit_log_path,
+            std::sync::Arc::new(HashEmbedder::new()),
+        )
+    }
+
+    /// Like [`with_db_path`] but with an explicit embedder. If a persisted
+    /// snapshot was produced by a different-dimension embedder, the snapshot is
+    /// discarded and the `aingle:source_hash` registry is cleared so the next
+    /// ingest re-embeds everything with this embedder.
+    pub fn with_db_path_and_embedder(
+        db_path: &str,
+        audit_log_path: Option<std::path::PathBuf>,
+        embedder: std::sync::Arc<dyn Embedder>,
+    ) -> crate::error::Result<Self> {
         let graph = if db_path == ":memory:" {
             GraphDB::memory()?
         } else {
@@ -234,13 +250,24 @@ impl AppState {
 
         let logic = RuleEngine::new();
 
-        // Load Ineru snapshot if available next to the graph database
+        // Embedder-change migration + snapshot load (persistent only).
         let memory = if db_path != ":memory:" {
-            let snapshot_path = Path::new(db_path)
-                .parent()
-                .unwrap_or(Path::new("."))
-                .join("ineru.snapshot");
-            if snapshot_path.exists() {
+            let dbdir = Path::new(db_path).parent().unwrap_or(Path::new("."));
+            let snapshot_path = dbdir.join("ineru.snapshot");
+            let active_dims = embedder.dimensions();
+            let persisted_dims = crate::embedder::read_dims(dbdir);
+            let dim_mismatch = snapshot_path.exists()
+                && persisted_dims.map(|d| d != active_dims).unwrap_or(false);
+
+            if dim_mismatch {
+                let removed = crate::embedder::clear_source_registry(&graph)
+                    .map_err(|e| crate::error::Error::Internal(format!("clear registry: {e}")))?;
+                log::warn!(
+                    "Embedder changed ({:?}d → {}d): cleared {} source-hash entries; re-ingest required.",
+                    persisted_dims, active_dims, removed
+                );
+                IneruMemory::agent_mode()
+            } else if snapshot_path.exists() {
                 match IneruMemory::load_from_file(&snapshot_path) {
                     Ok(mem) => {
                         log::info!("Loaded Ineru snapshot from {}", snapshot_path.display());
@@ -300,7 +327,7 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
-            embedder: std::sync::Arc::new(HashEmbedder::new()),
+            embedder,
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store,
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -353,6 +380,7 @@ impl AppState {
             } else {
                 log::info!("Ineru snapshot saved to {}", snapshot_path.display());
             }
+            crate::embedder::write_dims(dir, self.embedder.dimensions());
         }
 
         Ok(())
@@ -567,5 +595,69 @@ mod tests {
     fn appstate_has_default_hash_embedder() {
         let state = AppState::new().unwrap();
         assert_eq!(state.embedder.dimensions(), 64);
+    }
+
+    #[tokio::test]
+    async fn embedder_change_clears_source_registry_and_snapshot() {
+        use aingle_graph::{Predicate, TriplePattern};
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+
+        // First boot with the default (hash, 64d): ingest writes a registry triple,
+        // flush writes snapshot + embedder.dims=64.
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            {
+                let mut g = state.graph.write().await;
+                g.enable_dag();
+            }
+            std::fs::write(dir.path().join("note.md"), "# N\n\nsled has exclusive locks.\n").unwrap();
+            crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+                .await
+                .unwrap();
+            state.flush(Some(db.parent().unwrap())).await.unwrap();
+        }
+
+        // Registry triple exists on disk now.
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            let g = state.graph.read().await;
+            let n = g
+                .find(TriplePattern::any().with_predicate(Predicate::named(
+                    crate::service::ingest::PRED_SOURCE_HASH,
+                )))
+                .unwrap()
+                .len();
+            assert!(n >= 1, "registry triple should exist after first ingest");
+        }
+
+        // Second boot with a 384d embedder → mismatch → registry cleared, memory empty.
+        {
+            let fake_384: std::sync::Arc<dyn Embedder> = std::sync::Arc::new(Fake384);
+            let state = AppState::with_db_path_and_embedder(db_str, None, fake_384).unwrap();
+            let g = state.graph.read().await;
+            let n = g
+                .find(TriplePattern::any().with_predicate(Predicate::named(
+                    crate::service::ingest::PRED_SOURCE_HASH,
+                )))
+                .unwrap()
+                .len();
+            assert_eq!(n, 0, "registry must be cleared on embedder dim change");
+        }
+    }
+
+    /// A stand-in 384-dim embedder for migration tests (no model needed).
+    struct Fake384;
+    impl Embedder for Fake384 {
+        fn embed_passage(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.0; 384])
+        }
+        fn embed_query(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.0; 384])
+        }
+        fn dimensions(&self) -> usize {
+            384
+        }
     }
 }
