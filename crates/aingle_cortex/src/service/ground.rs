@@ -137,6 +137,13 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
         } else {
             gaps.push("Retrieved context is only weakly related to the question.".to_string());
         }
+    } else if groundedness == "ungrounded" {
+        // Chunks were retrieved but none are relevant enough to ground an answer.
+        // Surface the gap so the engine stays honest rather than silently empty.
+        gaps.push(
+            "Retrieved context is not relevant enough to ground an answer on this topic."
+                .to_string(),
+        );
     }
 
     Ok(GroundedContext {
