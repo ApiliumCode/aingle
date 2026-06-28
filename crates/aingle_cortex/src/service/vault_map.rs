@@ -7,7 +7,7 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-use crate::service::triple_util::obj_string;
+use crate::service::triple_util::{basename, obj_string, strip_brackets};
 
 /// The full vault map returned to the UI and the connected AI.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -114,12 +114,6 @@ const SEMANTIC_EDGES_PER_NODE: usize = 3;
 /// Tags (case-insensitive) that mark a note as a reusable skill/process.
 const SKILL_TAGS: [&str; 6] = ["skill", "process", "sop", "workflow", "how-to", "howto"];
 
-/// Basename without directory or extension, for wikilink resolution + titles.
-pub(crate) fn basename(path: &str) -> String {
-    let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    file.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(file).to_string()
-}
-
 /// True for paths under the generated maps folder (excluded from the vault map).
 pub(crate) fn is_maps_path(path: &str) -> bool {
     path.starts_with("_maps/") || path.starts_with("_maps\\")
@@ -140,14 +134,13 @@ pub(crate) struct Structural {
 pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
     use aingle_graph::{Predicate, TriplePattern};
 
-    let strip = |n: String| n.trim_start_matches('<').trim_end_matches('>').to_string();
     let find = |pred: &str| -> Vec<(String, String)> {
         graph
             .find(TriplePattern::any().with_predicate(Predicate::named(pred)))
             .unwrap_or_default()
             .into_iter()
             .filter_map(|t| {
-                let subj = strip(t.subject.to_string());
+                let subj = strip_brackets(&t.subject.to_string()).to_string();
                 obj_string(&t).map(|o| (subj, o))
             })
             .collect()
@@ -239,8 +232,14 @@ fn top_k_semantic_pairs<'a>(
     // Accumulate per-node (partner, cosine) lists in global cosine-desc order.
     let mut per_node: BTreeMap<&'a str, Vec<(&'a str, f32)>> = BTreeMap::new();
     for (a, b, c) in candidates {
-        per_node.entry(a.as_str()).or_default().push((b.as_str(), *c));
-        per_node.entry(b.as_str()).or_default().push((a.as_str(), *c));
+        per_node
+            .entry(a.as_str())
+            .or_default()
+            .push((b.as_str(), *c));
+        per_node
+            .entry(b.as_str())
+            .or_default()
+            .push((a.as_str(), *c));
     }
     // Union: an ordered pair (min, max) is kept if EITHER endpoint selects the other.
     let mut chosen: BTreeMap<(String, String), f32> = BTreeMap::new();
@@ -344,7 +343,12 @@ pub(crate) fn cluster_semantic(
     (topics, sem_pairs)
 }
 
-fn mean_sim(self_idx: usize, members: &[usize], names: &[&String], vecs: &BTreeMap<String, Vec<f32>>) -> f32 {
+fn mean_sim(
+    self_idx: usize,
+    members: &[usize],
+    names: &[&String],
+    vecs: &BTreeMap<String, Vec<f32>>,
+) -> f32 {
     if members.len() <= 1 {
         return 1.0;
     }
@@ -358,7 +362,11 @@ fn mean_sim(self_idx: usize, members: &[usize], names: &[&String], vecs: &BTreeM
         sum += cosine(v, &vecs[names[m]]);
         cnt += 1;
     }
-    if cnt == 0 { 1.0 } else { sum / cnt as f32 }
+    if cnt == 0 {
+        1.0
+    } else {
+        sum / cnt as f32
+    }
 }
 
 /// Mean per-note embedding from Ineru `doc_chunk` entries, grouped by source_path.
@@ -373,8 +381,12 @@ pub(crate) fn per_note_vectors(mem: &ineru::IneruMemory) -> BTreeMap<String, Vec
         let Some(path) = e.data.get("source_path").and_then(|v| v.as_str()) else {
             continue;
         };
-        let Some(emb) = e.embedding.as_ref() else { continue };
-        let entry = sums.entry(path.to_string()).or_insert_with(|| (vec![0.0; emb.0.len()], 0));
+        let Some(emb) = e.embedding.as_ref() else {
+            continue;
+        };
+        let entry = sums
+            .entry(path.to_string())
+            .or_insert_with(|| (vec![0.0; emb.0.len()], 0));
         if entry.0.len() == emb.0.len() {
             for (acc, x) in entry.0.iter_mut().zip(&emb.0) {
                 *acc += *x;
@@ -466,20 +478,29 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
     let mut tag_clusters: Vec<TagGroup> = s
         .tag_notes
         .iter()
-        .map(|(tag, notes)| TagGroup { tag: tag.clone(), notes: notes.clone() })
+        .map(|(tag, notes)| TagGroup {
+            tag: tag.clone(),
+            notes: notes.clone(),
+        })
         .collect();
     tag_clusters.sort_by(|a, b| b.notes.len().cmp(&a.notes.len()).then(a.tag.cmp(&b.tag)));
     let mut tags: Vec<TagCount> = s
         .tag_notes
         .iter()
-        .map(|(tag, notes)| TagCount { tag: tag.clone(), count: notes.len() })
+        .map(|(tag, notes)| TagCount {
+            tag: tag.clone(),
+            count: notes.len(),
+        })
         .collect();
     tags.sort_by(|a, b| b.count.cmp(&a.count).then(a.tag.cmp(&b.tag)));
 
     let mut types: Vec<TypeCount> = s
         .type_counts
         .iter()
-        .map(|(ty, count)| TypeCount { ty: ty.clone(), count: *count })
+        .map(|(ty, count)| TypeCount {
+            ty: ty.clone(),
+            count: *count,
+        })
         .collect();
     types.sort_by(|a, b| b.count.cmp(&a.count).then(a.ty.cmp(&b.ty)));
 
@@ -496,13 +517,12 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
     let created: BTreeMap<String, String> = {
         use aingle_graph::{Predicate, TriplePattern};
         let g = state.graph.read().await;
-        let strip = |n: String| n.trim_start_matches('<').trim_end_matches('>').to_string();
         let collect_pred = |pred: &str| -> BTreeMap<String, String> {
             g.find(TriplePattern::any().with_predicate(Predicate::named(pred)))
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|t| {
-                    let subj = strip(t.subject.to_string());
+                    let subj = strip_brackets(&t.subject.to_string()).to_string();
                     obj_string(&t).map(|o| (subj, o))
                 })
                 .collect()
@@ -518,10 +538,8 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
     // GraphView (cap by degree).
     let mut ranked: Vec<&String> = s.notes.iter().collect();
     ranked.sort_by(|a, b| {
-        let da =
-            s.in_deg.get(*a).copied().unwrap_or(0) + s.out_deg.get(*a).copied().unwrap_or(0);
-        let db =
-            s.in_deg.get(*b).copied().unwrap_or(0) + s.out_deg.get(*b).copied().unwrap_or(0);
+        let da = s.in_deg.get(*a).copied().unwrap_or(0) + s.out_deg.get(*a).copied().unwrap_or(0);
+        let db = s.in_deg.get(*b).copied().unwrap_or(0) + s.out_deg.get(*b).copied().unwrap_or(0);
         db.cmp(&da).then(a.cmp(b))
     });
     if s.notes.len() > GRAPH_NODE_CAP {
@@ -540,8 +558,7 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
             id: p.clone(),
             label: basename(p),
             cluster: cluster_of.get(p).copied().unwrap_or(-1),
-            degree: s.in_deg.get(p).copied().unwrap_or(0)
-                + s.out_deg.get(p).copied().unwrap_or(0),
+            degree: s.in_deg.get(p).copied().unwrap_or(0) + s.out_deg.get(p).copied().unwrap_or(0),
             timestamp: created.get(p).cloned(),
         })
         .collect();
@@ -550,7 +567,11 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
         .edges
         .iter()
         .filter(|(a, b)| kept.contains(a) && kept.contains(b))
-        .map(|(a, b)| GraphEdge { source: a.clone(), target: b.clone(), kind: "link".into() })
+        .map(|(a, b)| GraphEdge {
+            source: a.clone(),
+            target: b.clone(),
+            kind: "link".into(),
+        })
         .collect();
 
     // Semantic edges — per-node top-K selection with union semantics.
@@ -569,7 +590,11 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
             .edges
             .iter()
             .map(|(a, b)| {
-                if a <= b { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) }
+                if a <= b {
+                    (a.clone(), b.clone())
+                } else {
+                    (b.clone(), a.clone())
+                }
             })
             .collect();
 
@@ -579,16 +604,14 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
             .filter(|(a, b, _)| kept.contains(a) && kept.contains(b))
             .map(|(a, b, c)| if a <= b { (a, b, c) } else { (b, a, c) })
             .collect();
-        candidates
-            .sort_by(|x, y| y.2.partial_cmp(&x.2).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|x, y| y.2.partial_cmp(&x.2).unwrap_or(std::cmp::Ordering::Equal));
 
         // Per-node top-K with union semantics → O(N·K) edges instead of O(N²).
         let chosen = top_k_semantic_pairs(&candidates, SEMANTIC_EDGES_PER_NODE);
 
         // Sort by cosine desc so SEMANTIC_EDGE_CAP retains the highest-quality edges.
         let mut chosen_sorted: Vec<((String, String), f32)> = chosen.into_iter().collect();
-        chosen_sorted
-            .sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
+        chosen_sorted.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut sem_count = 0usize;
         for ((a, b), _c) in chosen_sorted {
@@ -598,7 +621,11 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
             if link_pair_set.contains(&(a.clone(), b.clone())) {
                 continue;
             }
-            edges.push(GraphEdge { source: a, target: b, kind: "semantic".into() });
+            edges.push(GraphEdge {
+                source: a,
+                target: b,
+                kind: "semantic".into(),
+            });
             sem_count += 1;
         }
     }
@@ -674,7 +701,10 @@ pub async fn vault_map_cached(state: &crate::state::AppState) -> VaultMap {
     let mem_bytes = { state.memory.read().await.stats().total_memory_bytes };
     let key = (tc, mem_bytes);
     {
-        let cache = state.vault_map_cache.lock().expect("vault_map cache poisoned");
+        let cache = state
+            .vault_map_cache
+            .lock()
+            .expect("vault_map cache poisoned");
         if let Some((cached_key, map)) = cache.as_ref() {
             if *cached_key == key {
                 return map.clone();
@@ -684,7 +714,10 @@ pub async fn vault_map_cached(state: &crate::state::AppState) -> VaultMap {
     // The cache mutex is intentionally released before the async compute to avoid
     // holding it across an `.await` point.
     let map = compute_vault_map(state).await;
-    let mut cache = state.vault_map_cache.lock().expect("vault_map cache poisoned");
+    let mut cache = state
+        .vault_map_cache
+        .lock()
+        .expect("vault_map cache poisoned");
     *cache = Some((key, map.clone()));
     map
 }
@@ -694,9 +727,7 @@ mod tests {
     use super::*;
     use aingle_graph::{NodeId, Predicate, Triple, Value};
 
-    pub(super) async fn graph_with(
-        triples: &[(&str, &str, &str)],
-    ) -> crate::state::AppState {
+    pub(super) async fn graph_with(triples: &[(&str, &str, &str)]) -> crate::state::AppState {
         let state = crate::state::AppState::with_db_path(":memory:", None).unwrap();
         {
             let g = state.graph.write().await;
@@ -736,12 +767,20 @@ mod tests {
             super::derive_structural(&g)
         };
         assert_eq!(s.notes.len(), 4);
-        assert_eq!(s.in_deg.get("hub.md").copied().unwrap_or(0), 2, "hub has 2 incoming");
+        assert_eq!(
+            s.in_deg.get("hub.md").copied().unwrap_or(0),
+            2,
+            "hub has 2 incoming"
+        );
         assert_eq!(s.out_deg.get("a.md").copied().unwrap_or(0), 1);
         assert_eq!(s.tag_notes.get("storage").map(|v| v.len()), Some(2));
         assert_eq!(s.link_count, 2);
         // Self-link must not be counted as incoming for a.md.
-        assert_eq!(s.in_deg.get("a.md").copied().unwrap_or(0), 0, "self-link must not count as incoming");
+        assert_eq!(
+            s.in_deg.get("a.md").copied().unwrap_or(0),
+            0,
+            "self-link must not count as incoming"
+        );
         // type_counts must reflect the triple ("a.md","type","note").
         assert_eq!(s.type_counts.get("note"), Some(&1));
     }
@@ -759,10 +798,7 @@ mod tests {
         assert_eq!(topics.len(), 2);
         let big = topics.iter().max_by_key(|t| t.size).unwrap();
         assert_eq!(big.size, 2);
-        assert!(
-            big.notes.contains(&"a.md".to_string())
-                && big.notes.contains(&"b.md".to_string())
-        );
+        assert!(big.notes.contains(&"a.md".to_string()) && big.notes.contains(&"b.md".to_string()));
         // The pair (a.md, b.md) must be captured in sem_pairs with cosine ≥ 0.9.
         assert!(
             sem_pairs.iter().any(|(a, b, c)| {
@@ -788,7 +824,10 @@ mod tests {
         assert_eq!(m1.totals.notes, 3);
         assert_eq!(m1.totals.links, 1);
         assert_eq!(m1.totals.orphans, 1); // orphan.md
-        assert!(m1.entry_points.iter().any(|e| e.path == "hub.md" && e.in_links == 1));
+        assert!(m1
+            .entry_points
+            .iter()
+            .any(|e| e.path == "hub.md" && e.in_links == 1));
         assert!(m1.tag_clusters.iter().any(|t| t.tag == "storage"));
         assert!(!m1.guidance.is_empty());
         assert!(!m1.graph.nodes.is_empty());
@@ -812,8 +851,15 @@ mod tests {
         let map = super::vault_map_cached(&state).await;
         assert_eq!(map.totals.notes, 2, "_maps/ notes excluded from the count");
         assert!(!map.graph.nodes.iter().any(|n| n.id.starts_with("_maps/")));
-        assert!(!map.entry_points.iter().any(|e| e.path.starts_with("_maps/")));
-        let hub = map.entry_points.iter().find(|e| e.path == "hub.md").expect("hub");
+        assert!(!map
+            .entry_points
+            .iter()
+            .any(|e| e.path.starts_with("_maps/")));
+        let hub = map
+            .entry_points
+            .iter()
+            .find(|e| e.path == "hub.md")
+            .expect("hub");
         assert_eq!(hub.in_links, 1, "the _maps link to hub must be excluded");
     }
 
@@ -834,8 +880,14 @@ mod tests {
         assert_eq!(map.identity.as_deref(), Some("me.md"));
         assert!(map.skills.contains(&"deploy.md".to_string()));
         assert!(map.skills.contains(&"writing.md".to_string()));
-        assert!(!map.skills.contains(&"note.md".to_string()), "non-skill tag excluded");
-        assert!(map.guidance.contains("me.md"), "guidance points at identity");
+        assert!(
+            !map.skills.contains(&"note.md".to_string()),
+            "non-skill tag excluded"
+        );
+        assert!(
+            map.guidance.contains("me.md"),
+            "guidance points at identity"
+        );
     }
 
     #[tokio::test]
@@ -845,9 +897,16 @@ mod tests {
         let state = crate::state::AppState::with_db_path(":memory:", None).unwrap();
         {
             let g = state.graph.write().await;
-            for (s, p) in [("a.md", "aingle:source_hash"), ("hub.md", "aingle:source_hash")] {
-                g.insert(Triple::new(NodeId::named(s), Predicate::named(p), Value::literal("h")))
-                    .unwrap();
+            for (s, p) in [
+                ("a.md", "aingle:source_hash"),
+                ("hub.md", "aingle:source_hash"),
+            ] {
+                g.insert(Triple::new(
+                    NodeId::named(s),
+                    Predicate::named(p),
+                    Value::literal("h"),
+                ))
+                .unwrap();
             }
             // links_to as a NODE object — how real ingest produces it.
             g.insert(Triple::new(
@@ -858,9 +917,15 @@ mod tests {
             .unwrap();
         }
         let map = super::vault_map_cached(&state).await;
-        assert_eq!(map.totals.links, 1, "node-valued links_to must be counted: {:?}", map.totals);
+        assert_eq!(
+            map.totals.links, 1,
+            "node-valued links_to must be counted: {:?}",
+            map.totals
+        );
         assert!(
-            map.entry_points.iter().any(|e| e.path == "hub.md" && e.in_links == 1),
+            map.entry_points
+                .iter()
+                .any(|e| e.path == "hub.md" && e.in_links == 1),
             "hub.md must appear as a hub with 1 incoming link: {:?}",
             map.entry_points
         );
@@ -881,7 +946,10 @@ mod tests {
             .unwrap();
         }
         let m2 = super::vault_map_cached(&state).await;
-        assert_eq!(m2.totals.notes, 2, "cache must invalidate when triple_count changes");
+        assert_eq!(
+            m2.totals.notes, 2,
+            "cache must invalidate when triple_count changes"
+        );
     }
 
     // -----------------------------------------------------------------
@@ -899,8 +967,7 @@ mod tests {
         .await;
         let map = super::vault_map_cached(&state).await;
         let edge = map.graph.edges.iter().find(|e| {
-            (e.source == "a.md" && e.target == "b.md")
-                || (e.source == "b.md" && e.target == "a.md")
+            (e.source == "a.md" && e.target == "b.md") || (e.source == "b.md" && e.target == "a.md")
         });
         let edge = edge.expect("link edge between a.md and b.md must exist");
         assert_eq!(edge.kind, "link", "wikilink edges must carry kind='link'");
@@ -961,10 +1028,15 @@ mod tests {
             }
         }
         let map2 = super::compute_vault_map(&state2).await;
-        let edges_ab: Vec<_> = map2.graph.edges.iter().filter(|e| {
-            (e.source == "a.md" && e.target == "b.md")
-                || (e.source == "b.md" && e.target == "a.md")
-        }).collect();
+        let edges_ab: Vec<_> = map2
+            .graph
+            .edges
+            .iter()
+            .filter(|e| {
+                (e.source == "a.md" && e.target == "b.md")
+                    || (e.source == "b.md" && e.target == "a.md")
+            })
+            .collect();
         assert_eq!(
             edges_ab.len(),
             1,
@@ -972,8 +1044,7 @@ mod tests {
             map2.graph.edges
         );
         assert_eq!(
-            edges_ab[0].kind,
-            "link",
+            edges_ab[0].kind, "link",
             "the single edge must have kind='link', not 'semantic': {:?}",
             edges_ab[0]
         );
@@ -995,18 +1066,25 @@ mod tests {
         .await;
 
         let map = super::compute_vault_map(&state).await;
-        let node_a = map.graph.nodes.iter().find(|n| n.id == "a.md")
+        let node_a = map
+            .graph
+            .nodes
+            .iter()
+            .find(|n| n.id == "a.md")
             .expect("a.md must be in graph");
         assert_eq!(
             node_a.timestamp,
             Some("2025-01-02".to_string()),
             "timestamp must be populated from the created triple"
         );
-        let node_b = map.graph.nodes.iter().find(|n| n.id == "b.md")
+        let node_b = map
+            .graph
+            .nodes
+            .iter()
+            .find(|n| n.id == "b.md")
             .expect("b.md must be in graph");
         assert_eq!(
-            node_b.timestamp,
-            None,
+            node_b.timestamp, None,
             "node without a created triple must have timestamp=None"
         );
     }
@@ -1077,8 +1155,12 @@ mod tests {
         }
 
         let map = super::compute_vault_map(&state).await;
-        let sem_edges: Vec<_> =
-            map.graph.edges.iter().filter(|e| e.kind == "semantic").collect();
+        let sem_edges: Vec<_> = map
+            .graph
+            .edges
+            .iter()
+            .filter(|e| e.kind == "semantic")
+            .collect();
 
         // (a) Clearly-strongest pair is connected.
         assert!(
@@ -1145,13 +1227,16 @@ mod tests {
         }
         let map = super::compute_vault_map(&state).await;
         assert_eq!(
-            map.totals.links,
-            1,
+            map.totals.links, 1,
             "totals.links must count only explicit wikilinks, not semantic edges: {:?}",
             map.totals
         );
-        let sem_edges: Vec<_> =
-            map.graph.edges.iter().filter(|e| e.kind == "semantic").collect();
+        let sem_edges: Vec<_> = map
+            .graph
+            .edges
+            .iter()
+            .filter(|e| e.kind == "semantic")
+            .collect();
         assert!(
             !sem_edges.is_empty(),
             "semantic edges between similar notes must exist even when totals.links is 1"

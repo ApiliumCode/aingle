@@ -1,4 +1,4 @@
-﻿// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
+// Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0 OR Commercial
 
 //! Local graph neighborhood for a single note: typed edges (link / semantic / tag)
@@ -6,9 +6,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
-use crate::service::triple_util::{obj_string, resolve_link_target};
-use crate::service::vault_map::{basename, is_maps_path};
 use crate::service::context::{note_context_cached, NEIGHBOR_FLOOR};
+use crate::service::triple_util::{basename, obj_string, resolve_link_target, strip_brackets};
+use crate::service::vault_map::is_maps_path;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -80,17 +80,11 @@ const SEM_FRONTIER_CAP: usize = 16;
 // ---------------------------------------------------------------------------
 
 /// Build the typed local neighborhood graph for `note` at BFS depth `depth`.
-pub async fn local_graph(
-    state: &crate::state::AppState,
-    note: &str,
-    depth: usize,
-) -> LocalGraph {
+pub async fn local_graph(state: &crate::state::AppState, note: &str, depth: usize) -> LocalGraph {
     use aingle_graph::{Predicate, TriplePattern};
 
     let depth = depth.clamp(1, MAX_DEPTH);
     let semantic_grade = state.embedder.dimensions() >= 128;
-
-    let strip = |n: String| n.trim_start_matches('<').trim_end_matches('>').to_string();
 
     // -----------------------------------------------------------------------
     // 1. Load structural data from the graph once.
@@ -99,14 +93,19 @@ pub async fn local_graph(
     // links_raw: (subject, object-string) for every links_to triple
     // tagged_raw: (subject, tag) for every tagged triple
     type PairVec = Vec<(String, String)>;
-    let (notes, links_raw, tagged_raw, created_map): (Vec<String>, PairVec, PairVec, BTreeMap<String, String>) = {
+    let (notes, links_raw, tagged_raw, created_map): (
+        Vec<String>,
+        PairVec,
+        PairVec,
+        BTreeMap<String, String>,
+    ) = {
         let g = state.graph.read().await;
         let collect = |pred: &str| -> PairVec {
             g.find(TriplePattern::any().with_predicate(Predicate::named(pred)))
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|t| {
-                    obj_string(&t).map(|o| (strip(t.subject.to_string()), o))
+                    obj_string(&t).map(|o| (strip_brackets(&t.subject.to_string()).to_string(), o))
                 })
                 .collect()
         };
@@ -131,14 +130,11 @@ pub async fn local_graph(
     // Basename index for wikilink resolution.
     let mut by_base: BTreeMap<String, String> = BTreeMap::new();
     for n in &notes {
-        by_base
-            .entry(basename(n))
-            .or_insert_with(|| n.clone());
+        by_base.entry(basename(n)).or_insert_with(|| n.clone());
     }
 
-    let resolve = |target: &str| -> Option<String> {
-        resolve_link_target(target, &note_set, &by_base)
-    };
+    let resolve =
+        |target: &str| -> Option<String> { resolve_link_target(target, &note_set, &by_base) };
 
     // Resolved outgoing links: (src, dst) — both are full paths, neither a maps path.
     let links: Vec<(String, String)> = links_raw
@@ -610,10 +606,16 @@ mod tests {
         insert_chunk(&state, "b.md", "alpha content for b", e0()).await;
 
         let g = super::local_graph(&state, "a.md", 1).await;
-        assert!(g.semantic_ready, "StubEmbedder(128d) must be semantic_ready");
+        assert!(
+            g.semantic_ready,
+            "StubEmbedder(128d) must be semantic_ready"
+        );
         let sem = g.edges.iter().find(|e| e.kind == "semantic");
         assert!(sem.is_some(), "must have a semantic edge: {:?}", g.edges);
-        assert!(sem.unwrap().score.is_some(), "semantic edge must carry a score");
+        assert!(
+            sem.unwrap().score.is_some(),
+            "semantic edge must carry a score"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -622,12 +624,8 @@ mod tests {
     #[cfg(feature = "dag")]
     #[tokio::test]
     async fn semantic_edge_carries_provenance() {
-        let state = AppState::with_db_path_and_embedder(
-            ":memory:",
-            None,
-            Arc::new(StubEmbedder),
-        )
-        .unwrap();
+        let state =
+            AppState::with_db_path_and_embedder(":memory:", None, Arc::new(StubEmbedder)).unwrap();
         {
             let mut graph = state.graph.write().await;
             graph.enable_dag();
@@ -657,7 +655,9 @@ mod tests {
             };
             let key = aingle_graph::dag::DagSigningKey::generate();
             key.sign(&mut action);
-            dag_store.put(&action).expect("put signed action must succeed");
+            dag_store
+                .put(&action)
+                .expect("put signed action must succeed");
         }
 
         let g = super::local_graph(&state, "a.md", 1).await;
@@ -709,7 +709,10 @@ mod tests {
         insert_triple_node(&state, "a.md", "links_to", "b").await;
 
         let g = super::local_graph(&state, "a.md", 1).await;
-        assert!(!g.semantic_ready, "64-dim hash embedder must set semantic_ready=false");
+        assert!(
+            !g.semantic_ready,
+            "64-dim hash embedder must set semantic_ready=false"
+        );
         assert!(
             g.edges.iter().all(|e| e.kind != "semantic"),
             "no semantic edges with hash embedder: {:?}",
@@ -745,7 +748,9 @@ mod tests {
             g.nodes
         );
         assert!(
-            !g.edges.iter().any(|e| e.target.starts_with("_maps/") || e.source.starts_with("_maps/")),
+            !g.edges
+                .iter()
+                .any(|e| e.target.starts_with("_maps/") || e.source.starts_with("_maps/")),
             "_maps/ edges must be excluded: {:?}",
             g.edges
         );
@@ -810,7 +815,6 @@ mod tests {
         );
     }
 
-
     // -----------------------------------------------------------------------
     // 9. incoming_link_edge
     // -----------------------------------------------------------------------
@@ -833,7 +837,6 @@ mod tests {
             g.edges
         );
     }
-
 
     // -----------------------------------------------------------------------
     // 10. pair_with_link_and_semantic_keeps_both
@@ -863,7 +866,6 @@ mod tests {
         assert!(has_sem, "semantic edge a↔b must be present: {:?}", g.edges);
     }
 
-
     // -----------------------------------------------------------------------
     // 11. symmetric_semantic_dedup
     // -----------------------------------------------------------------------
@@ -890,13 +892,11 @@ mod tests {
             })
             .count();
         assert_eq!(
-            sem_count,
-            1,
+            sem_count, 1,
             "symmetric a↔b semantic must yield exactly ONE edge, got {sem_count}: {:?}",
             g.edges
         );
     }
-
 
     // -----------------------------------------------------------------------
     // 12. local_graph_cached_hit_and_invalidation
@@ -912,7 +912,10 @@ mod tests {
 
         // First call: computes and caches.
         let g1 = super::local_graph_cached(&state, "a.md", 1).await;
-        assert!(g1.nodes.iter().any(|n| n.id == "b.md"), "b.md must be in graph");
+        assert!(
+            g1.nodes.iter().any(|n| n.id == "b.md"),
+            "b.md must be in graph"
+        );
 
         // Second call: graph/memory unchanged → cache hit → identical result.
         let g2 = super::local_graph_cached(&state, "a.md", 1).await;
@@ -934,7 +937,6 @@ mod tests {
             g3.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()
         );
     }
-
 
     // -----------------------------------------------------------------------
     // 13. cache_cap_clears_when_exceeded
@@ -977,7 +979,6 @@ mod tests {
         );
     }
 
-
     // -----------------------------------------------------------------------
     // timestamp field: created triple → GNode.timestamp
     // -----------------------------------------------------------------------
@@ -993,18 +994,23 @@ mod tests {
         insert_triple_lit(&state, "a.md", "created", "2025-03-15").await;
 
         let g = super::local_graph(&state, "a.md", 1).await;
-        let node_a = g.nodes.iter().find(|n| n.id == "a.md")
+        let node_a = g
+            .nodes
+            .iter()
+            .find(|n| n.id == "a.md")
             .expect("a.md must be in graph");
         assert_eq!(
             node_a.timestamp,
             Some("2025-03-15".to_string()),
             "GNode.timestamp must come from the created triple"
         );
-        let node_b = g.nodes.iter().find(|n| n.id == "b.md")
+        let node_b = g
+            .nodes
+            .iter()
+            .find(|n| n.id == "b.md")
             .expect("b.md must be in graph");
         assert_eq!(
-            node_b.timestamp,
-            None,
+            node_b.timestamp, None,
             "GNode without created triple must have timestamp=None"
         );
     }
@@ -1044,7 +1050,6 @@ mod tests {
         );
     }
 
-
     // -----------------------------------------------------------------------
     // 15. neural_local_graph_has_semantic_edge  (real e5 model, gated)
     // -----------------------------------------------------------------------
@@ -1080,8 +1085,7 @@ mod tests {
             "neural embedder must be active (384d)"
         );
 
-        let state =
-            AppState::with_db_path_and_embedder(":memory:", None, embedder).unwrap();
+        let state = AppState::with_db_path_and_embedder(":memory:", None, embedder).unwrap();
         {
             let mut graph = state.graph.write().await;
             graph.enable_dag();

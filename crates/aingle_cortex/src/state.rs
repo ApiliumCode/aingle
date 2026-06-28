@@ -15,6 +15,30 @@ use crate::auth::UserStore;
 use crate::proofs::ProofStore;
 use crate::rest::audit::AuditLog;
 
+// ---------------------------------------------------------------------------
+// Cache type aliases (avoid clippy::type_complexity on the struct fields)
+// ---------------------------------------------------------------------------
+
+/// Shared cache type for the vault map.
+type VaultMapCache =
+    std::sync::Mutex<Option<((usize, usize), crate::service::vault_map::VaultMap)>>;
+
+/// Shared cache type for per-note semantic-neighbor contexts.
+type NoteContextCache = std::sync::Mutex<
+    std::collections::HashMap<
+        (String, usize),
+        ((usize, usize), crate::service::context::NoteContext),
+    >,
+>;
+
+/// Shared cache type for per-note local-graph neighborhoods.
+type LocalGraphCache = std::sync::Mutex<
+    std::collections::HashMap<
+        (String, usize),
+        ((usize, usize), crate::service::local_graph::LocalGraph),
+    >,
+>;
+
 /// The shared state accessible by all API handlers.
 ///
 /// This struct uses `Arc` and `RwLock` to provide safe, concurrent access
@@ -31,33 +55,17 @@ pub struct AppState {
     pub embedder: std::sync::Arc<dyn Embedder>,
     /// Cached vault map, keyed on (graph triple-count, memory bytes) — see
     /// service::vault_map::vault_map_cached.
-    pub vault_map_cache: std::sync::Arc<
-        std::sync::Mutex<Option<((usize, usize), crate::service::vault_map::VaultMap)>>,
-    >,
+    pub vault_map_cache: Arc<VaultMapCache>,
     /// Per-note semantic-neighbor cache, keyed by `(note_path, limit)`, storing
     /// `(graph_triple_count, total_memory_bytes) → NoteContext`. Invalidated
     /// whenever the graph or memory changes — same staleness signal as
     /// vault_map_cache. `limit` is part of the key so that MCP calls with
     /// different limits do not serve stale neighbor counts from cache.
-    pub note_context_cache: std::sync::Arc<
-        std::sync::Mutex<
-            std::collections::HashMap<
-                (String, usize),
-                ((usize, usize), crate::service::context::NoteContext),
-            >,
-        >,
-    >,
+    pub note_context_cache: Arc<NoteContextCache>,
     /// Per-note local-graph cache, keyed by `(note_path, depth)`, storing
     /// `(graph_triple_count, total_memory_bytes) → LocalGraph`. Invalidated
     /// on any graph or memory change — mirrors note_context_cache semantics.
-    pub local_graph_cache: std::sync::Arc<
-        std::sync::Mutex<
-            std::collections::HashMap<
-                (String, usize),
-                ((usize, usize), crate::service::local_graph::LocalGraph),
-            >,
-        >,
-    >,
+    pub local_graph_cache: Arc<LocalGraphCache>,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
@@ -127,8 +135,12 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -175,8 +187,12 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -223,8 +239,12 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             embedder: std::sync::Arc::new(HashEmbedder::new()),
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -368,8 +388,12 @@ impl AppState {
             memory: Arc::new(RwLock::new(memory)),
             embedder,
             vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store,
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -654,7 +678,11 @@ mod tests {
                 let mut g = state.graph.write().await;
                 g.enable_dag();
             }
-            std::fs::write(dir.path().join("note.md"), "# N\n\nsled has exclusive locks.\n").unwrap();
+            std::fs::write(
+                dir.path().join("note.md"),
+                "# N\n\nsled has exclusive locks.\n",
+            )
+            .unwrap();
             crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
                 .await
                 .unwrap();
@@ -666,9 +694,10 @@ mod tests {
             let state = AppState::with_db_path(db_str, None).unwrap();
             let g = state.graph.read().await;
             let n = g
-                .find(TriplePattern::any().with_predicate(Predicate::named(
-                    crate::service::ingest::PRED_SOURCE_HASH,
-                )))
+                .find(
+                    TriplePattern::any()
+                        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+                )
                 .unwrap()
                 .len();
             assert!(n >= 1, "registry triple should exist after first ingest");
@@ -680,9 +709,10 @@ mod tests {
             let state = AppState::with_db_path_and_embedder(db_str, None, fake_384).unwrap();
             let g = state.graph.read().await;
             let n = g
-                .find(TriplePattern::any().with_predicate(Predicate::named(
-                    crate::service::ingest::PRED_SOURCE_HASH,
-                )))
+                .find(
+                    TriplePattern::any()
+                        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+                )
                 .unwrap()
                 .len();
             assert_eq!(n, 0, "registry must be cleared on embedder dim change");
@@ -703,7 +733,11 @@ mod tests {
                 let mut g = state.graph.write().await;
                 g.enable_dag();
             }
-            std::fs::write(dir.path().join("n.md"), "# N\n\nsled has exclusive locks.\n").unwrap();
+            std::fs::write(
+                dir.path().join("n.md"),
+                "# N\n\nsled has exclusive locks.\n",
+            )
+            .unwrap();
             crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
                 .await
                 .unwrap();
@@ -719,12 +753,16 @@ mod tests {
             let state = AppState::with_db_path_and_embedder(db_str, None, fake_384).unwrap();
             let g = state.graph.read().await;
             let n = g
-                .find(TriplePattern::any().with_predicate(Predicate::named(
-                    crate::service::ingest::PRED_SOURCE_HASH,
-                )))
+                .find(
+                    TriplePattern::any()
+                        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+                )
                 .unwrap()
                 .len();
-            assert_eq!(n, 0, "legacy snapshot without sidecar must migrate when dims differ");
+            assert_eq!(
+                n, 0,
+                "legacy snapshot without sidecar must migrate when dims differ"
+            );
         }
     }
 
@@ -741,7 +779,11 @@ mod tests {
                 let mut g = state.graph.write().await;
                 g.enable_dag();
             }
-            std::fs::write(dir.path().join("n.md"), "# N\n\nsled has exclusive locks.\n").unwrap();
+            std::fs::write(
+                dir.path().join("n.md"),
+                "# N\n\nsled has exclusive locks.\n",
+            )
+            .unwrap();
             crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
                 .await
                 .unwrap();
@@ -753,9 +795,10 @@ mod tests {
             let state = AppState::with_db_path(db_str, None).unwrap();
             let g = state.graph.read().await;
             let n = g
-                .find(TriplePattern::any().with_predicate(Predicate::named(
-                    crate::service::ingest::PRED_SOURCE_HASH,
-                )))
+                .find(
+                    TriplePattern::any()
+                        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+                )
                 .unwrap()
                 .len();
             assert!(n >= 1, "same-dims boot must preserve the registry");

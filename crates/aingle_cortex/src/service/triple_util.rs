@@ -13,19 +13,55 @@
 /// strings (`Value::Str`) and graph nodes (`Value::Node`). Node IDs are stored
 /// with `<…>` angle-bracket wrappers; this strips them so the result matches
 /// the bare names used everywhere else in the service layer.
+#[inline]
 pub(crate) fn obj_string(t: &aingle_graph::Triple) -> Option<String> {
     if let Some(s) = t.object_string() {
         Some(s.to_string())
     } else {
         t.object_node()
-            .map(|n| n.to_string().trim_start_matches('<').trim_end_matches('>').to_string())
+            .map(|n| strip_brackets(&n.to_string()).to_string())
     }
 }
 
+/// Strip leading `<` and trailing `>` angle-bracket wrappers from an IRI string.
+///
+/// Node IDs in the graph are stored with angle-bracket wrappers (e.g. `<akashi://foo>`);
+/// this strips them so the result matches the bare names used everywhere in the service layer.
+pub(crate) fn strip_brackets(s: &str) -> &str {
+    s.trim_start_matches('<').trim_end_matches('>')
+}
+
 /// Basename without directory or extension (for wikilink resolution).
-fn basename(path: &str) -> String {
+///
+/// Strips both `/` and `\` directory separators and removes the last `.ext`.
+pub(crate) fn basename(path: &str) -> String {
     let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    file.rsplit_once('.').map(|(s, _)| s).unwrap_or(file).to_string()
+    file.rsplit_once('.')
+        .map(|(s, _)| s)
+        .unwrap_or(file)
+        .to_string()
+}
+
+/// Retrieve a signed provenance anchor hash for a note path, if available.
+///
+/// Returns the hex hash of the most-recent signed DAG action whose subject is
+/// `src`, or `None` when the `dag` feature is off or no signed action exists.
+pub(crate) async fn provenance_anchor_for(
+    state: &crate::state::AppState,
+    src: &str,
+) -> Option<String> {
+    #[cfg(feature = "dag")]
+    {
+        match crate::service::dag::history_by_subject(state, src, 1).await {
+            Ok(a) => a.first().filter(|x| x.signed).map(|x| x.hash.clone()),
+            Err(_) => None,
+        }
+    }
+    #[cfg(not(feature = "dag"))]
+    {
+        let _ = (state, src);
+        None
+    }
 }
 
 /// Strip the extension from the last path segment only. Input must already be
@@ -38,7 +74,10 @@ fn path_without_ext(path: &str) -> String {
         let stem = file.rsplit_once('.').map(|(s, _)| s).unwrap_or(file);
         format!("{dir}{stem}")
     } else {
-        path.rsplit_once('.').map(|(s, _)| s).unwrap_or(path).to_string()
+        path.rsplit_once('.')
+            .map(|(s, _)| s)
+            .unwrap_or(path)
+            .to_string()
     }
 }
 
@@ -89,7 +128,7 @@ mod tests {
     #[test]
     fn exact_path_match() {
         // "b/note.md" exists verbatim — must return it, not "a/note.md".
-        let notes = vec!["a/note.md".to_string(), "b/note.md".to_string()];
+        let notes = ["a/note.md".to_string(), "b/note.md".to_string()];
         let note_set: BTreeSet<&str> = notes.iter().map(|s| s.as_str()).collect();
         let mut by_base: BTreeMap<String, String> = BTreeMap::new();
         by_base.insert("note".to_string(), "a/note.md".to_string());
@@ -105,7 +144,7 @@ mod tests {
         // "[[b/note]]" (no extension) must resolve to "b/note.md", NOT "a/note.md".
         // by_base["note"] = "a/note.md" (first alphabetically — the collision
         // that previously caused the bug).
-        let notes = vec!["a/note.md".to_string(), "b/note.md".to_string()];
+        let notes = ["a/note.md".to_string(), "b/note.md".to_string()];
         let note_set: BTreeSet<&str> = notes.iter().map(|s| s.as_str()).collect();
         let mut by_base: BTreeMap<String, String> = BTreeMap::new();
         by_base.insert("note".to_string(), "a/note.md".to_string());
@@ -120,7 +159,7 @@ mod tests {
     #[test]
     fn bare_basename_unique_fallback() {
         // No path component → falls through to by_base.
-        let notes = vec!["dir/note.md".to_string()];
+        let notes = ["dir/note.md".to_string()];
         let note_set: BTreeSet<&str> = notes.iter().map(|s| s.as_str()).collect();
         let mut by_base: BTreeMap<String, String> = BTreeMap::new();
         by_base.insert("note".to_string(), "dir/note.md".to_string());

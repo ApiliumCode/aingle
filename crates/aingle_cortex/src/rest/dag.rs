@@ -177,7 +177,7 @@ pub struct CreateDagActionResponse {
 }
 
 fn default_limit() -> usize {
-    50
+    crate::service::dag::DEFAULT_HISTORY_LIMIT
 }
 
 // ============================================================================
@@ -212,14 +212,8 @@ pub async fn get_dag_history(
 
     // Triple-ID-based lookup uses the affected index
     if let Some(ref tid_hex) = query.triple_id {
-        let mut bytes = [0u8; 32];
-        if tid_hex.len() != 64 {
-            return Err(Error::InvalidInput("triple_id must be 64 hex chars".into()));
-        }
-        for i in 0..32 {
-            bytes[i] = u8::from_str_radix(&tid_hex[i * 2..i * 2 + 2], 16)
-                .map_err(|_| Error::InvalidInput("Invalid hex in triple_id".into()))?;
-        }
+        let bytes = parse_hex32(tid_hex)
+            .ok_or_else(|| Error::InvalidInput("triple_id must be 64 valid hex chars".into()))?;
 
         let actions = graph
             .dag_history(&bytes, query.limit)
@@ -297,16 +291,8 @@ pub async fn get_dag_verify(
     let action_hash = aingle_graph::dag::DagActionHash::from_hex(&hash)
         .ok_or_else(|| Error::InvalidInput(format!("Invalid hash: {}", hash)))?;
 
-    let mut pk_bytes = [0u8; 32];
-    if query.public_key.len() != 64 {
-        return Err(Error::InvalidInput(
-            "public_key must be 64 hex chars".into(),
-        ));
-    }
-    for i in 0..32 {
-        pk_bytes[i] = u8::from_str_radix(&query.public_key[i * 2..i * 2 + 2], 16)
-            .map_err(|_| Error::InvalidInput("Invalid hex in public_key".into()))?;
-    }
+    let pk_bytes = parse_hex32(&query.public_key)
+        .ok_or_else(|| Error::InvalidInput("public_key must be 64 valid hex chars".into()))?;
 
     let graph = state.graph.read().await;
     let action = graph
@@ -590,6 +576,10 @@ pub fn dag_router() -> Router<AppState> {
 // Helpers
 // ============================================================================
 
+/// Convert a raw [`DagAction`] to its serializable DTO form.
+///
+/// Extracts the payload type, a human-readable summary, and the content hash
+/// from the action's provenance (for `TripleInsert` and `Batch` payloads).
 pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionDto {
     let hash = action.compute_hash().to_hex();
     let parents: Vec<String> = action.parents.iter().map(|h| h.to_hex()).collect();
@@ -643,7 +633,11 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
                     None
                 }
             });
-            ("batch".to_string(), format!("{} ops", ops.len()), content_hash)
+            (
+                "batch".to_string(),
+                format!("{} ops", ops.len()),
+                content_hash,
+            )
         }
         aingle_graph::dag::DagPayload::Genesis {
             triple_count,
@@ -684,6 +678,20 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
         signed: action.signature.is_some(),
         content_hash,
     }
+}
+
+/// Parse a 64-character hex string into a 32-byte array.
+///
+/// Returns `None` if `hex` is not exactly 64 characters or contains non-hex digits.
+fn parse_hex32(hex: &str) -> Option<[u8; 32]> {
+    if hex.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
 }
 
 fn triple_value_to_json(v: &aingle_graph::Value) -> serde_json::Value {
@@ -803,7 +811,10 @@ mod tests {
 
         let dto = action_to_dto(&action);
 
-        assert_eq!(dto.content_hash, None, "Genesis actions have no content_hash");
+        assert_eq!(
+            dto.content_hash, None,
+            "Genesis actions have no content_hash"
+        );
     }
 
     #[test]

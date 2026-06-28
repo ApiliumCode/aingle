@@ -7,7 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::service::triple_util::{obj_string, resolve_link_target};
+use crate::service::triple_util::{
+    basename, obj_string, provenance_anchor_for, resolve_link_target, strip_brackets,
+};
 
 /// The semantic context for one note — the semantically related notes, even
 /// when never explicitly linked.
@@ -53,37 +55,13 @@ const SEMANTIC_MIN_DIMS: usize = 128;
 pub const NEIGHBOR_FLOOR: f32 = 0.88;
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Retrieve a signed provenance anchor hash for a note path, if available.
-async fn provenance_anchor_for(state: &crate::state::AppState, src: &str) -> Option<String> {
-    #[cfg(feature = "dag")]
-    {
-        match crate::service::dag::history_by_subject(state, src, 1).await {
-            Ok(a) => a.first().filter(|x| x.signed).map(|x| x.hash.clone()),
-            Err(_) => None,
-        }
-    }
-    #[cfg(not(feature = "dag"))]
-    {
-        let _ = (state, src);
-        None
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Core retrieval
 // ---------------------------------------------------------------------------
 
 /// Compute the semantic neighbors of `note` — up to `limit` related notes,
 /// ranked by embedding cosine similarity, each with a matching passage and
 /// optional signed provenance anchor.
-pub async fn note_context(
-    state: &crate::state::AppState,
-    note: &str,
-    limit: usize,
-) -> NoteContext {
+pub async fn note_context(state: &crate::state::AppState, note: &str, limit: usize) -> NoteContext {
     use aingle_graph::{Predicate, TriplePattern};
     use ineru::MemoryQuery;
 
@@ -97,9 +75,6 @@ pub async fn note_context(
 
     // 2. Build the note set (subjects of PRED_SOURCE_HASH) + basename index,
     //    and collect all links_to triples.
-    let strip =
-        |n: String| n.trim_start_matches('<').trim_end_matches('>').to_string();
-
     let (notes, links): (Vec<String>, Vec<(String, String)>) = {
         let g = state.graph.read().await;
         let collect = |pred: &str| -> Vec<(String, String)> {
@@ -107,7 +82,7 @@ pub async fn note_context(
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|t| {
-                    obj_string(&t).map(|o| (strip(t.subject.to_string()), o))
+                    obj_string(&t).map(|o| (strip_brackets(&t.subject.to_string()).to_string(), o))
                 })
                 .collect()
         };
@@ -126,14 +101,11 @@ pub async fn note_context(
     // basename → first full path (for wikilink resolution).
     let mut by_base: BTreeMap<String, String> = BTreeMap::new();
     for n in &notes {
-        by_base
-            .entry(crate::service::vault_map::basename(n))
-            .or_insert_with(|| n.clone());
+        by_base.entry(basename(n)).or_insert_with(|| n.clone());
     }
 
-    let resolve = |target: &str| -> Option<String> {
-        resolve_link_target(target, &note_set, &by_base)
-    };
+    let resolve =
+        |target: &str| -> Option<String> { resolve_link_target(target, &note_set, &by_base) };
 
     // 3. Compute `outgoing_set`: full paths that the active `note` links to.
     let outgoing_set: BTreeSet<String> = links
@@ -167,7 +139,7 @@ pub async fn note_context(
     }
 
     let query_text: String = if own_text.trim().is_empty() {
-        crate::service::vault_map::basename(note)
+        basename(note)
     } else {
         own_text.clone()
     };
@@ -384,12 +356,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn stub_state() -> AppState {
-        AppState::with_db_path_and_embedder(
-            ":memory:",
-            None,
-            Arc::new(StubEmbedder),
-        )
-        .unwrap()
+        AppState::with_db_path_and_embedder(":memory:", None, Arc::new(StubEmbedder)).unwrap()
     }
 
     async fn insert_triples(state: &AppState, triples: &[(&str, &str, &str)]) {
@@ -423,7 +390,10 @@ mod tests {
     async fn hash_grade_embedder_short_circuits() {
         let state = AppState::with_db_path(":memory:", None).unwrap();
         let ctx = super::note_context(&state, "active.md", 5).await;
-        assert!(!ctx.semantic_ready, "64-d hash embedder must not be semantic_ready");
+        assert!(
+            !ctx.semantic_ready,
+            "64-d hash embedder must not be semantic_ready"
+        );
         assert!(ctx.neighbors.is_empty());
     }
 
@@ -444,22 +414,16 @@ mod tests {
         .await;
 
         // Active note's own chunk (alpha text → e0 query vector).
-        let e0 = vec![1.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let e0 = vec![
+            1.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
         let e1 = {
             let mut v = vec![0.0_f32; 128];
             v[1] = 1.0;
@@ -595,7 +559,13 @@ mod tests {
             v
         };
         insert_chunk(&state, "active.md", "alpha active", e0.clone()).await;
-        insert_chunk(&state, "_maps/vault-map.md", "alpha maps content", e0.clone()).await;
+        insert_chunk(
+            &state,
+            "_maps/vault-map.md",
+            "alpha maps content",
+            e0.clone(),
+        )
+        .await;
 
         let ctx = super::note_context(&state, "active.md", 10).await;
         assert!(ctx.semantic_ready);
@@ -647,12 +617,8 @@ mod tests {
     #[cfg(feature = "dag")]
     #[tokio::test]
     async fn provenance_present_when_signed() {
-        let state = AppState::with_db_path_and_embedder(
-            ":memory:",
-            None,
-            Arc::new(StubEmbedder),
-        )
-        .unwrap();
+        let state =
+            AppState::with_db_path_and_embedder(":memory:", None, Arc::new(StubEmbedder)).unwrap();
         {
             let mut graph = state.graph.write().await;
             graph.enable_dag();
@@ -697,7 +663,9 @@ mod tests {
             };
             let key = aingle_graph::dag::DagSigningKey::generate();
             key.sign(&mut action);
-            dag_store.put(&action).expect("put signed action must succeed");
+            dag_store
+                .put(&action)
+                .expect("put signed action must succeed");
         }
 
         let ctx = super::note_context(&state, "active.md", 10).await;
@@ -706,11 +674,7 @@ mod tests {
             "alpha.md must be a semantic neighbor with dag feature: {:?}",
             ctx.neighbors
         );
-        let n = ctx
-            .neighbors
-            .iter()
-            .find(|n| n.path == "alpha.md")
-            .unwrap();
+        let n = ctx.neighbors.iter().find(|n| n.path == "alpha.md").unwrap();
         assert!(
             n.provenance_anchor.is_some(),
             "provenance_anchor must be Some when a signed DAG action is recorded for the source: {:?}",
@@ -759,8 +723,7 @@ mod tests {
             "cache hit: neighbor count must be identical"
         );
         assert_eq!(
-            ctx1.neighbors[0].path,
-            ctx2.neighbors[0].path,
+            ctx1.neighbors[0].path, ctx2.neighbors[0].path,
             "cache hit: top neighbor must be identical"
         );
 
@@ -789,7 +752,13 @@ mod tests {
             for i in 0..257usize {
                 cache.insert(
                     (format!("dummy_{i}.md"), 0usize),
-                    ((0, 0), super::NoteContext { semantic_ready: false, neighbors: vec![] }),
+                    (
+                        (0, 0),
+                        super::NoteContext {
+                            semantic_ready: false,
+                            neighbors: vec![],
+                        },
+                    ),
                 );
             }
         }
@@ -878,7 +847,9 @@ mod tests {
             .join("onnx/model.onnx")
             .exists()
         {
-            eprintln!("skipping neural_note_context_finds_same_topic: e5 model not found at {model_dir}");
+            eprintln!(
+                "skipping neural_note_context_finds_same_topic: e5 model not found at {model_dir}"
+            );
             return;
         }
 
@@ -889,8 +860,7 @@ mod tests {
             "neural embedder must be active (384d)"
         );
 
-        let state =
-            AppState::with_db_path_and_embedder(":memory:", None, embedder).unwrap();
+        let state = AppState::with_db_path_and_embedder(":memory:", None, embedder).unwrap();
         {
             let mut graph = state.graph.write().await;
             graph.enable_dag();

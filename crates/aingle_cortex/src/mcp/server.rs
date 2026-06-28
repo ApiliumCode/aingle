@@ -23,7 +23,7 @@ pub struct DagHistoryParams {
 
 #[cfg(feature = "dag")]
 fn default_hist_limit() -> usize {
-    50
+    crate::service::dag::DEFAULT_HISTORY_LIMIT
 }
 
 /// Parameters for the `aingle_dag_action` tool.
@@ -703,7 +703,14 @@ mod ingest_tools_tests {
             .into_iter()
             .map(|t| t.name.to_string())
             .collect();
-        for expected in ["aingle_ingest", "aingle_ground", "aingle_sources", "aingle_vault_map", "aingle_backlinks", "aingle_note_context"] {
+        for expected in [
+            "aingle_ingest",
+            "aingle_ground",
+            "aingle_sources",
+            "aingle_vault_map",
+            "aingle_backlinks",
+            "aingle_note_context",
+        ] {
             assert!(
                 names.contains(&expected.to_string()),
                 "missing tool {expected}"

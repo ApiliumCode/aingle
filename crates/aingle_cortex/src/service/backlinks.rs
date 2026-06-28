@@ -8,7 +8,9 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-use crate::service::triple_util::{obj_string, resolve_link_target};
+use crate::service::triple_util::{
+    basename, obj_string, provenance_anchor_for, resolve_link_target, strip_brackets,
+};
 
 /// Verified link context for one note.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -24,12 +26,6 @@ pub struct BacklinkRef {
     pub path: String,
     pub context: Option<String>,
     pub provenance_anchor: Option<String>,
-}
-
-/// Basename without directory or extension (wikilink resolution + titles).
-fn basename(path: &str) -> String {
-    let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    file.rsplit_once('.').map(|(s, _)| s).unwrap_or(file).to_string()
 }
 
 /// True if `text` contains `word` (case-insensitive) as a whole token — bounded
@@ -59,27 +55,9 @@ fn mentions_word(text: &str, word: &str) -> bool {
     false
 }
 
-/// Retrieve a signed provenance anchor hash for a note path, if available.
-async fn provenance_anchor_for(state: &crate::state::AppState, src: &str) -> Option<String> {
-    #[cfg(feature = "dag")]
-    {
-        match crate::service::dag::history_by_subject(state, src, 1).await {
-            Ok(a) => a.first().filter(|x| x.signed).map(|x| x.hash.clone()),
-            Err(_) => None,
-        }
-    }
-    #[cfg(not(feature = "dag"))]
-    {
-        let _ = (state, src);
-        None
-    }
-}
-
 /// Compute backlinks, outgoing links, and unlinked mentions for `note`.
 pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks {
     use aingle_graph::{Predicate, TriplePattern};
-
-    let strip = |n: String| n.trim_start_matches('<').trim_end_matches('>').to_string();
 
     // Note set + basename index.
     let (notes, links): (Vec<String>, Vec<(String, String)>) = {
@@ -89,7 +67,7 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|t| {
-                    obj_string(&t).map(|o| (strip(t.subject.to_string()), o))
+                    obj_string(&t).map(|o| (strip_brackets(&t.subject.to_string()).to_string(), o))
                 })
                 .collect()
         };
@@ -108,9 +86,8 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
     for n in &notes {
         by_base.entry(basename(n)).or_insert_with(|| n.clone());
     }
-    let resolve = |target: &str| -> Option<String> {
-        resolve_link_target(target, &note_set, &by_base)
-    };
+    let resolve =
+        |target: &str| -> Option<String> { resolve_link_target(target, &note_set, &by_base) };
     let active_base = basename(note);
     let active_base_lc = active_base.to_lowercase();
 
@@ -145,10 +122,7 @@ pub async fn backlinks(state: &crate::state::AppState, note: &str) -> Backlinks 
         if resolve(target).as_deref() == Some(note) && backlink_paths.insert(src.clone()) {
             let context = text_of.get(src).and_then(|txt| {
                 txt.lines()
-                    .find(|l| {
-                        l.contains("[[")
-                            && l.to_lowercase().contains(&active_base_lc)
-                    })
+                    .find(|l| l.contains("[[") && l.to_lowercase().contains(&active_base_lc))
                     .map(|l| {
                         let t = l.trim();
                         if t.chars().count() > 200 {
@@ -210,8 +184,12 @@ mod tests {
         {
             let g = state.graph.write().await;
             for (s, p, o) in triples {
-                g.insert(Triple::new(NodeId::named(*s), Predicate::named(*p), Value::literal(*o)))
-                    .unwrap();
+                g.insert(Triple::new(
+                    NodeId::named(*s),
+                    Predicate::named(*p),
+                    Value::literal(*o),
+                ))
+                .unwrap();
             }
         }
         state
@@ -224,8 +202,8 @@ mod tests {
             ("b.md", "aingle:source_hash", "h2"),
             ("c.md", "aingle:source_hash", "h3"),
             ("target.md", "aingle:source_hash", "h4"),
-            ("a.md", "links_to", "target"),  // a → target (backlink)
-            ("target.md", "links_to", "b"),  // target → b (outgoing)
+            ("a.md", "links_to", "target"), // a → target (backlink)
+            ("target.md", "links_to", "b"), // target → b (outgoing)
         ])
         .await;
         // c.md mentions "target" in text but does not link it (unlinked).
@@ -240,10 +218,22 @@ mod tests {
         }
 
         let r = super::backlinks(&state, "target.md").await;
-        assert!(r.backlinks.iter().any(|b| b.path == "a.md"), "a links to target");
-        assert!(r.outgoing.contains(&"b.md".to_string()), "target links to b");
-        assert!(r.unlinked.contains(&"c.md".to_string()), "c mentions target unlinked");
-        assert!(!r.unlinked.contains(&"a.md".to_string()), "a is a backlink, not unlinked");
+        assert!(
+            r.backlinks.iter().any(|b| b.path == "a.md"),
+            "a links to target"
+        );
+        assert!(
+            r.outgoing.contains(&"b.md".to_string()),
+            "target links to b"
+        );
+        assert!(
+            r.unlinked.contains(&"c.md".to_string()),
+            "c mentions target unlinked"
+        );
+        assert!(
+            !r.unlinked.contains(&"a.md".to_string()),
+            "a is a backlink, not unlinked"
+        );
     }
 
     #[tokio::test]
@@ -284,9 +274,16 @@ mod tests {
         let state = crate::state::AppState::with_db_path(":memory:", None).unwrap();
         {
             let g = state.graph.write().await;
-            for (s, p) in [("a.md", "aingle:source_hash"), ("hub.md", "aingle:source_hash")] {
-                g.insert(Triple::new(NodeId::named(s), Predicate::named(p), Value::literal("h")))
-                    .unwrap();
+            for (s, p) in [
+                ("a.md", "aingle:source_hash"),
+                ("hub.md", "aingle:source_hash"),
+            ] {
+                g.insert(Triple::new(
+                    NodeId::named(s),
+                    Predicate::named(p),
+                    Value::literal("h"),
+                ))
+                .unwrap();
             }
             // links_to stored as a NODE object — how real ingest produces it.
             g.insert(Triple::new(
@@ -329,7 +326,11 @@ mod tests {
         }
         // Must not panic; context should be present and ≤ 201 chars (200 + ellipsis).
         let r = super::backlinks(&state, "t.md").await;
-        let b = r.backlinks.iter().find(|b| b.path == "src.md").expect("backlink");
+        let b = r
+            .backlinks
+            .iter()
+            .find(|b| b.path == "src.md")
+            .expect("backlink");
         let ctx = b.context.as_ref().expect("context");
         assert!(ctx.chars().count() <= 201);
     }
