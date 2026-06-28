@@ -104,6 +104,13 @@ const GRAPH_NODE_CAP: usize = 600;
 /// happens inside `compute_vault_map` before truncation).
 const SEMANTIC_EDGE_CAP: usize = 1200;
 
+/// Maximum semantic neighbors each node may contribute via its own top-K ranking.
+/// The final edge set is the UNION of all per-node top-K choices (so a strongly
+/// similar pair survives even if only one endpoint nominated the other). This bounds
+/// the edge count to roughly `N × SEMANTIC_EDGES_PER_NODE` instead of `O(N²)`,
+/// preventing hairballs in themed vaults where most notes are mutually similar.
+const SEMANTIC_EDGES_PER_NODE: usize = 3;
+
 /// Tags (case-insensitive) that mark a note as a reusable skill/process.
 const SKILL_TAGS: [&str; 6] = ["skill", "process", "sop", "workflow", "how-to", "howto"];
 
@@ -215,6 +222,41 @@ pub(crate) fn derive_structural(graph: &aingle_graph::GraphDB) -> Structural {
         type_counts,
         link_count,
     }
+}
+
+/// From a sorted-descending list of `(a, b, cosine)` pairs (with `a ≤ b` and no
+/// duplicates), return the canonical `(String, String) → cosine` map for the
+/// top-`k` semantic neighbors of every node (union semantics: a pair is kept if
+/// EITHER endpoint ranked the other in its top-`k`).
+///
+/// Because the input is sorted desc by cosine and we iterate in that order, each
+/// per-node accumulator is also sorted desc — so `take(k)` yields the top-k without
+/// an additional per-node sort.
+fn top_k_semantic_pairs<'a>(
+    candidates: &'a [(String, String, f32)],
+    k: usize,
+) -> BTreeMap<(String, String), f32> {
+    // Accumulate per-node (partner, cosine) lists in global cosine-desc order.
+    let mut per_node: BTreeMap<&'a str, Vec<(&'a str, f32)>> = BTreeMap::new();
+    for (a, b, c) in candidates {
+        per_node.entry(a.as_str()).or_default().push((b.as_str(), *c));
+        per_node.entry(b.as_str()).or_default().push((a.as_str(), *c));
+    }
+    // Union: an ordered pair (min, max) is kept if EITHER endpoint selects the other.
+    let mut chosen: BTreeMap<(String, String), f32> = BTreeMap::new();
+    for (node, partners) in &per_node {
+        for (partner, c) in partners.iter().take(k) {
+            let key = if *node <= *partner {
+                (node.to_string(), partner.to_string())
+            } else {
+                (partner.to_string(), node.to_string())
+            };
+            // `or_insert`: the first insertion for any pair holds the correct cosine
+            // because we iterate globally in desc order (highest cosine first).
+            chosen.entry(key).or_insert(*c);
+        }
+    }
+    chosen
 }
 
 /// Cosine similarity between two raw vectors (same length).
@@ -511,13 +553,16 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
         .map(|(a, b)| GraphEdge { source: a.clone(), target: b.clone(), kind: "link".into() })
         .collect();
 
-    // Semantic edges from the clustering pass — no new O(n²) scan; cosines were
-    // already captured in `raw_sem_pairs`. Rules:
+    // Semantic edges — per-node top-K selection with union semantics.
+    // Replaces the old "every pair ≥ threshold" approach that produced hairballs
+    // on themed vaults. Each node contributes at most SEMANTIC_EDGES_PER_NODE edges
+    // from its own ranking; the final set is the UNION of all per-node choices so
+    // no node becomes isolated. Total edges ≈ N × K instead of O(N²).
+    //
+    // Rules (unchanged):
     //  1. Both endpoints must be in the rendered node set (`kept`).
-    //  2. Skip pairs that already have an explicit link (order-insensitive).
-    //  3. Deduplicate order-insensitively (BTreeMap keys are sorted so i<j gives
-    //     a < b already, but we normalise defensively).
-    //  4. Keep the highest-cosine pairs up to SEMANTIC_EDGE_CAP.
+    //  2. Skip pairs already covered by an explicit wikilink edge (order-insensitive).
+    //  3. Keep the highest-cosine chosen pairs up to SEMANTIC_EDGE_CAP.
     {
         // Canonical (min, max) keys for dedup against existing link edges.
         let link_pair_set: std::collections::BTreeSet<(String, String)> = s
@@ -537,18 +582,22 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
         candidates
             .sort_by(|x, y| y.2.partial_cmp(&x.2).unwrap_or(std::cmp::Ordering::Equal));
 
-        let mut seen: std::collections::BTreeSet<(String, String)> =
-            std::collections::BTreeSet::new();
+        // Per-node top-K with union semantics → O(N·K) edges instead of O(N²).
+        let chosen = top_k_semantic_pairs(&candidates, SEMANTIC_EDGES_PER_NODE);
+
+        // Sort by cosine desc so SEMANTIC_EDGE_CAP retains the highest-quality edges.
+        let mut chosen_sorted: Vec<((String, String), f32)> = chosen.into_iter().collect();
+        chosen_sorted
+            .sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
+
         let mut sem_count = 0usize;
-        for (a, b, _c) in candidates {
+        for ((a, b), _c) in chosen_sorted {
             if sem_count >= SEMANTIC_EDGE_CAP {
                 break;
             }
-            let key = (a.clone(), b.clone());
-            if link_pair_set.contains(&key) || seen.contains(&key) {
+            if link_pair_set.contains(&(a.clone(), b.clone())) {
                 continue;
             }
-            seen.insert(key);
             edges.push(GraphEdge { source: a, target: b, kind: "semantic".into() });
             sem_count += 1;
         }
@@ -959,6 +1008,112 @@ mod tests {
             node_b.timestamp,
             None,
             "node without a created triple must have timestamp=None"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // Per-node top-K semantic edges (hairball reduction)
+    // -----------------------------------------------------------------
+
+    /// `top_k_semantic_pairs` selects per-node top-k and applies union semantics.
+    #[test]
+    fn top_k_semantic_pairs_selects_union() {
+        // 3 pairs sorted desc by cosine:
+        //   a picks b (0.99, its highest)
+        //   b picks a (0.99, its highest)
+        //   c picks a (0.95 > 0.91, so c's top-1 is a, NOT b)
+        // With k=1: union = {(a,b),(a,c)}.  (b,c) absent — neither b nor c picks
+        // the other as its top-1.
+        let pairs = vec![
+            ("a.md".to_string(), "b.md".to_string(), 0.99_f32),
+            ("a.md".to_string(), "c.md".to_string(), 0.95_f32),
+            ("b.md".to_string(), "c.md".to_string(), 0.91_f32),
+        ];
+        let chosen = super::top_k_semantic_pairs(&pairs, 1);
+        assert!(
+            chosen.contains_key(&("a.md".to_string(), "b.md".to_string())),
+            "a-b must be chosen (a's and b's top-1)"
+        );
+        assert!(
+            chosen.contains_key(&("a.md".to_string(), "c.md".to_string())),
+            "a-c must be chosen (c's top-1 is a)"
+        );
+        assert!(
+            !chosen.contains_key(&("b.md".to_string(), "c.md".to_string())),
+            "b-c must be absent: neither b nor c ranks the other as top-1"
+        );
+        assert_eq!(chosen.len(), 2, "exactly 2 pairs with k=1");
+    }
+
+    /// Per-node top-K reduces a fully-similar 5-note graph from C(5,2)=10 edges
+    /// to 9, pruning the (n3.md, n4.md) pair that neither endpoint selects in its
+    /// top-SEMANTIC_EDGES_PER_NODE.
+    #[tokio::test]
+    async fn per_node_top_k_reduces_hairball() {
+        use ineru::{Embedding, MemoryEntry};
+
+        // 5 notes, all with identical embeddings → every pair has cosine 1.0 ≥ threshold.
+        // Old code emits all C(5,2)=10 pairs. New per-node top-3 union emits 9:
+        //   hub picks n1,n2,n3 (its first 3 in sort order);
+        //   n4 picks hub,n1,n2 → (n3,n4) selected by neither endpoint.
+        let state = graph_with(&[
+            ("hub.md", "aingle:source_hash", "h0"),
+            ("n1.md", "aingle:source_hash", "h1"),
+            ("n2.md", "aingle:source_hash", "h2"),
+            ("n3.md", "aingle:source_hash", "h3"),
+            ("n4.md", "aingle:source_hash", "h4"),
+        ])
+        .await;
+        {
+            let mut mem = state.memory.write().await;
+            for path in ["hub.md", "n1.md", "n2.md", "n3.md", "n4.md"] {
+                let mut e = MemoryEntry::new(
+                    crate::service::ingest::CHUNK_ENTRY_TYPE,
+                    serde_json::json!({ "text": "content", "source_path": path }),
+                );
+                e.embedding = Some(Embedding::new(vec![1.0_f32, 0.0, 0.0]));
+                mem.remember(e).unwrap();
+            }
+        }
+
+        let map = super::compute_vault_map(&state).await;
+        let sem_edges: Vec<_> =
+            map.graph.edges.iter().filter(|e| e.kind == "semantic").collect();
+
+        // (a) Clearly-strongest pair is connected.
+        assert!(
+            sem_edges.iter().any(|e| {
+                (e.source == "hub.md" && e.target == "n1.md")
+                    || (e.source == "n1.md" && e.target == "hub.md")
+            }),
+            "hub.md-n1.md must be a semantic edge (strongest pair): {:?}",
+            sem_edges
+        );
+
+        // (b) (n3.md, n4.md) is absent: neither endpoint ranks the other in its top-3.
+        assert!(
+            !sem_edges.iter().any(|e| {
+                (e.source == "n3.md" && e.target == "n4.md")
+                    || (e.source == "n4.md" && e.target == "n3.md")
+            }),
+            "n3.md-n4.md must be pruned by per-node top-K: {:?}",
+            sem_edges
+        );
+
+        // (c) Total semantic edges are reduced below the old O(n²) full-mesh count.
+        assert!(
+            sem_edges.len() < 10,
+            "per-node top-K must reduce edges below C(5,2)=10, got {}: {:?}",
+            sem_edges.len(),
+            sem_edges
+        );
+
+        // (d) Exact deterministic count for this naming + identical-vector combination.
+        assert_eq!(
+            sem_edges.len(),
+            9,
+            "expected exactly 9 semantic edges with per-node top-3 union: {:?}",
+            sem_edges
         );
     }
 
