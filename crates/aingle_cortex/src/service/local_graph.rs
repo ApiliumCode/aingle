@@ -40,6 +40,9 @@ pub struct GNode {
     pub cluster: i64,
     /// Number of edges in THIS graph touching this node.
     pub degree: usize,
+    /// Creation date sourced from the note's `created` frontmatter scalar (e.g. `"2025-09-14"`).
+    /// `None` when the note has no `created` triple.
+    pub timestamp: Option<String>,
 }
 
 /// A typed, optionally weighted edge in the local neighborhood graph.
@@ -96,7 +99,7 @@ pub async fn local_graph(
     // links_raw: (subject, object-string) for every links_to triple
     // tagged_raw: (subject, tag) for every tagged triple
     type PairVec = Vec<(String, String)>;
-    let (notes, links_raw, tagged_raw): (Vec<String>, PairVec, PairVec) = {
+    let (notes, links_raw, tagged_raw, created_map): (Vec<String>, PairVec, PairVec, BTreeMap<String, String>) = {
         let g = state.graph.read().await;
         let collect = |pred: &str| -> PairVec {
             g.find(TriplePattern::any().with_predicate(Predicate::named(pred)))
@@ -115,7 +118,12 @@ pub async fn local_graph(
         ns.dedup();
         let lnks = collect("links_to");
         let tags = collect("tagged");
-        (ns, lnks, tags)
+        // Build created-date map: note_path → date. "date" as fallback, "created" takes precedence.
+        let mut cmap: BTreeMap<String, String> = collect("date").into_iter().collect();
+        for (k, v) in collect("created") {
+            cmap.insert(k, v);
+        }
+        (ns, lnks, tags, cmap)
     };
 
     let note_set: BTreeSet<&str> = notes.iter().map(|s| s.as_str()).collect();
@@ -413,6 +421,7 @@ pub async fn local_graph(
                 kind,
                 cluster: -1,
                 degree,
+                timestamp: created_map.get(id).cloned(),
             }
         })
         .collect();
@@ -968,6 +977,37 @@ mod tests {
         );
     }
 
+
+    // -----------------------------------------------------------------------
+    // timestamp field: created triple → GNode.timestamp
+    // -----------------------------------------------------------------------
+
+    /// A `created` triple for a note must surface its value in `GNode.timestamp`.
+    /// A note without a `created` triple must have `GNode.timestamp == None`.
+    #[tokio::test]
+    async fn gnode_timestamp_from_created_triple() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        register_note(&state, "a.md").await;
+        register_note(&state, "b.md").await;
+        insert_triple_node(&state, "a.md", "links_to", "b").await;
+        insert_triple_lit(&state, "a.md", "created", "2025-03-15").await;
+
+        let g = super::local_graph(&state, "a.md", 1).await;
+        let node_a = g.nodes.iter().find(|n| n.id == "a.md")
+            .expect("a.md must be in graph");
+        assert_eq!(
+            node_a.timestamp,
+            Some("2025-03-15".to_string()),
+            "GNode.timestamp must come from the created triple"
+        );
+        let node_b = g.nodes.iter().find(|n| n.id == "b.md")
+            .expect("b.md must be in graph");
+        assert_eq!(
+            node_b.timestamp,
+            None,
+            "GNode without created triple must have timestamp=None"
+        );
+    }
 
     // -----------------------------------------------------------------------
     // 14. frontier_cap_bounds_semantic (optional perf guard)

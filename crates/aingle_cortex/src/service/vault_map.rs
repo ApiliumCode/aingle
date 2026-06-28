@@ -82,6 +82,9 @@ pub struct GraphNode {
     pub label: String,
     pub cluster: i64,
     pub degree: usize,
+    /// Creation date sourced from the note's `created` frontmatter scalar (e.g. `"2025-09-14"`).
+    /// `None` when the note has no `created` triple.
+    pub timestamp: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -446,6 +449,30 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
         }
     }
 
+    // Build created-date map: note_path → date string, from "created" triples.
+    // Falls back to "date" when "created" is absent for a given note.
+    let created: BTreeMap<String, String> = {
+        use aingle_graph::{Predicate, TriplePattern};
+        let g = state.graph.read().await;
+        let strip = |n: String| n.trim_start_matches('<').trim_end_matches('>').to_string();
+        let collect_pred = |pred: &str| -> BTreeMap<String, String> {
+            g.find(TriplePattern::any().with_predicate(Predicate::named(pred)))
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|t| {
+                    let subj = strip(t.subject.to_string());
+                    obj_string(&t).map(|o| (subj, o))
+                })
+                .collect()
+        };
+        let mut map = collect_pred("date");
+        // "created" takes precedence: overwrite any "date" entry.
+        for (k, v) in collect_pred("created") {
+            map.insert(k, v);
+        }
+        map
+    };
+
     // GraphView (cap by degree).
     let mut ranked: Vec<&String> = s.notes.iter().collect();
     ranked.sort_by(|a, b| {
@@ -473,6 +500,7 @@ pub async fn compute_vault_map(state: &crate::state::AppState) -> VaultMap {
             cluster: cluster_of.get(p).copied().unwrap_or(-1),
             degree: s.in_deg.get(p).copied().unwrap_or(0)
                 + s.out_deg.get(p).copied().unwrap_or(0),
+            timestamp: created.get(p).cloned(),
         })
         .collect();
     // Link edges (explicit wikilinks), typed "link".
@@ -899,6 +927,38 @@ mod tests {
             "link",
             "the single edge must have kind='link', not 'semantic': {:?}",
             edges_ab[0]
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // Timestamp field: created triple → GraphNode.timestamp
+    // -----------------------------------------------------------------
+
+    /// A note with a `created` triple must surface its date in `GraphNode.timestamp`.
+    /// A note without a `created` triple must have `timestamp == None`.
+    #[tokio::test]
+    async fn graph_node_timestamp_from_created_triple() {
+        let state = graph_with(&[
+            ("a.md", "aingle:source_hash", "h1"),
+            ("b.md", "aingle:source_hash", "h2"),
+            ("a.md", "created", "2025-01-02"),
+        ])
+        .await;
+
+        let map = super::compute_vault_map(&state).await;
+        let node_a = map.graph.nodes.iter().find(|n| n.id == "a.md")
+            .expect("a.md must be in graph");
+        assert_eq!(
+            node_a.timestamp,
+            Some("2025-01-02".to_string()),
+            "timestamp must be populated from the created triple"
+        );
+        let node_b = map.graph.nodes.iter().find(|n| n.id == "b.md")
+            .expect("b.md must be in graph");
+        assert_eq!(
+            node_b.timestamp,
+            None,
+            "node without a created triple must have timestamp=None"
         );
     }
 
