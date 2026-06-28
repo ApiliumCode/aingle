@@ -42,6 +42,10 @@ pub struct DagActionDto {
     pub payload_type: String,
     pub payload_summary: String,
     pub signed: bool,
+    /// Blake3 hex content hash of the source file, if present in the action's
+    /// provenance. Extracted from the first provenanced triple in a
+    /// `TripleInsert` (or the first `TripleInsert` inside a `Batch`).
+    pub content_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -590,7 +594,7 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
     let hash = action.compute_hash().to_hex();
     let parents: Vec<String> = action.parents.iter().map(|h| h.to_hex()).collect();
 
-    let (payload_type, payload_summary) = match &action.payload {
+    let (payload_type, payload_summary, content_hash) = match &action.payload {
         aingle_graph::dag::DagPayload::TripleInsert { triples } => {
             let summary = if triples.len() == 1 {
                 let t = &triples[0];
@@ -598,7 +602,12 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
             } else {
                 format!("{} triple(s)", triples.len())
             };
-            ("triple:create".to_string(), summary)
+            // Extract content_hash from the first triple that carries provenance.
+            // All triples from a single file ingest share the same content_hash.
+            let content_hash = triples
+                .iter()
+                .find_map(|t| t.provenance.as_ref().map(|p| p.content_hash.clone()));
+            ("triple:create".to_string(), summary, content_hash)
         }
         aingle_graph::dag::DagPayload::TripleDelete {
             triple_ids,
@@ -609,7 +618,7 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
             } else {
                 format!("{} triple(s)", triple_ids.len())
             };
-            ("triple:delete".to_string(), summary)
+            ("triple:delete".to_string(), summary, None)
         }
         aingle_graph::dag::DagPayload::MemoryOp { kind } => {
             let summary = match kind {
@@ -621,10 +630,20 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
                 }
                 aingle_graph::dag::MemoryOpKind::Consolidate => "Consolidate".to_string(),
             };
-            ("memory:op".to_string(), summary)
+            ("memory:op".to_string(), summary, None)
         }
         aingle_graph::dag::DagPayload::Batch { ops } => {
-            ("batch".to_string(), format!("{} ops", ops.len()))
+            // Search the ops for the first TripleInsert that has a provenanced triple.
+            let content_hash = ops.iter().find_map(|op| {
+                if let aingle_graph::dag::DagPayload::TripleInsert { triples } = op {
+                    triples
+                        .iter()
+                        .find_map(|t| t.provenance.as_ref().map(|p| p.content_hash.clone()))
+                } else {
+                    None
+                }
+            });
+            ("batch".to_string(), format!("{} ops", ops.len()), content_hash)
         }
         aingle_graph::dag::DagPayload::Genesis {
             triple_count,
@@ -632,6 +651,7 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
         } => (
             "genesis".to_string(),
             format!("{} triples: {}", triple_count, description),
+            None,
         ),
         aingle_graph::dag::DagPayload::Compact {
             pruned_count,
@@ -643,13 +663,14 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
                 "pruned {} / retained {} ({})",
                 pruned_count, retained_count, policy
             ),
+            None,
         ),
-        aingle_graph::dag::DagPayload::Noop => ("noop".to_string(), String::new()),
+        aingle_graph::dag::DagPayload::Noop => ("noop".to_string(), String::new(), None),
         aingle_graph::dag::DagPayload::Custom {
             payload_type,
             payload_summary,
             ..
-        } => (payload_type.clone(), payload_summary.clone()),
+        } => (payload_type.clone(), payload_summary.clone(), None),
     };
 
     DagActionDto {
@@ -661,6 +682,7 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
         payload_type,
         payload_summary,
         signed: action.signature.is_some(),
+        content_hash,
     }
 }
 
@@ -675,5 +697,121 @@ fn triple_value_to_json(v: &aingle_graph::Value) -> serde_json::Value {
         aingle_graph::Value::DateTime(dt) => serde_json::Value::String(dt.clone()),
         aingle_graph::Value::Null => serde_json::Value::Null,
         _ => serde_json::Value::String(format!("{:?}", v)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aingle_graph::dag::{DagAction, DagPayload, Provenance, TripleInsertPayload};
+    use aingle_graph::NodeId;
+    use chrono::Utc;
+
+    fn test_action(payload: DagPayload) -> DagAction {
+        DagAction {
+            parents: vec![],
+            author: NodeId::named("node:test"),
+            seq: 0,
+            timestamp: Utc::now(),
+            payload,
+            signature: None,
+        }
+    }
+
+    #[test]
+    fn action_to_dto_extracts_content_hash_from_triple_insert() {
+        let provenance = Provenance {
+            source_path: "vault/note.md".into(),
+            line_start: 1,
+            line_end: 3,
+            content_hash: "deadbeef".into(),
+        };
+        let action = test_action(DagPayload::TripleInsert {
+            triples: vec![TripleInsertPayload {
+                subject: "akashi://note".into(),
+                predicate: "akashi:title".into(),
+                object: serde_json::json!("Test Note"),
+                provenance: Some(provenance),
+            }],
+        });
+
+        let dto = action_to_dto(&action);
+
+        assert_eq!(
+            dto.content_hash,
+            Some("deadbeef".into()),
+            "content_hash must be extracted from TripleInsert provenance"
+        );
+    }
+
+    #[test]
+    fn action_to_dto_extracts_content_hash_from_batch_with_triple_insert() {
+        let provenance = Provenance {
+            source_path: "vault/doc.md".into(),
+            line_start: 5,
+            line_end: 10,
+            content_hash: "cafebabe".into(),
+        };
+        let action = test_action(DagPayload::Batch {
+            ops: vec![
+                DagPayload::TripleInsert {
+                    triples: vec![TripleInsertPayload {
+                        subject: "akashi://doc".into(),
+                        predicate: "akashi:body".into(),
+                        object: serde_json::json!("content"),
+                        provenance: Some(provenance),
+                    }],
+                },
+                DagPayload::Noop,
+            ],
+        });
+
+        let dto = action_to_dto(&action);
+
+        assert_eq!(
+            dto.content_hash,
+            Some("cafebabe".into()),
+            "content_hash must be extracted from first TripleInsert inside Batch"
+        );
+    }
+
+    #[test]
+    fn action_to_dto_content_hash_none_for_triple_insert_without_provenance() {
+        let action = test_action(DagPayload::TripleInsert {
+            triples: vec![TripleInsertPayload {
+                subject: "s".into(),
+                predicate: "p".into(),
+                object: serde_json::json!("o"),
+                provenance: None,
+            }],
+        });
+
+        let dto = action_to_dto(&action);
+
+        assert_eq!(
+            dto.content_hash, None,
+            "content_hash must be None when no provenance is present"
+        );
+    }
+
+    #[test]
+    fn action_to_dto_content_hash_none_for_genesis() {
+        let action = test_action(DagPayload::Genesis {
+            triple_count: 0,
+            description: "root".into(),
+        });
+
+        let dto = action_to_dto(&action);
+
+        assert_eq!(dto.content_hash, None, "Genesis actions have no content_hash");
+    }
+
+    #[test]
+    fn action_to_dto_content_hash_none_for_noop() {
+        let action = test_action(DagPayload::Noop);
+
+        let dto = action_to_dto(&action);
+
+        assert_eq!(dto.content_hash, None, "Noop actions have no content_hash");
     }
 }
