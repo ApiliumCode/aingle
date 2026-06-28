@@ -130,11 +130,8 @@ impl CortexServer {
     pub fn new(config: CortexConfig) -> Result<Self> {
         let db_path = resolve_db_path(&config.db_path);
         let embedder = crate::embedder::build_embedder(config.embed_model.as_deref());
-        let state = AppState::with_db_path_and_embedder(
-            &db_path,
-            config.audit_log_path.clone(),
-            embedder,
-        )?;
+        let state =
+            AppState::with_db_path_and_embedder(&db_path, config.audit_log_path.clone(), embedder)?;
         info!("Graph database: {}", db_path);
         Ok(Self { config, state })
     }

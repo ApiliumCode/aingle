@@ -89,9 +89,15 @@ struct PendingEmbedder {
 }
 
 impl Embedder for PendingEmbedder {
-    fn embed_passage(&self, _text: &str) -> Embedding { Embedding::new(vec![0.0; self.dims]) }
-    fn embed_query(&self, _text: &str) -> Embedding { Embedding::new(vec![0.0; self.dims]) }
-    fn dimensions(&self) -> usize { self.dims }
+    fn embed_passage(&self, _text: &str) -> Embedding {
+        Embedding::new(vec![0.0; self.dims])
+    }
+    fn embed_query(&self, _text: &str) -> Embedding {
+        Embedding::new(vec![0.0; self.dims])
+    }
+    fn dimensions(&self) -> usize {
+        self.dims
+    }
 }
 
 impl SwappableEmbedder {
@@ -121,16 +127,30 @@ impl SwappableEmbedder {
 
 impl Embedder for SwappableEmbedder {
     fn embed_passage(&self, text: &str) -> Embedding {
-        let inner = self.inner.read().expect("swappable embedder poisoned").clone();
+        let inner = self
+            .inner
+            .read()
+            .expect("swappable embedder poisoned")
+            .clone();
         inner.embed_passage(text)
     }
     fn embed_query(&self, text: &str) -> Embedding {
-        let inner = self.inner.read().expect("swappable embedder poisoned").clone();
+        let inner = self
+            .inner
+            .read()
+            .expect("swappable embedder poisoned")
+            .clone();
         inner.embed_query(text)
     }
-    fn dimensions(&self) -> usize { self.dims }
+    fn dimensions(&self) -> usize {
+        self.dims
+    }
     fn relevance_thresholds(&self) -> (f32, f32) {
-        let inner = self.inner.read().expect("swappable embedder poisoned").clone();
+        let inner = self
+            .inner
+            .read()
+            .expect("swappable embedder poisoned")
+            .clone();
         inner.relevance_thresholds()
     }
 }
@@ -203,9 +223,17 @@ mod tests {
     /// 384-dim test delegate with non-zero output and the e5 thresholds.
     struct Fake384;
     impl ineru::Embedder for Fake384 {
-        fn embed_passage(&self, _t: &str) -> ineru::Embedding { ineru::Embedding::new(vec![0.5; 384]) }
-        fn embed_query(&self, _t: &str) -> ineru::Embedding { ineru::Embedding::new(vec![0.5; 384]) }
-        fn dimensions(&self) -> usize { 384 }
-        fn relevance_thresholds(&self) -> (f32, f32) { (0.80, 0.77) }
+        fn embed_passage(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.5; 384])
+        }
+        fn embed_query(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.5; 384])
+        }
+        fn dimensions(&self) -> usize {
+            384
+        }
+        fn relevance_thresholds(&self) -> (f32, f32) {
+            (0.80, 0.77)
+        }
     }
 }

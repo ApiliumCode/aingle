@@ -309,10 +309,16 @@ mod tests {
     #[tokio::test]
     async fn neural_grounding_is_topical() {
         let model_dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../ineru/test-models/multilingual-e5-small")
-                .to_string()
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../ineru/test-models/multilingual-e5-small"
+            )
+            .to_string()
         });
-        if !std::path::Path::new(&model_dir).join("onnx/model.onnx").exists() {
+        if !std::path::Path::new(&model_dir)
+            .join("onnx/model.onnx")
+            .exists()
+        {
             eprintln!("skipping: e5 model not found at {model_dir}");
             return;
         }
@@ -341,16 +347,22 @@ mod tests {
             .await
             .unwrap();
 
-        let topical = ground(&state, "¿Cómo debo cuidar a mi perro?", 5).await.unwrap();
+        let topical = ground(&state, "¿Cómo debo cuidar a mi perro?", 5)
+            .await
+            .unwrap();
         assert_ne!(
             topical.groundedness, "ungrounded",
             "a dog-care question must find the dog-care notes; ctx: {:?}",
             topical.answer_context
         );
 
-        let off_topic = ground(&state, "¿Cuál fue el resultado de las elecciones presidenciales?", 5)
-            .await
-            .unwrap();
+        let off_topic = ground(
+            &state,
+            "¿Cuál fue el resultado de las elecciones presidenciales?",
+            5,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             off_topic.groundedness, "ungrounded",
             "an unrelated question must be ungrounded; ctx: {:?}",

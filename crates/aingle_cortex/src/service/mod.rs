@@ -5,11 +5,11 @@
 
 pub mod backlinks;
 pub mod context;
-pub mod local_graph;
 #[cfg(feature = "dag")]
 pub mod dag;
 pub mod ground;
 pub mod ingest;
+pub mod local_graph;
 pub mod proof;
 pub mod query;
 pub mod reputation;
