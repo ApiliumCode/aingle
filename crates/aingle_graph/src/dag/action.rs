@@ -111,22 +111,38 @@ pub enum DagPayload {
     },
 }
 
+/// Where an ingested fact or chunk came from: a file and the line span within it,
+/// plus the content hash of the whole file at ingest time. Carried in the signed
+/// DAG payload so provenance is cryptographically bound to the fact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Provenance {
+    /// Path of the source file, relative to the ingest root.
+    pub source_path: String,
+    /// 1-based first line of the span this fact was extracted from.
+    pub line_start: u32,
+    /// 1-based last line of the span (inclusive).
+    pub line_end: u32,
+    /// Hex blake3 of the full file content at ingest time.
+    pub content_hash: String,
+}
+
 /// Wire format for a triple insert within a DAG action.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TripleInsertPayload {
     pub subject: String,
     pub predicate: String,
     pub object: serde_json::Value,
+    /// Optional source provenance. Omitted from the wire form (and thus from the
+    /// content hash) when absent, so pre-provenance action hashes are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
 }
 
 /// Kinds of memory operations tracked in the DAG.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MemoryOpKind {
     /// A memory entry was stored.
-    Store {
-        entry_type: String,
-        importance: f32,
-    },
+    Store { entry_type: String, importance: f32 },
     /// A memory entry was forgotten.
     Forget { memory_id: String },
     /// Consolidation was triggered.
@@ -178,8 +194,8 @@ impl DagAction {
 
         // Author — serde_json::to_vec cannot fail for NodeId (no maps with
         // non-string keys, no NaN/Inf floats), so expect() is safe here.
-        let author_bytes = serde_json::to_vec(&self.author)
-            .expect("NodeId serialization must not fail");
+        let author_bytes =
+            serde_json::to_vec(&self.author).expect("NodeId serialization must not fail");
         hasher.update(&(author_bytes.len() as u64).to_le_bytes());
         hasher.update(&author_bytes);
 
@@ -192,8 +208,8 @@ impl DagAction {
 
         // Payload — same reasoning: DagPayload contains only strings,
         // integers, booleans, and JSON values — all safely serializable.
-        let payload_bytes = serde_json::to_vec(&self.payload)
-            .expect("DagPayload serialization must not fail");
+        let payload_bytes =
+            serde_json::to_vec(&self.payload).expect("DagPayload serialization must not fail");
         hasher.update(&(payload_bytes.len() as u64).to_le_bytes());
         hasher.update(&payload_bytes);
 
@@ -234,6 +250,7 @@ mod tests {
                     subject: "alice".into(),
                     predicate: "knows".into(),
                     object: serde_json::json!("bob"),
+                    provenance: None,
                 }],
             },
             signature: None,
@@ -313,6 +330,7 @@ mod tests {
                             subject: "a".into(),
                             predicate: "b".into(),
                             object: serde_json::json!("c"),
+                            provenance: None,
                         }],
                     },
                     DagPayload::TripleDelete {
@@ -355,9 +373,8 @@ mod tests {
             "another_future": 123
         }"#;
 
-        let action: DagAction = serde_json::from_str(json).expect(
-            "must deserialize actions with unknown fields (forward compat)"
-        );
+        let action: DagAction = serde_json::from_str(json)
+            .expect("must deserialize actions with unknown fields (forward compat)");
         assert_eq!(action.seq, 42);
         assert!(matches!(action.payload, DagPayload::Noop));
     }
@@ -396,9 +413,62 @@ mod tests {
             "payload": "Noop"
         }"#;
 
-        let action: DagAction = serde_json::from_str(json).expect(
-            "must deserialize actions without signature field (backward compat)"
-        );
+        let action: DagAction = serde_json::from_str(json)
+            .expect("must deserialize actions without signature field (backward compat)");
         assert!(action.signature.is_none());
+    }
+
+    #[test]
+    fn provenance_none_is_omitted_and_hash_is_stable() {
+        use crate::dag::{DagPayload, TripleInsertPayload};
+        use chrono::TimeZone;
+
+        // A payload with no provenance must serialize WITHOUT a "provenance" key,
+        // so DAG action hashes computed before this field existed stay identical.
+        let p = TripleInsertPayload {
+            subject: "alice".into(),
+            predicate: "knows".into(),
+            object: serde_json::json!("bob"),
+            provenance: None,
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(
+            !json.contains("provenance"),
+            "None provenance must be skipped: {json}"
+        );
+
+        // Old wire format (no provenance key) still deserializes.
+        let old = r#"{"subject":"a","predicate":"b","object":"c"}"#;
+        let parsed: TripleInsertPayload = serde_json::from_str(old).unwrap();
+        assert!(parsed.provenance.is_none());
+
+        // A populated provenance round-trips.
+        let prov = Provenance {
+            source_path: "docs/x.md".into(),
+            line_start: 3,
+            line_end: 5,
+            content_hash: "deadbeef".into(),
+        };
+        let p2 = TripleInsertPayload {
+            subject: "s".into(),
+            predicate: "p".into(),
+            object: serde_json::json!("o"),
+            provenance: Some(prov.clone()),
+        };
+        let round: TripleInsertPayload =
+            serde_json::from_str(&serde_json::to_string(&p2).unwrap()).unwrap();
+        assert_eq!(round.provenance, Some(prov));
+
+        // Sanity: an action carrying a None-provenance TripleInsert hashes the same
+        // as the equivalent payload built inline (documents hash-stability intent).
+        let action = DagAction {
+            parents: vec![],
+            author: crate::NodeId::named("node:a"),
+            seq: 0,
+            timestamp: chrono::Utc.timestamp_opt(0, 0).unwrap(),
+            payload: DagPayload::TripleInsert { triples: vec![p] },
+            signature: None,
+        };
+        let _ = action.compute_hash(); // must not panic
     }
 }

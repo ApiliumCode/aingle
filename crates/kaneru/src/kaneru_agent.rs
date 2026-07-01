@@ -330,7 +330,9 @@ impl KaneruAgent {
         let prev_obs = match self.observation_history.back() {
             Some(obs) => obs,
             None => {
-                log::warn!("learn() called with empty observation history — skipping predictive update");
+                log::warn!(
+                    "learn() called with empty observation history — skipping predictive update"
+                );
                 // Still update goal progress below
                 self.current_state = Some(new_state);
                 self.observation_history.push_back(outcome.new_observation);

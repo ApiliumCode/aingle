@@ -17,8 +17,8 @@ mod predictive_validator;
 pub use adaptive_consensus::AdaptiveConsensus;
 pub use predictive_validator::PredictiveValidator;
 
-use crate::nested_learning::NestedLearning;
 use crate::ineru::IneruMemory;
+use crate::nested_learning::NestedLearning;
 use crate::types::{AiTransaction, ConsensusLevel, ValidationPrediction};
 
 /// Unified AI layer combining all capabilities
@@ -39,8 +39,8 @@ pub struct AiLayer {
 impl AiLayer {
     /// Create a new AI layer with default configuration
     pub fn new() -> Self {
-        use crate::nested_learning::NestedConfig;
         use crate::ineru::IneruConfig;
+        use crate::nested_learning::NestedConfig;
 
         Self {
             ineru: IneruMemory::new(IneruConfig::default()),

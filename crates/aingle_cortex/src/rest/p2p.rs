@@ -43,7 +43,8 @@ async fn p2p_status(State(state): State<AppState>) -> impl IntoResponse {
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": format!("serialize p2p status: {e}")})),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -64,7 +65,8 @@ async fn list_peers(State(state): State<AppState>) -> impl IntoResponse {
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": format!("serialize peers: {e}")})),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 

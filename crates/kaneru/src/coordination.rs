@@ -419,7 +419,10 @@ impl AgentCoordinator {
     }
 
     /// Unregisters an agent from the coordinator.
-    pub fn unregister_agent(&mut self, agent_id: &AgentId) -> Result<KaneruAgent, CoordinationError> {
+    pub fn unregister_agent(
+        &mut self,
+        agent_id: &AgentId,
+    ) -> Result<KaneruAgent, CoordinationError> {
         self.agents
             .remove(agent_id)
             .map(|handle| handle.agent)

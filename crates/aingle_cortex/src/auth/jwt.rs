@@ -379,7 +379,10 @@ mod tests {
 
     #[test]
     fn test_token_roundtrip() {
-        std::env::set_var("AINGLE_JWT_SECRET", "test-secret-only-do-not-use-in-production-64bytes-pad");
+        std::env::set_var(
+            "AINGLE_JWT_SECRET",
+            "test-secret-only-do-not-use-in-production-64bytes-pad",
+        );
         let claims = Claims::new_access("user123", vec!["user".to_string()]);
 
         let token = encode(

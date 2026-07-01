@@ -371,14 +371,14 @@ impl LongTermMemory {
             results
                 .into_iter()
                 .filter(|(_, sim)| *sim >= min_similarity)
-                .filter_map(|(id, sim)| {
-                    self.memories.get(&id).map(|entry| (entry, sim))
-                })
+                .filter_map(|(id, sim)| self.memories.get(&id).map(|entry| (entry, sim)))
                 .collect()
         } else {
             // Fallback to brute-force over memory entries with embeddings
             let query_emb = Embedding::new(query.to_vec());
-            let mut scored: Vec<_> = self.memories.values()
+            let mut scored: Vec<_> = self
+                .memories
+                .values()
                 .filter_map(|entry| {
                     entry.embedding.as_ref().map(|emb| {
                         let sim = query_emb.cosine_similarity(emb);

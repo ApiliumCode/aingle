@@ -51,8 +51,10 @@ async fn graphql_handler(
 
 /// GraphiQL IDE
 async fn graphql_playground() -> impl IntoResponse {
-    Html(async_graphql::http::GraphiQLSource::build()
-        .endpoint("/graphql")
-        .subscription_endpoint("/graphql/ws")
-        .finish())
+    Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint("/graphql")
+            .subscription_endpoint("/graphql/ws")
+            .finish(),
+    )
 }

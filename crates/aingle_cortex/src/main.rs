@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut config = CortexConfig::default();
+    config.embed_model = std::env::var("AINGLE_EMBED_MODEL").ok();
 
     // Simple argument parsing
     let mut i = 1;
@@ -65,6 +66,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--db" => {
                 if i + 1 < args.len() {
                     config.db_path = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            }
+            "--embed-model" => {
+                if i + 1 < args.len() {
+                    config.embed_model = Some(args[i + 1].clone());
                     i += 1;
                 }
             }
@@ -338,6 +345,7 @@ fn print_help() {
         "    --db <PATH>          Path to graph database (default: ~/.aingle/cortex/graph.sled)"
     );
     println!("    --memory             Use volatile in-memory storage (no persistence)");
+    println!("    --embed-model <DIR>  Directory with a neural embedding model (requires --features neural-embeddings; falls back to hash if absent)");
     println!("    --flush-interval <S> Periodic flush interval in seconds (default: 300, 0=off)");
     println!("    --mcp                Serve MCP over stdio (requires --features mcp)");
     println!(

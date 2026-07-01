@@ -157,6 +157,61 @@ Interactive D3.js dashboard. Watch your DAG evolve in real-time. Filter, search,
 
 ---
 
+## Grounded Retrieval & Provenance
+
+AIngle includes a retrieval layer that turns a corpus of documents into
+**cited, provenance-backed context** for question answering, with an explicit
+signal for how well an answer is supported by the underlying sources. The intent
+is *grounded* generation: a downstream language model is given only material that
+can be traced back to verifiable records, rather than being trusted to recall
+facts on its own.
+
+The pipeline has three stages:
+
+1. **Ingestion (`aingle_ingest`).** A pure, deterministic extractor maps a
+   document `(path, content)` to an `Extraction` of **provenanced triples** and
+   **text chunks**. Structure (headings, sections, links) is preserved as
+   semantic triples in the graph, while chunks become the unit of retrieval.
+   Because ingestion is deterministic, the same input always yields the same
+   triples and chunks — a prerequisite for reproducible provenance.
+
+2. **Provenance anchoring.** Each ingested unit is tied to the append-only DAG
+   action that recorded it via a `provenance_anchor` — the signed hash of that
+   action (see the `dag-sign` feature). This makes a retrieved chunk not just
+   *findable* but *attestable*: you can point at the exact, tamper-evident record
+   it came from.
+
+3. **Grounded retrieval (`service::ground`).** A question is embedded and matched
+   against the ingested chunks; the service returns a `GroundedContext`
+   containing the cited chunks (with their `provenance_anchor`) and a
+   **groundedness** classification:
+
+   | groundedness | meaning |
+   |--------------|---------|
+   | `grounded`   | strong similarity **and** enough corroborating chunks — the answer is well supported by the sources. |
+   | `weak`       | some relevant material, but below the corroboration threshold — answer with caution. |
+   | `ungrounded` | no sufficiently similar source — the sources do not support an answer. |
+
+   The groundedness signal is derived from the best match plus a minimum number
+   of corroborating chunks, so a caller (or an LLM prompted with the context) can
+   explicitly say when the sources *don't* support an answer instead of
+   hallucinating one.
+
+These capabilities are exposed to Model-Context-Protocol clients through three
+tools (see the [MCP server](#mcp-server) section):
+
+| Tool | Purpose |
+|------|---------|
+| `aingle_ingest`  | Ingest a document `(path, content)` → provenanced triples + chunks. |
+| `aingle_ground`  | Answer a question with cited, provenance-backed context + a groundedness signal. |
+| `aingle_sources` | List the sources that have been ingested. |
+
+Because retrieval results carry provenance anchors into the signed DAG history,
+grounded answers are **auditable**: every cited passage resolves to a verifiable
+action in the ledger.
+
+---
+
 ## Clustering
 
 AIngle supports multi-node clustering via Raft consensus for high availability and horizontal scalability. Writes are replicated to all nodes; reads can be served from any node with optional quorum consistency.

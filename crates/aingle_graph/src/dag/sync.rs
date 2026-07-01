@@ -64,6 +64,7 @@ mod tests {
                     subject: subject.into(),
                     predicate: "knows".into(),
                     object: serde_json::json!("x"),
+                    provenance: None,
                 }],
             },
             signature: None,

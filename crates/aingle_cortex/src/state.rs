@@ -5,15 +5,39 @@
 
 use aingle_graph::GraphDB;
 use aingle_logic::RuleEngine;
+use ineru::{Embedder, HashEmbedder, IneruMemory};
 use std::path::Path;
 use std::sync::Arc;
-use ineru::IneruMemory;
 use tokio::sync::RwLock;
 
 #[cfg(feature = "auth")]
 use crate::auth::UserStore;
 use crate::proofs::ProofStore;
 use crate::rest::audit::AuditLog;
+
+// ---------------------------------------------------------------------------
+// Cache type aliases (avoid clippy::type_complexity on the struct fields)
+// ---------------------------------------------------------------------------
+
+/// Shared cache type for the vault map.
+type VaultMapCache =
+    std::sync::Mutex<Option<((usize, usize), crate::service::vault_map::VaultMap)>>;
+
+/// Shared cache type for per-note semantic-neighbor contexts.
+type NoteContextCache = std::sync::Mutex<
+    std::collections::HashMap<
+        (String, usize),
+        ((usize, usize), crate::service::context::NoteContext),
+    >,
+>;
+
+/// Shared cache type for per-note local-graph neighborhoods.
+type LocalGraphCache = std::sync::Mutex<
+    std::collections::HashMap<
+        (String, usize),
+        ((usize, usize), crate::service::local_graph::LocalGraph),
+    >,
+>;
 
 /// The shared state accessible by all API handlers.
 ///
@@ -27,6 +51,21 @@ pub struct AppState {
     pub logic: Arc<RwLock<RuleEngine>>,
     /// The Ineru dual-memory system (STM + LTM with consolidation).
     pub memory: Arc<RwLock<IneruMemory>>,
+    /// The active text embedder (hash fallback or neural). Shared, thread-safe.
+    pub embedder: std::sync::Arc<dyn Embedder>,
+    /// Cached vault map, keyed on (graph triple-count, memory bytes) — see
+    /// service::vault_map::vault_map_cached.
+    pub vault_map_cache: Arc<VaultMapCache>,
+    /// Per-note semantic-neighbor cache, keyed by `(note_path, limit)`, storing
+    /// `(graph_triple_count, total_memory_bytes) → NoteContext`. Invalidated
+    /// whenever the graph or memory changes — same staleness signal as
+    /// vault_map_cache. `limit` is part of the key so that MCP calls with
+    /// different limits do not serve stale neighbor counts from cache.
+    pub note_context_cache: Arc<NoteContextCache>,
+    /// Per-note local-graph cache, keyed by `(note_path, depth)`, storing
+    /// `(graph_triple_count, total_memory_bytes) → LocalGraph`. Invalidated
+    /// on any graph or memory change — mirrors note_context_cache semantics.
+    pub local_graph_cache: Arc<LocalGraphCache>,
     /// The event broadcaster for sending real-time updates to WebSocket subscribers.
     pub broadcaster: Arc<EventBroadcaster>,
     /// The store for managing and verifying zero-knowledge proofs.
@@ -48,7 +87,12 @@ pub struct AppState {
     pub wal: Option<Arc<aingle_wal::WalWriter>>,
     /// Raft consensus instance for cluster coordination.
     #[cfg(feature = "cluster")]
-    pub raft: Option<openraft::Raft<aingle_raft::CortexTypeConfig, std::sync::Arc<aingle_raft::state_machine::CortexStateMachine>>>,
+    pub raft: Option<
+        openraft::Raft<
+            aingle_raft::CortexTypeConfig,
+            std::sync::Arc<aingle_raft::state_machine::CortexStateMachine>,
+        >,
+    >,
     /// This node's ID in the Raft cluster.
     #[cfg(feature = "cluster")]
     pub cluster_node_id: Option<u64>,
@@ -89,6 +133,14 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
+            embedder: std::sync::Arc::new(HashEmbedder::new()),
+            vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -133,6 +185,14 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
+            embedder: std::sync::Arc::new(HashEmbedder::new()),
+            vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -177,6 +237,14 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
+            embedder: std::sync::Arc::new(HashEmbedder::new()),
+            vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store: Arc::new(ProofStore::new()),
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -212,6 +280,22 @@ impl AppState {
         db_path: &str,
         audit_log_path: Option<std::path::PathBuf>,
     ) -> crate::error::Result<Self> {
+        Self::with_db_path_and_embedder(
+            db_path,
+            audit_log_path,
+            std::sync::Arc::new(HashEmbedder::new()),
+        )
+    }
+
+    /// Like [`with_db_path`] but with an explicit embedder. If a persisted
+    /// snapshot was produced by a different-dimension embedder, the snapshot is
+    /// discarded and the `aingle:source_hash` registry is cleared so the next
+    /// ingest re-embeds everything with this embedder.
+    pub fn with_db_path_and_embedder(
+        db_path: &str,
+        audit_log_path: Option<std::path::PathBuf>,
+        embedder: std::sync::Arc<dyn Embedder>,
+    ) -> crate::error::Result<Self> {
         let graph = if db_path == ":memory:" {
             GraphDB::memory()?
         } else {
@@ -224,13 +308,25 @@ impl AppState {
 
         let logic = RuleEngine::new();
 
-        // Load Ineru snapshot if available next to the graph database
+        // Embedder-change migration + snapshot load (persistent only).
         let memory = if db_path != ":memory:" {
-            let snapshot_path = Path::new(db_path)
-                .parent()
-                .unwrap_or(Path::new("."))
-                .join("ineru.snapshot");
-            if snapshot_path.exists() {
+            let dbdir = Path::new(db_path).parent().unwrap_or(Path::new("."));
+            let snapshot_path = dbdir.join("ineru.snapshot");
+            let active_dims = embedder.dimensions();
+            // Pre-sidecar databases were written by the 64d hash embedder.
+            let persisted_dims = crate::embedder::read_dims(dbdir).unwrap_or(64);
+            let snapshot_exists = snapshot_path.exists();
+            let dim_mismatch = snapshot_exists && persisted_dims != active_dims;
+
+            if dim_mismatch {
+                let removed = crate::embedder::clear_source_registry(&graph)
+                    .map_err(|e| crate::error::Error::Internal(format!("clear registry: {e}")))?;
+                log::warn!(
+                    "Embedder changed ({}d → {}d): cleared {} source-hash entries; re-ingest required.",
+                    persisted_dims, active_dims, removed
+                );
+                IneruMemory::agent_mode()
+            } else if snapshot_exists {
                 match IneruMemory::load_from_file(&snapshot_path) {
                     Ok(mem) => {
                         log::info!("Loaded Ineru snapshot from {}", snapshot_path.display());
@@ -268,7 +364,10 @@ impl AppState {
                     Arc::new(ps)
                 }
                 Err(e) => {
-                    log::warn!("Failed to open Sled ProofStore: {}. Falling back to in-memory.", e);
+                    log::warn!(
+                        "Failed to open Sled ProofStore: {}. Falling back to in-memory.",
+                        e
+                    );
                     Arc::new(ProofStore::new())
                 }
             }
@@ -287,6 +386,14 @@ impl AppState {
             graph: Arc::new(RwLock::new(graph)),
             logic: Arc::new(RwLock::new(logic)),
             memory: Arc::new(RwLock::new(memory)),
+            embedder,
+            vault_map_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            note_context_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            local_graph_cache: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             broadcaster: Arc::new(EventBroadcaster::new()),
             proof_store,
             sandbox_manager: Arc::new(SandboxManager::new()),
@@ -314,7 +421,6 @@ impl AppState {
         })
     }
 
-
     /// Flushes the graph database and saves the Ineru memory snapshot to disk.
     ///
     /// This should be called before shutdown or binary updates to ensure
@@ -340,6 +446,7 @@ impl AppState {
             } else {
                 log::info!("Ineru snapshot saved to {}", snapshot_path.display());
             }
+            crate::embedder::write_dims(dir, self.embedder.dimensions());
         }
 
         Ok(())
@@ -543,5 +650,172 @@ impl SandboxManager {
 impl Default for SandboxManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appstate_has_default_hash_embedder() {
+        let state = AppState::new().unwrap();
+        assert_eq!(state.embedder.dimensions(), 64);
+    }
+
+    #[tokio::test]
+    async fn embedder_change_clears_source_registry_and_snapshot() {
+        use aingle_graph::{Predicate, TriplePattern};
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+
+        // First boot with the default (hash, 64d): ingest writes a registry triple,
+        // flush writes snapshot + embedder.dims=64.
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            {
+                let mut g = state.graph.write().await;
+                g.enable_dag();
+            }
+            std::fs::write(
+                dir.path().join("note.md"),
+                "# N\n\nsled has exclusive locks.\n",
+            )
+            .unwrap();
+            crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+                .await
+                .unwrap();
+            state.flush(Some(db.parent().unwrap())).await.unwrap();
+        }
+
+        // Registry triple exists on disk now.
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            let g = state.graph.read().await;
+            let n = g
+                .find(
+                    TriplePattern::any()
+                        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+                )
+                .unwrap()
+                .len();
+            assert!(n >= 1, "registry triple should exist after first ingest");
+        }
+
+        // Second boot with a 384d embedder → mismatch → registry cleared, memory empty.
+        {
+            let fake_384: std::sync::Arc<dyn Embedder> = std::sync::Arc::new(Fake384);
+            let state = AppState::with_db_path_and_embedder(db_str, None, fake_384).unwrap();
+            let g = state.graph.read().await;
+            let n = g
+                .find(
+                    TriplePattern::any()
+                        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+                )
+                .unwrap()
+                .len();
+            assert_eq!(n, 0, "registry must be cleared on embedder dim change");
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_snapshot_without_sidecar_migrates_on_dim_change() {
+        use aingle_graph::{Predicate, TriplePattern};
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+
+        // First boot with default hash (64d): ingest + flush (writes snapshot + sidecar).
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            {
+                let mut g = state.graph.write().await;
+                g.enable_dag();
+            }
+            std::fs::write(
+                dir.path().join("n.md"),
+                "# N\n\nsled has exclusive locks.\n",
+            )
+            .unwrap();
+            crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+                .await
+                .unwrap();
+            state.flush(Some(db.parent().unwrap())).await.unwrap();
+        }
+
+        // Simulate a legacy DB: delete the sidecar so persisted_dims is absent.
+        std::fs::remove_file(db.parent().unwrap().join("embedder.dims")).unwrap();
+
+        // Boot with a 384d embedder: absent sidecar must be treated as 64d → mismatch → cleared.
+        {
+            let fake_384: std::sync::Arc<dyn Embedder> = std::sync::Arc::new(Fake384);
+            let state = AppState::with_db_path_and_embedder(db_str, None, fake_384).unwrap();
+            let g = state.graph.read().await;
+            let n = g
+                .find(
+                    TriplePattern::any()
+                        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+                )
+                .unwrap()
+                .len();
+            assert_eq!(
+                n, 0,
+                "legacy snapshot without sidecar must migrate when dims differ"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn same_dims_preserves_snapshot_and_registry() {
+        use aingle_graph::{Predicate, TriplePattern};
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            {
+                let mut g = state.graph.write().await;
+                g.enable_dag();
+            }
+            std::fs::write(
+                dir.path().join("n.md"),
+                "# N\n\nsled has exclusive locks.\n",
+            )
+            .unwrap();
+            crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+                .await
+                .unwrap();
+            state.flush(Some(db.parent().unwrap())).await.unwrap();
+        }
+
+        // Second boot with the same default 64d hash embedder: no migration.
+        {
+            let state = AppState::with_db_path(db_str, None).unwrap();
+            let g = state.graph.read().await;
+            let n = g
+                .find(
+                    TriplePattern::any()
+                        .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+                )
+                .unwrap()
+                .len();
+            assert!(n >= 1, "same-dims boot must preserve the registry");
+        }
+    }
+
+    /// A stand-in 384-dim embedder for migration tests (no model needed).
+    struct Fake384;
+    impl Embedder for Fake384 {
+        fn embed_passage(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.0; 384])
+        }
+        fn embed_query(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.0; 384])
+        }
+        fn dimensions(&self) -> usize {
+            384
+        }
     }
 }

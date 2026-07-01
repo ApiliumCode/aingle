@@ -8,9 +8,9 @@
 
 #[cfg(feature = "ai_memory")]
 pub use ineru::{
-    ConsolidationConfig, Embedding, Entity, EntityId, KnowledgeGraph, Link, LinkType,
+    ConsolidationConfig, Embedding, Entity, EntityId, IneruMemory, KnowledgeGraph, Link, LinkType,
     LongTermMemory, LtmConfig, MemoryConfig, MemoryEntry, MemoryId, MemoryMetadata, MemoryQuery,
-    MemoryResult, MemoryStats, Relation, SemanticTag, ShortTermMemory, StmConfig, IneruMemory,
+    MemoryResult, MemoryStats, Relation, SemanticTag, ShortTermMemory, StmConfig,
 };
 
 #[cfg(feature = "ai_memory")]

@@ -3,9 +3,9 @@
 
 //! Shared helpers for cluster-mode REST handlers.
 
-use axum::http::HeaderMap;
 use crate::error::Error;
 use crate::state::AppState;
+use axum::http::HeaderMap;
 
 /// Convert a Raft `client_write` error into an appropriate HTTP error.
 ///

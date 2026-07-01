@@ -28,29 +28,43 @@ pub async fn create_triple(
     req: CreateTripleRequest,
     namespace: Option<String>,
 ) -> Result<TripleDto> {
-    // Validate input
     if req.subject.is_empty() {
         return Err(Error::InvalidInput("Subject cannot be empty".to_string()));
     }
     if req.predicate.is_empty() {
         return Err(Error::InvalidInput("Predicate cannot be empty".to_string()));
     }
+    insert_triple_inner(
+        state,
+        req.object,
+        &req.subject,
+        &req.predicate,
+        None,
+        namespace,
+    )
+    .await
+}
 
-    let object: Value = req.object.clone().into();
+/// Shared single-triple write used by `create_triple` and the ingestion path.
+/// `object_dto` is serialized into the DAG payload exactly as the REST path does,
+/// so triple IDs / DAG replay stay byte-compatible. `provenance`, when present,
+/// is attached to the signed `TripleInsert` payload.
+pub async fn insert_triple_inner(
+    state: &AppState,
+    object_dto: crate::rest::ValueDto,
+    subject: &str,
+    predicate: &str,
+    #[cfg(feature = "dag")] provenance: Option<aingle_graph::dag::Provenance>,
+    #[cfg(not(feature = "dag"))] _provenance: Option<()>,
+    namespace: Option<String>,
+) -> Result<TripleDto> {
+    let object: Value = object_dto.clone().into();
+    let triple = Triple::new(NodeId::named(subject), Predicate::named(predicate), object);
 
-    // Create the triple
-    let triple = Triple::new(
-        NodeId::named(&req.subject),
-        Predicate::named(&req.predicate),
-        object,
-    );
-
-    // Add triple to graph (and record DAG action if enabled)
     let triple_id = {
         let graph = state.graph.read().await;
         let id = graph.insert(triple.clone())?;
 
-        // Record in DAG if enabled
         #[cfg(feature = "dag")]
         if let Some(dag_store) = graph.dag_store() {
             let dag_author = state
@@ -69,9 +83,10 @@ pub async fn create_triple(
                 timestamp: chrono::Utc::now(),
                 payload: aingle_graph::dag::DagPayload::TripleInsert {
                     triples: vec![aingle_graph::dag::TripleInsertPayload {
-                        subject: req.subject.clone(),
-                        predicate: req.predicate.clone(),
-                        object: serde_json::to_value(&req.object).unwrap_or_default(),
+                        subject: subject.to_string(),
+                        predicate: predicate.to_string(),
+                        object: serde_json::to_value(&object_dto).unwrap_or_default(),
+                        provenance,
                     }],
                 },
                 signature: None,
@@ -91,7 +106,6 @@ pub async fn create_triple(
         id
     };
 
-    // Record audit entry
     {
         let mut audit = state.audit_log.write().await;
         audit.record(AuditEntry {
@@ -100,17 +114,16 @@ pub async fn create_triple(
             namespace,
             action: "create".to_string(),
             resource: format!("/api/v1/triples/{}", triple_id.to_hex()),
-            details: Some(format!("subject={}", req.subject)),
+            details: Some(format!("subject={}", subject)),
             request_id: None,
         });
     }
 
-    // Broadcast event
     state.broadcaster.broadcast(Event::TripleAdded {
         hash: triple_id.to_hex(),
-        subject: req.subject,
-        predicate: req.predicate,
-        object: serde_json::to_value(&req.object).unwrap_or_default(),
+        subject: subject.to_string(),
+        predicate: predicate.to_string(),
+        object: serde_json::to_value(&object_dto).unwrap_or_default(),
     });
 
     Ok(triple.into())
@@ -483,6 +496,51 @@ mod tests {
         // Deleting again => NotFound.
         let err = delete_triple(&state, &id.to_hex(), None).await.unwrap_err();
         assert!(matches!(err, Error::NotFound(_)));
+    }
+
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn inner_write_records_provenance_in_dag() {
+        use aingle_graph::dag::{DagPayload, Provenance};
+
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        let prov = Provenance {
+            source_path: "docs/x.md".into(),
+            line_start: 4,
+            line_end: 4,
+            content_hash: "abc123".into(),
+        };
+        insert_triple_inner(
+            &state,
+            crate::rest::ValueDto::Node {
+                node: "sled".into(),
+            },
+            "docs/x.md",
+            "links_to",
+            Some(prov.clone()),
+            None,
+        )
+        .await
+        .unwrap();
+
+        // The DAG action affecting subject "docs/x.md" must carry the provenance.
+        let graph = state.graph.read().await;
+        let actions = graph.dag_history_by_subject("docs/x.md", 10).unwrap();
+        let found = actions.iter().any(|a| match &a.payload {
+            DagPayload::TripleInsert { triples } => {
+                triples.iter().any(|t| t.provenance.as_ref() == Some(&prov))
+            }
+            _ => false,
+        });
+        assert!(
+            found,
+            "provenance must be present in the TripleInsert DAG payload"
+        );
     }
 
     #[tokio::test]

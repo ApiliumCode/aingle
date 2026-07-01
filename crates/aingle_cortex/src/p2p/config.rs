@@ -58,17 +58,17 @@ impl P2pConfig {
     /// Validate configuration values.
     pub fn validate(&self) -> Result<(), String> {
         if self.port < 1024 {
-            return Err(format!(
-                "p2p port must be >= 1024, got {}",
-                self.port
-            ));
+            return Err(format!("p2p port must be >= 1024, got {}", self.port));
         }
 
         if let Some(ref seed) = self.seed {
             if seed.is_empty() {
                 return Err("p2p seed must not be empty".to_string());
             }
-            if !seed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            if !seed
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
                 return Err("p2p seed must be alphanumeric (plus _ and -)".to_string());
             }
         }

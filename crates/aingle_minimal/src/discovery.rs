@@ -10,9 +10,9 @@
 //! - **mDNS**: Service type `_aingle._udp.local.` (feature: mdns)
 //! - **CoAP Multicast**: `/.well-known/core` to 224.0.1.187:5683 (feature: coap)
 
-use crate::error::Result;
 #[cfg(feature = "mdns")]
 use crate::error::Error;
+use crate::error::Result;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
@@ -202,7 +202,11 @@ impl Discovery {
                     return;
                 }
 
-                let addresses: Vec<IpAddr> = info.get_addresses().iter().map(|a| a.to_ip_addr()).collect();
+                let addresses: Vec<IpAddr> = info
+                    .get_addresses()
+                    .iter()
+                    .map(|a| a.to_ip_addr())
+                    .collect();
 
                 let mut props = HashMap::new();
                 for prop in info.get_properties().iter() {

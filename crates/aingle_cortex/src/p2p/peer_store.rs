@@ -46,19 +46,22 @@ impl PeerStore {
         } else {
             Vec::new()
         };
-        Self { path, peers, max_peers }
+        Self {
+            path,
+            peers,
+            max_peers,
+        }
     }
 
     /// Write the current peer list to disk.
     pub fn save(&self) -> Result<(), String> {
         if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("create peer store dir: {}", e))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("create peer store dir: {}", e))?;
         }
         let json = serde_json::to_string_pretty(&self.peers)
             .map_err(|e| format!("serialize peers: {}", e))?;
-        let mut file = std::fs::File::create(&self.path)
-            .map_err(|e| format!("create peer store: {}", e))?;
+        let mut file =
+            std::fs::File::create(&self.path).map_err(|e| format!("create peer store: {}", e))?;
         std::io::Write::write_all(&mut file, json.as_bytes())
             .map_err(|e| format!("write peer store: {}", e))?;
         file.sync_all()
@@ -75,7 +78,10 @@ impl PeerStore {
         // Enforce capacity
         if self.peers.len() >= self.max_peers {
             // Remove oldest (by last_connected_ms)
-            if let Some(oldest_idx) = self.peers.iter().enumerate()
+            if let Some(oldest_idx) = self
+                .peers
+                .iter()
+                .enumerate()
                 .min_by_key(|(_, p)| p.last_connected_ms)
                 .map(|(i, _)| i)
             {
@@ -191,7 +197,7 @@ mod tests {
         // Add a peer with an old timestamp
         store.add(stored_peer(9001, 1));
         store.cleanup_stale(1000); // 1 second max age
-        // peer with ts=0 is kept (never-connected sentinel), old one removed
+                                   // peer with ts=0 is kept (never-connected sentinel), old one removed
         assert_eq!(store.all().len(), 1);
         assert_eq!(store.all()[0].addr, addr(9000));
     }

@@ -7,6 +7,7 @@
 
 #![cfg(feature = "memory")]
 
+use ineru::MemoryConfig;
 use kaneru::{
     action::{Action, ActionType},
     agent::Agent,
@@ -16,7 +17,6 @@ use kaneru::{
     observation::Observation,
     policy::{Condition, Rule},
 };
-use ineru::MemoryConfig;
 
 /// Test: Create a memory agent and store observations
 #[test]

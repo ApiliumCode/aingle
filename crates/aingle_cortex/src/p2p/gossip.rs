@@ -437,11 +437,7 @@ impl TripleGossipManager {
     }
 
     /// Find IDs that exist in `our_ids` but are missing from `peer_filter`.
-    pub fn find_missing(
-        &self,
-        peer_filter: &BloomFilter,
-        our_ids: &[[u8; 32]],
-    ) -> Vec<[u8; 32]> {
+    pub fn find_missing(&self, peer_filter: &BloomFilter, our_ids: &[[u8; 32]]) -> Vec<[u8; 32]> {
         our_ids
             .iter()
             .filter(|id| !peer_filter.may_contain(id))

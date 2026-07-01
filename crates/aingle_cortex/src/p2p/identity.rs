@@ -41,8 +41,8 @@ impl NodeIdentity {
             // Write with restrictive permissions (Unix 0o600).
             #[cfg(unix)]
             {
-                use std::os::unix::fs::OpenOptionsExt;
                 use std::io::Write;
+                use std::os::unix::fs::OpenOptionsExt;
                 let mut f = std::fs::OpenOptions::new()
                     .create(true)
                     .write(true)

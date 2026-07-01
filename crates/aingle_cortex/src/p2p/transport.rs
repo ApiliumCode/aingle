@@ -103,7 +103,9 @@ impl P2pTransport {
         // Receive HelloAck.
         let ack = Self::recv_from_connection(&connection).await?;
         match ack {
-            P2pMessage::HelloAck { accepted, reason, .. } => {
+            P2pMessage::HelloAck {
+                accepted, reason, ..
+            } => {
                 if !accepted {
                     connection.close(1u32.into(), b"rejected");
                     return Err(format!(
@@ -142,7 +144,9 @@ impl P2pTransport {
         let hello = Self::recv_from_connection(&connection).await?;
 
         match &hello {
-            P2pMessage::Hello { seed_hash, node_id, .. } => {
+            P2pMessage::Hello {
+                seed_hash, node_id, ..
+            } => {
                 let accepted = seed_hash == &self.seed_hash;
                 let reason = if accepted {
                     None
@@ -158,7 +162,11 @@ impl P2pTransport {
                 Self::send_on_connection(&connection, &ack).await?;
 
                 if accepted {
-                    tracing::info!("P2P accepted connection from {} ({})", remote, &node_id[..8.min(node_id.len())]);
+                    tracing::info!(
+                        "P2P accepted connection from {} ({})",
+                        remote,
+                        &node_id[..8.min(node_id.len())]
+                    );
                     self.connections.insert(remote, connection);
                     Ok(Some((remote, hello)))
                 } else {
@@ -302,8 +310,7 @@ impl P2pTransport {
             .map_err(|e| format!("cert gen: {}", e))?;
 
         let cert_der = CertificateDer::from(cert.cert.der().to_vec());
-        let key_der =
-            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
+        let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
 
         let mut server_crypto = rustls::ServerConfig::builder()
             .with_no_client_auth()
@@ -429,22 +436,14 @@ mod tests {
 
     #[test]
     fn transport_new_has_no_connections() {
-        let t = P2pTransport::new(
-            P2pTransportConfig::default(),
-            "abc".into(),
-            "hash".into(),
-        );
+        let t = P2pTransport::new(P2pTransportConfig::default(), "abc".into(), "hash".into());
         assert_eq!(t.connection_count(), 0);
         assert!(t.connected_peers().is_empty());
     }
 
     #[test]
     fn is_connected_false_initially() {
-        let t = P2pTransport::new(
-            P2pTransportConfig::default(),
-            "abc".into(),
-            "hash".into(),
-        );
+        let t = P2pTransport::new(P2pTransportConfig::default(), "abc".into(), "hash".into());
         let addr: SocketAddr = "127.0.0.1:19091".parse().unwrap();
         assert!(!t.is_connected(&addr));
     }
@@ -483,11 +482,7 @@ mod tests {
 
     #[tokio::test]
     async fn disconnect_nonexistent_is_noop() {
-        let mut t = P2pTransport::new(
-            P2pTransportConfig::default(),
-            "abc".into(),
-            "hash".into(),
-        );
+        let mut t = P2pTransport::new(P2pTransportConfig::default(), "abc".into(), "hash".into());
         let addr: SocketAddr = "127.0.0.1:19091".parse().unwrap();
         t.disconnect(&addr); // should not panic
     }

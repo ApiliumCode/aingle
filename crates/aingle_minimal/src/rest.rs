@@ -187,8 +187,12 @@ impl RestServer {
     /// The server will run in a background thread until `stop()` is called.
     pub fn start(config: RestConfig, node: &mut MinimalNode) -> Result<Self> {
         let bind_addr = config.bind_address();
-        let server = Server::http(&bind_addr)
-            .map_err(|e| Error::Network(NetworkError::Other(format!("Failed to start REST server: {}", e))))?;
+        let server = Server::http(&bind_addr).map_err(|e| {
+            Error::Network(NetworkError::Other(format!(
+                "Failed to start REST server: {}",
+                e
+            )))
+        })?;
 
         log::info!("REST API server starting on http://{}", bind_addr);
 
@@ -206,7 +210,14 @@ impl RestServer {
         // In production, this would use channels or shared state
 
         let handle = thread::spawn(move || {
-            Self::server_loop(server, running_clone, enable_cors, node_id, version, start_time);
+            Self::server_loop(
+                server,
+                running_clone,
+                enable_cors,
+                node_id,
+                version,
+                start_time,
+            );
         });
 
         Ok(Self {
@@ -219,13 +230,14 @@ impl RestServer {
     /// Start the REST server with shared node access.
     ///
     /// This version allows the node to be accessed from the REST handlers.
-    pub fn start_with_node(
-        config: RestConfig,
-        node: Arc<Mutex<MinimalNode>>,
-    ) -> Result<Self> {
+    pub fn start_with_node(config: RestConfig, node: Arc<Mutex<MinimalNode>>) -> Result<Self> {
         let bind_addr = config.bind_address();
-        let server = Server::http(&bind_addr)
-            .map_err(|e| Error::Network(NetworkError::Other(format!("Failed to start REST server: {}", e))))?;
+        let server = Server::http(&bind_addr).map_err(|e| {
+            Error::Network(NetworkError::Other(format!(
+                "Failed to start REST server: {}",
+                e
+            )))
+        })?;
 
         log::info!("REST API server starting on http://{}", bind_addr);
 
@@ -257,12 +269,8 @@ impl RestServer {
             // Use a timeout so we can check the running flag periodically
             match server.recv_timeout(std::time::Duration::from_millis(100)) {
                 Ok(Some(request)) => {
-                    let response = Self::handle_static_request(
-                        &request,
-                        &node_id,
-                        &version,
-                        start_time,
-                    );
+                    let response =
+                        Self::handle_static_request(&request, &node_id, &version, start_time);
                     Self::send_response(request, response, enable_cors);
                 }
                 Ok(None) => continue, // Timeout, check running flag
@@ -299,10 +307,7 @@ impl RestServer {
     }
 
     /// Handle a request with full node access
-    fn handle_request(
-        request: &mut Request,
-        node: &Arc<Mutex<MinimalNode>>,
-    ) -> (u16, String) {
+    fn handle_request(request: &mut Request, node: &Arc<Mutex<MinimalNode>>) -> (u16, String) {
         let method = request.method().clone();
         let url = request.url().to_string();
 
@@ -310,14 +315,10 @@ impl RestServer {
 
         match (method, url.as_str()) {
             // GET /api/v1/info
-            (Method::Get, "/api/v1/info") => {
-                Self::handle_info(node)
-            }
+            (Method::Get, "/api/v1/info") => Self::handle_info(node),
 
             // POST /api/v1/entries
-            (Method::Post, "/api/v1/entries") => {
-                Self::handle_create_entry(request, node)
-            }
+            (Method::Post, "/api/v1/entries") => Self::handle_create_entry(request, node),
 
             // GET /api/v1/entries/:hash
             (Method::Get, path) if path.starts_with("/api/v1/entries/") => {
@@ -326,19 +327,13 @@ impl RestServer {
             }
 
             // GET /api/v1/peers
-            (Method::Get, "/api/v1/peers") => {
-                Self::handle_peers(node)
-            }
+            (Method::Get, "/api/v1/peers") => Self::handle_peers(node),
 
             // GET /api/v1/stats
-            (Method::Get, "/api/v1/stats") => {
-                Self::handle_stats(node)
-            }
+            (Method::Get, "/api/v1/stats") => Self::handle_stats(node),
 
             // OPTIONS (CORS preflight)
-            (Method::Options, _) => {
-                (204, String::new())
-            }
+            (Method::Options, _) => (204, String::new()),
 
             // Health check
             (Method::Get, "/health") | (Method::Get, "/") => {
@@ -406,10 +401,7 @@ impl RestServer {
     }
 
     /// Handle POST /api/v1/entries
-    fn handle_create_entry(
-        request: &mut Request,
-        node: &Arc<Mutex<MinimalNode>>,
-    ) -> (u16, String) {
+    fn handle_create_entry(request: &mut Request, node: &Arc<Mutex<MinimalNode>>) -> (u16, String) {
         // Read body
         let mut body = String::new();
         let reader = request.as_reader();
@@ -444,7 +436,10 @@ impl RestServer {
                     timestamp: crate::types::Timestamp::now().as_millis(),
                 };
                 let api_response = ApiResponse::success(response);
-                (201, serde_json::to_string(&api_response).unwrap_or_default())
+                (
+                    201,
+                    serde_json::to_string(&api_response).unwrap_or_default(),
+                )
             }
             Err(e) => {
                 let response = ApiResponse::<()>::error(format!("Failed to create entry: {}", e));
@@ -454,10 +449,7 @@ impl RestServer {
     }
 
     /// Handle GET /api/v1/entries/:hash
-    fn handle_get_entry(
-        hash_str: &str,
-        node: &Arc<Mutex<MinimalNode>>,
-    ) -> (u16, String) {
+    fn handle_get_entry(hash_str: &str, node: &Arc<Mutex<MinimalNode>>) -> (u16, String) {
         // Parse hash
         let hash = match Hash::from_hex(hash_str) {
             Ok(h) => h,
@@ -482,7 +474,7 @@ impl RestServer {
                 let content: serde_json::Value = serde_json::from_slice(&entry.content)
                     .unwrap_or_else(|_| {
                         serde_json::Value::String(
-                            String::from_utf8_lossy(&entry.content).to_string()
+                            String::from_utf8_lossy(&entry.content).to_string(),
                         )
                     });
 
@@ -493,7 +485,10 @@ impl RestServer {
                     size: entry.size(),
                 };
                 let api_response = ApiResponse::success(response);
-                (200, serde_json::to_string(&api_response).unwrap_or_default())
+                (
+                    200,
+                    serde_json::to_string(&api_response).unwrap_or_default(),
+                )
             }
             Ok(None) => {
                 let response = ApiResponse::<()>::error("Entry not found");
@@ -564,7 +559,10 @@ impl RestServer {
         };
 
         let api_response = ApiResponse::success(response);
-        (200, serde_json::to_string(&api_response).unwrap_or_default())
+        (
+            200,
+            serde_json::to_string(&api_response).unwrap_or_default(),
+        )
     }
 
     /// Handle static requests (without node access)
@@ -613,25 +611,25 @@ impl RestServer {
     fn send_response(request: Request, response: (u16, String), enable_cors: bool) {
         let (status, body) = response;
 
-        let mut headers = vec![
-            Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap(),
-        ];
+        let mut headers =
+            vec![Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap()];
 
         if enable_cors {
-            headers.push(
-                Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap()
-            );
+            headers
+                .push(Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap());
             headers.push(
                 Header::from_bytes(
                     &b"Access-Control-Allow-Methods"[..],
                     &b"GET, POST, OPTIONS"[..],
-                ).unwrap()
+                )
+                .unwrap(),
             );
             headers.push(
                 Header::from_bytes(
                     &b"Access-Control-Allow-Headers"[..],
                     &b"Content-Type, Authorization"[..],
-                ).unwrap()
+                )
+                .unwrap(),
             );
         }
 

@@ -1,6 +1,6 @@
 [package]
 name = "aingle_cortex"
-version = "0.6.3"
+version = "0.7.0"
 description = "Córtex API - REST/GraphQL/SPARQL interface for AIngle semantic graphs"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -25,6 +25,9 @@ dag = ["cluster", "aingle_graph/dag", "aingle_graph/dag-sign", "aingle_raft/dag"
 mcp = ["dep:rmcp", "dep:schemars"]
 mcp-http = ["mcp", "rmcp/transport-streamable-http-server", "rmcp/server-side-http"]
 mcp-oauth = ["mcp-http", "dep:jsonwebtoken"]
+# Real neural embeddings: forwards to ineru's fastembed-backed embedder.
+# Off by default — default cortex build stays hash-only (MSRV 1.83 unaffected).
+neural-embeddings = ["ineru/neural-embeddings"]
 full =["rest", "graphql", "sparql", "auth", "dag"]
 
 [[bin]]
@@ -33,10 +36,12 @@ path = "src/main.rs"
 
 [dependencies]
 # Core AIngle crates
-aingle_graph = { version = "0.6", path = "../aingle_graph", features = ["sled-backend"] }
-aingle_logic = { version = "0.6", path = "../aingle_logic" }
-aingle_zk = { version = "0.6", path = "../aingle_zk" }
-ineru = { version = "0.6", path = "../ineru" }
+aingle_graph = { version = "0.7", path = "../aingle_graph", features = ["sled-backend"] }
+aingle_logic = { version = "0.7", path = "../aingle_logic" }
+aingle_zk = { version = "0.7", path = "../aingle_zk" }
+ineru = { version = "0.7", path = "../ineru" }
+aingle_ingest = { version = "0.7", path = "../aingle_ingest" }
+ignore = "0.4"
 
 # Web framework
 axum = { version = "0.8", features = ["ws", "macros"] }
@@ -103,8 +108,8 @@ rcgen = { version = "0.13", optional = true }
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
 hex = { version = "0.4", optional = true }
 # Clustering (optional)
-aingle_wal = { version = "0.6", path = "../aingle_wal", optional = true }
-aingle_raft = { version = "0.6", path = "../aingle_raft", optional = true }
+aingle_wal = { version = "0.7", path = "../aingle_wal", optional = true }
+aingle_raft = { version = "0.7", path = "../aingle_raft", optional = true }
 openraft = { version = "0.10.0-alpha.17", features = ["serde", "type-alias"], optional = true }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"], optional = true }
 rustls-pemfile = { version = "2", optional = true }

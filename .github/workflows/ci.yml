@@ -2,9 +2,9 @@ name: AIngle CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, dev ]
 
 env:
   CARGO_TERM_COLOR: always

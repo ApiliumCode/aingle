@@ -146,11 +146,7 @@ impl TripleSyncManager {
     }
 
     /// Insert triples received from a peer into the graph. Duplicates are counted, not errors.
-    pub fn store_received_triples(
-        &mut self,
-        triples: Vec<Triple>,
-        graph: &GraphDB,
-    ) -> StoreResult {
+    pub fn store_received_triples(&mut self, triples: Vec<Triple>, graph: &GraphDB) -> StoreResult {
         let mut result = StoreResult::default();
         for triple in triples {
             let id = TripleId::from_triple(&triple);
@@ -161,7 +157,10 @@ impl TripleSyncManager {
                 }
                 Err(e) => {
                     let msg = format!("{}", e);
-                    if msg.contains("duplicate") || msg.contains("exists") || msg.contains("already") {
+                    if msg.contains("duplicate")
+                        || msg.contains("exists")
+                        || msg.contains("already")
+                    {
                         result.duplicates += 1;
                     } else {
                         result.errors += 1;
@@ -215,7 +214,8 @@ impl TripleSyncManager {
             .unwrap_or_default()
             .as_millis() as u64;
         let ttl_ms = self.tombstone_ttl.as_millis() as u64;
-        self.tombstones.retain(|_, ts| now_ms.saturating_sub(*ts) < ttl_ms);
+        self.tombstones
+            .retain(|_, ts| now_ms.saturating_sub(*ts) < ttl_ms);
     }
 
     /// Return all active tombstones as (hash, timestamp_ms) pairs.

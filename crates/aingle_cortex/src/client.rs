@@ -8,9 +8,8 @@
 //! the knowledge layer.
 
 use crate::wasm_types::{
-    GraphQueryInput, GraphQueryOutput, GraphStoreInput, GraphStoreOutput,
-    MemoryRecallInput, MemoryRecallOutput, MemoryRememberInput, MemoryRememberOutput,
-    Triple, ObjectValue,
+    GraphQueryInput, GraphQueryOutput, GraphStoreInput, GraphStoreOutput, MemoryRecallInput,
+    MemoryRecallOutput, MemoryRememberInput, MemoryRememberOutput, ObjectValue, Triple,
 };
 use serde::{Deserialize, Serialize};
 
@@ -197,7 +196,10 @@ impl CortexInternalClient {
     /// Query the semantic graph.
     pub async fn graph_query(&self, input: GraphQueryInput) -> Result<GraphQueryOutput, String> {
         let (subject, predicate) = if let Some(ref pattern) = input.pattern {
-            (pattern.subject.clone().or(input.subject), pattern.predicate.clone().or(input.predicate))
+            (
+                pattern.subject.clone().or(input.subject),
+                pattern.predicate.clone().or(input.predicate),
+            )
         } else {
             (input.subject, input.predicate)
         };
@@ -205,23 +207,28 @@ impl CortexInternalClient {
         let body = PatternQueryRequest {
             subject,
             predicate,
-            object: input.pattern.as_ref()
+            object: input
+                .pattern
+                .as_ref()
                 .and_then(|p| p.object.as_ref())
                 .map(Self::object_to_json),
             limit: input.limit,
         };
 
-        let req = self.apply_auth(
-            self.http.post(self.url("/api/v1/query")).json(&body),
-        );
+        let req = self.apply_auth(self.http.post(self.url("/api/v1/query")).json(&body));
 
-        let resp = req.send().await.map_err(|e| format!("Cortex query failed: {}", e))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("Cortex query failed: {}", e))?;
 
         if !resp.status().is_success() {
             return Err(format!("Cortex query returned {}", resp.status()));
         }
 
-        let result: PatternQueryResponse = resp.json().await
+        let result: PatternQueryResponse = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse Cortex response: {}", e))?;
 
         Ok(GraphQueryOutput {
@@ -238,17 +245,20 @@ impl CortexInternalClient {
             object: Self::object_to_json(&input.object),
         };
 
-        let req = self.apply_auth(
-            self.http.post(self.url("/api/v1/triples")).json(&body),
-        );
+        let req = self.apply_auth(self.http.post(self.url("/api/v1/triples")).json(&body));
 
-        let resp = req.send().await.map_err(|e| format!("Cortex store failed: {}", e))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("Cortex store failed: {}", e))?;
 
         if !resp.status().is_success() {
             return Err(format!("Cortex store returned {}", resp.status()));
         }
 
-        let result: CreateTripleResponse = resp.json().await
+        let result: CreateTripleResponse = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse Cortex response: {}", e))?;
 
         Ok(GraphStoreOutput {
@@ -257,7 +267,10 @@ impl CortexInternalClient {
     }
 
     /// Recall memories from the Titans system.
-    pub async fn memory_recall(&self, input: MemoryRecallInput) -> Result<MemoryRecallOutput, String> {
+    pub async fn memory_recall(
+        &self,
+        input: MemoryRecallInput,
+    ) -> Result<MemoryRecallOutput, String> {
         let body = MemoryRecallRequest {
             query: input.query,
             entry_type: input.entry_type,
@@ -265,34 +278,46 @@ impl CortexInternalClient {
         };
 
         let req = self.apply_auth(
-            self.http.post(self.url("/api/v1/memory/recall")).json(&body),
+            self.http
+                .post(self.url("/api/v1/memory/recall"))
+                .json(&body),
         );
 
-        let resp = req.send().await.map_err(|e| format!("Titans recall failed: {}", e))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("Titans recall failed: {}", e))?;
 
         if !resp.status().is_success() {
             return Err(format!("Titans recall returned {}", resp.status()));
         }
 
-        let result: MemoryRecallResponse = resp.json().await
+        let result: MemoryRecallResponse = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse Titans response: {}", e))?;
 
         Ok(MemoryRecallOutput {
-            results: result.results.iter().map(|r| {
-                crate::wasm_types::MemoryResult {
+            results: result
+                .results
+                .iter()
+                .map(|r| crate::wasm_types::MemoryResult {
                     id: r.id.clone(),
                     data: r.data.clone(),
                     entry_type: r.entry_type.clone(),
                     tags: r.tags.clone(),
                     importance: r.importance,
                     created_at: r.created_at.clone(),
-                }
-            }).collect(),
+                })
+                .collect(),
         })
     }
 
     /// Store a new memory in the Titans system.
-    pub async fn memory_remember(&self, input: MemoryRememberInput) -> Result<MemoryRememberOutput, String> {
+    pub async fn memory_remember(
+        &self,
+        input: MemoryRememberInput,
+    ) -> Result<MemoryRememberOutput, String> {
         let body = MemoryRememberRequest {
             data: input.data,
             entry_type: input.entry_type,
@@ -301,16 +326,23 @@ impl CortexInternalClient {
         };
 
         let req = self.apply_auth(
-            self.http.post(self.url("/api/v1/memory/remember")).json(&body),
+            self.http
+                .post(self.url("/api/v1/memory/remember"))
+                .json(&body),
         );
 
-        let resp = req.send().await.map_err(|e| format!("Titans remember failed: {}", e))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("Titans remember failed: {}", e))?;
 
         if !resp.status().is_success() {
             return Err(format!("Titans remember returned {}", resp.status()));
         }
 
-        let result: MemoryRememberResponse = resp.json().await
+        let result: MemoryRememberResponse = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse Titans response: {}", e))?;
 
         Ok(MemoryRememberOutput { id: result.id })
@@ -318,7 +350,11 @@ impl CortexInternalClient {
 
     /// Check if Cortex is healthy and reachable.
     pub async fn health_check(&self) -> bool {
-        match self.apply_auth(self.http.get(self.url("/api/v1/health"))).send().await {
+        match self
+            .apply_auth(self.http.get(self.url("/api/v1/health")))
+            .send()
+            .await
+        {
             Ok(resp) => resp.status().is_success(),
             Err(_) => false,
         }

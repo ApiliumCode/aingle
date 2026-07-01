@@ -23,7 +23,7 @@ pub struct DagHistoryParams {
 
 #[cfg(feature = "dag")]
 fn default_hist_limit() -> usize {
-    50
+    crate::service::dag::DEFAULT_HISTORY_LIMIT
 }
 
 /// Parameters for the `aingle_dag_action` tool.
@@ -88,6 +88,108 @@ impl AingleMcp {
     #[tool(description = "Liveness check; returns 'pong'.")]
     async fn aingle_ping(&self) -> String {
         "pong".to_string()
+    }
+
+    /// Ingest a markdown vault / code repo into the graph + memory with provenance.
+    #[tool(
+        description = "Ingest a markdown vault or code repo: auto-extracts triples \
+            (frontmatter, wikilinks, headings, tags), indexes text chunks for \
+            semantic recall, and records signed provenance. Incremental: unchanged \
+            files are skipped."
+    )]
+    async fn aingle_ingest(
+        &self,
+        params: Parameters<IngestParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::ingest::ingest_path(&self.state, &p.path, None)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Grounded retrieval: cited, provenance-backed context for a question.
+    #[tool(
+        description = "Answer-grounding for a question. Returns cited source chunks \
+            (path:lines) with a signed-provenance anchor and a groundedness signal. \
+            Answer ONLY from the returned context; if groundedness is not 'grounded', \
+            say so and do not invent.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_ground(
+        &self,
+        params: Parameters<GroundParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::ground::ground(&self.state, &p.question, p.k)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Verified backlinks + outgoing links + unlinked mentions for a note.
+    #[tool(
+        description = "Verified backlinks, outgoing links, and unlinked mentions for a note. \
+            Each backlink includes the source's context line and a signed-provenance anchor \
+            when available. Use for accurate reverse navigation.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_backlinks(
+        &self,
+        params: Parameters<BacklinksParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::backlinks::backlinks(&self.state, &p.note).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Verified context bundle for a note: semantically-related notes (by meaning,
+    /// not just links) with the matching passage and signed provenance.
+    #[tool(
+        description = "Verified context bundle for a note: notes that are semantically \
+            related by meaning (not just by explicit links), each with the matching \
+            passage as evidence and a signed-provenance anchor when available. Use to \
+            answer grounded in a note's verified neighborhood without hallucinating.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_note_context(
+        &self,
+        params: Parameters<NoteContextParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let resp = crate::service::context::note_context_cached(
+            &self.state,
+            &p.note,
+            p.limit.unwrap_or(8),
+        )
+        .await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// List ingested sources and their signed content hashes.
+    #[tool(
+        description = "List ingested source files with their content hashes (the \
+            signed provenance registry).",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_sources(&self) -> Result<CallToolResult, ErrorData> {
+        let resp = crate::service::ingest::list_sources(&self.state)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
+    /// Vault Map & Navigation Manual: entry points, topics, orphans, indices,
+    /// and guidance for navigating the vault accurately before answering.
+    #[tool(
+        description = "Vault map & navigation manual: hub entry-points, semantic topic \
+            clusters, orphan notes, tag/type indices, and guidance. Call this FIRST to \
+            navigate a vault accurately, then aingle_ground each claim.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_vault_map(&self) -> Result<CallToolResult, ErrorData> {
+        let resp = crate::service::vault_map::vault_map_cached(&self.state).await;
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
     /// Query the semantic graph by triple pattern (any field omitted = wildcard).
@@ -536,6 +638,43 @@ impl AingleMcp {
     }
 }
 
+/// Parameters for the `aingle_ingest` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct IngestParams {
+    /// Absolute or relative path to the vault/repo root to ingest.
+    pub path: String,
+}
+
+/// Parameters for the `aingle_ground` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct GroundParams {
+    /// The question to ground against ingested sources.
+    pub question: String,
+    /// Max chunks to retrieve.
+    #[serde(default = "default_ground_k")]
+    pub k: usize,
+}
+
+fn default_ground_k() -> usize {
+    6
+}
+
+/// Parameters for the `aingle_backlinks` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct BacklinksParams {
+    /// Note path (vault-relative) to get backlinks for, e.g. "ideas/sled.md".
+    pub note: String,
+}
+
+/// Parameters for the `aingle_note_context` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct NoteContextParams {
+    /// Note path (vault-relative) to get the verified context bundle for.
+    pub note: String,
+    /// Max number of related neighbors to return (default 8).
+    pub limit: Option<usize>,
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for AingleMcp {
     fn get_info(&self) -> ServerInfo {
@@ -547,5 +686,35 @@ impl ServerHandler for AingleMcp {
                 .to_string(),
         );
         info
+    }
+}
+
+#[cfg(test)]
+mod ingest_tools_tests {
+    use super::*;
+
+    #[test]
+    fn router_exposes_ingest_ground_sources() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let mcp = AingleMcp::new(state);
+        let names: Vec<String> = mcp
+            .tool_router
+            .list_all()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        for expected in [
+            "aingle_ingest",
+            "aingle_ground",
+            "aingle_sources",
+            "aingle_vault_map",
+            "aingle_backlinks",
+            "aingle_note_context",
+        ] {
+            assert!(
+                names.contains(&expected.to_string()),
+                "missing tool {expected}"
+            );
+        }
     }
 }

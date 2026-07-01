@@ -215,7 +215,11 @@ impl QuicServer {
                     // Reject oversized messages (max 1MB)
                     const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
                     if len > MAX_MESSAGE_SIZE {
-                        log::warn!("Rejecting oversized QUIC message: {} bytes from {}", len, addr);
+                        log::warn!(
+                            "Rejecting oversized QUIC message: {} bytes from {}",
+                            len,
+                            addr
+                        );
                         continue;
                     }
 
@@ -327,7 +331,9 @@ impl QuicServer {
         // In a real deployment, load trusted peer certificates here.
         // For self-signed mesh networks, each node pins peer certs at discovery time.
         // Using dangerous() only as fallback for initial handshake — log a warning.
-        log::warn!("QUIC client using permissive certificate validation — pin peer certs in production");
+        log::warn!(
+            "QUIC client using permissive certificate validation — pin peer certs in production"
+        );
         let crypto = rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(LoggingCertVerifier))

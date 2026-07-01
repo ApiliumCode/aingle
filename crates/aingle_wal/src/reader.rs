@@ -76,12 +76,8 @@ impl WalReader {
             let entry = &entries[i];
 
             // Verify this entry's hash
-            let expected_hash = WalEntry::compute_hash(
-                entry.seq,
-                &entry.timestamp,
-                &entry.kind,
-                &entry.prev_hash,
-            );
+            let expected_hash =
+                WalEntry::compute_hash(entry.seq, &entry.timestamp, &entry.kind, &entry.prev_hash);
             if entry.hash != expected_hash {
                 return Ok(VerifyResult {
                     valid: false,

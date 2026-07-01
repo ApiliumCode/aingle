@@ -86,16 +86,16 @@ pub struct WalVerifyResponse {
 }
 
 /// GET /api/v1/cluster/status
-pub async fn cluster_status(
-    State(state): State<AppState>,
-) -> Result<Json<ClusterStatus>> {
+pub async fn cluster_status(State(state): State<AppState>) -> Result<Json<ClusterStatus>> {
     let wal_last_seq = {
         #[cfg(feature = "cluster")]
         {
             state.wal.as_ref().map(|w| w.last_seq()).unwrap_or(0)
         }
         #[cfg(not(feature = "cluster"))]
-        { 0u64 }
+        {
+            0u64
+        }
     };
 
     // Extract live Raft metrics when available
@@ -113,9 +113,7 @@ pub async fn cluster_status(
             .map(|lid| lid.index)
             .unwrap_or(0);
 
-        let commit_index = metrics
-            .last_log_index
-            .unwrap_or(0);
+        let commit_index = metrics.last_log_index.unwrap_or(0);
 
         // Build member list from membership config
         let membership = metrics.membership_config.membership();
@@ -137,7 +135,10 @@ pub async fn cluster_status(
 
         // Resolve leader address from membership config (#13)
         let leader_addr = leader_id.and_then(|lid| {
-            membership.nodes().find(|(nid, _)| **nid == lid).map(|(_, node)| node.rest_addr.clone())
+            membership
+                .nodes()
+                .find(|(nid, _)| **nid == lid)
+                .map(|(_, node)| node.rest_addr.clone())
         });
 
         return Ok(Json(ClusterStatus {
@@ -187,10 +188,16 @@ pub async fn cluster_join(
         if metrics.current_leader != state.cluster_node_id {
             let membership = metrics.membership_config.membership();
             let leader_addr = metrics.current_leader.and_then(|lid| {
-                membership.nodes().find(|(nid, _)| **nid == lid).map(|(_, node)| node.rest_addr.clone())
+                membership
+                    .nodes()
+                    .find(|(nid, _)| **nid == lid)
+                    .map(|(_, node)| node.rest_addr.clone())
             });
             if let Some(ref addr) = leader_addr {
-                return Err(Error::Redirect(format!("http://{}/api/v1/cluster/join", addr)));
+                return Err(Error::Redirect(format!(
+                    "http://{}/api/v1/cluster/join",
+                    addr
+                )));
             }
             return Ok((
                 StatusCode::CONFLICT,
@@ -219,7 +226,10 @@ pub async fn cluster_join(
                 voter_ids.insert(req.node_id);
                 // Resolve leader_addr for response
                 let leader_addr = metrics.current_leader.and_then(|lid| {
-                    membership.nodes().find(|(nid, _)| **nid == lid).map(|(_, node)| node.rest_addr.clone())
+                    membership
+                        .nodes()
+                        .find(|(nid, _)| **nid == lid)
+                        .map(|(_, node)| node.rest_addr.clone())
                 });
                 match raft.change_membership(voter_ids.clone(), false).await {
                     Ok(_) => {
@@ -294,18 +304,23 @@ pub async fn cluster_leave(
         if metrics.current_leader != state.cluster_node_id {
             let membership = metrics.membership_config.membership();
             let leader_addr = metrics.current_leader.and_then(|lid| {
-                membership.nodes().find(|(nid, _)| **nid == lid).map(|(_, node)| node.rest_addr.clone())
+                membership
+                    .nodes()
+                    .find(|(nid, _)| **nid == lid)
+                    .map(|(_, node)| node.rest_addr.clone())
             });
             if let Some(ref addr) = leader_addr {
-                return Err(Error::Redirect(format!("http://{}/api/v1/cluster/leave", addr)));
+                return Err(Error::Redirect(format!(
+                    "http://{}/api/v1/cluster/leave",
+                    addr
+                )));
             }
             return Err(Error::Internal("Not leader; leader unknown".to_string()));
         }
 
         if let Some(node_id) = state.cluster_node_id {
             let membership = metrics.membership_config.membership();
-            let mut voter_ids: std::collections::BTreeSet<u64> =
-                membership.voter_ids().collect();
+            let mut voter_ids: std::collections::BTreeSet<u64> = membership.voter_ids().collect();
             voter_ids.remove(&node_id);
             if !voter_ids.is_empty() {
                 if let Err(e) = raft.change_membership(voter_ids, false).await {
@@ -320,9 +335,7 @@ pub async fn cluster_leave(
 }
 
 /// GET /api/v1/cluster/members
-pub async fn cluster_members(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<ClusterMember>>> {
+pub async fn cluster_members(State(state): State<AppState>) -> Result<Json<Vec<ClusterMember>>> {
     #[cfg(feature = "cluster")]
     if let Some(ref raft) = state.raft {
         let metrics = raft.metrics().borrow_watched().clone();
@@ -351,12 +364,12 @@ pub async fn cluster_members(
 }
 
 /// GET /api/v1/cluster/wal/stats
-pub async fn wal_stats(
-    State(state): State<AppState>,
-) -> Result<Json<WalStatsResponse>> {
+pub async fn wal_stats(State(state): State<AppState>) -> Result<Json<WalStatsResponse>> {
     #[cfg(feature = "cluster")]
     if let Some(ref wal) = state.wal {
-        let stats = wal.stats().map_err(|e| Error::Internal(format!("WAL stats error: {e}")))?;
+        let stats = wal
+            .stats()
+            .map_err(|e| Error::Internal(format!("WAL stats error: {e}")))?;
         return Ok(Json(WalStatsResponse {
             segment_count: stats.segment_count,
             total_size_bytes: stats.total_size_bytes,
@@ -374,9 +387,7 @@ pub async fn wal_stats(
 }
 
 /// POST /api/v1/cluster/wal/verify
-pub async fn wal_verify(
-    State(state): State<AppState>,
-) -> Result<Json<WalVerifyResponse>> {
+pub async fn wal_verify(State(state): State<AppState>) -> Result<Json<WalVerifyResponse>> {
     #[cfg(feature = "cluster")]
     if let Some(ref wal) = state.wal {
         let wal_dir = wal.dir();

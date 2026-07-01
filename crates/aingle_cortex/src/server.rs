@@ -57,6 +57,10 @@ pub struct CortexConfig {
     pub mcp_oauth_resource: Option<String>,
     /// Optional explicit JWKS URL; if None, derived from the issuer (Keycloak certs path).
     pub mcp_oauth_jwks_url: Option<String>,
+    /// Optional directory containing a neural embedding model. Selects the neural
+    /// embedder when set and cortex is built with `neural-embeddings`; otherwise
+    /// the hash embedder is used.
+    pub embed_model: Option<String>,
 }
 
 impl Default for CortexConfig {
@@ -80,6 +84,7 @@ impl Default for CortexConfig {
             mcp_oauth_issuer: None,
             mcp_oauth_resource: None,
             mcp_oauth_jwks_url: None,
+            embed_model: None,
         }
     }
 }
@@ -124,7 +129,9 @@ impl CortexServer {
     /// - `None` — Sled-backed persistent storage at `~/.aingle/cortex/graph.sled`.
     pub fn new(config: CortexConfig) -> Result<Self> {
         let db_path = resolve_db_path(&config.db_path);
-        let state = AppState::with_db_path(&db_path, config.audit_log_path.clone())?;
+        let embedder = crate::embedder::build_embedder(config.embed_model.as_deref());
+        let state =
+            AppState::with_db_path_and_embedder(&db_path, config.audit_log_path.clone(), embedder)?;
         info!("Graph database: {}", db_path);
         Ok(Self { config, state })
     }

@@ -5,8 +5,8 @@
 //!
 //! Predict validation outcome before full validation.
 
-use crate::nested_learning::NestedLearning;
 use crate::ineru::IneruMemory;
+use crate::nested_learning::NestedLearning;
 use crate::types::{AiTransaction, ValidationPrediction};
 
 /// Predict validation outcome before full validation
@@ -160,8 +160,8 @@ pub struct PredictionAccuracy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nested_learning::NestedConfig;
     use crate::ineru::IneruConfig;
+    use crate::nested_learning::NestedConfig;
 
     fn make_test_tx(id: u8) -> AiTransaction {
         AiTransaction {

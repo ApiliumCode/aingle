@@ -166,6 +166,7 @@ pub mod auth;
 pub mod client;
 #[cfg(feature = "cluster")]
 pub mod cluster_init;
+pub mod embedder;
 pub mod error;
 #[cfg(feature = "graphql")]
 pub mod graphql;

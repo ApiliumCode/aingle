@@ -58,9 +58,9 @@
 #![warn(clippy::all)]
 
 pub mod emergent;
+pub mod ineru;
 pub mod kaneru;
 pub mod nested_learning;
-pub mod ineru;
 
 mod config;
 mod error;
@@ -75,7 +75,7 @@ pub mod prelude {
     pub use crate::config::AiConfig;
     pub use crate::emergent::{AdaptiveConsensus, PredictiveValidator};
     pub use crate::error::{AiError, AiResult};
+    pub use crate::ineru::{IneruConfig, IneruMemory, LongTermMemory, ShortTermMemory};
     pub use crate::kaneru::{KaneruAgent, KaneruConfig};
     pub use crate::nested_learning::{NestedConfig, NestedLearning};
-    pub use crate::ineru::{LongTermMemory, ShortTermMemory, IneruConfig, IneruMemory};
 }

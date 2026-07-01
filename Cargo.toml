@@ -5,6 +5,7 @@ members = [
   "crates/aingle_graph",        # Native Semantic GraphDB
   "crates/aingle_zk",           # Zero-Knowledge Proofs (Privacy)
   "crates/ineru",               # Ineru Memory System
+  "crates/aingle_ingest",       # Structural ingestion (markdown/code → triples + chunks)
   "crates/aingle_ai",           # AI Integration Layer
   "crates/aingle_logic",        # Proof-of-Logic Validation Engine
   "crates/kaneru",              # Kaneru — Unified Multi-Agent Execution System

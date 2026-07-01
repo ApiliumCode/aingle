@@ -31,10 +31,7 @@ pub fn collect_local_tips(graph: &GraphDB) -> (Vec<String>, u64) {
 /// Given remote tips, compute which actions we have that the remote is missing,
 /// and return them as serialized bytes ready for sending.
 #[cfg(feature = "dag")]
-pub fn compute_missing_from_tips(
-    graph: &GraphDB,
-    remote_tips: &[String],
-) -> Vec<Vec<u8>> {
+pub fn compute_missing_from_tips(graph: &GraphDB, remote_tips: &[String]) -> Vec<Vec<u8>> {
     let Some(dag_store) = graph.dag_store() else {
         return Vec::new();
     };
@@ -63,10 +60,7 @@ pub fn compute_missing_from_tips(
 
 /// Fetch serialized DAG actions by their hex hashes for sending to a peer.
 #[cfg(feature = "dag")]
-pub fn fetch_actions_by_hash(
-    graph: &GraphDB,
-    hashes: &[String],
-) -> Vec<Vec<u8>> {
+pub fn fetch_actions_by_hash(graph: &GraphDB, hashes: &[String]) -> Vec<Vec<u8>> {
     let Some(dag_store) = graph.dag_store() else {
         return Vec::new();
     };
@@ -88,10 +82,7 @@ pub fn fetch_actions_by_hash(
 
 /// Ingest received DAG actions into the local store.
 #[cfg(feature = "dag")]
-pub fn ingest_actions(
-    graph: &GraphDB,
-    action_bytes_list: &[Vec<u8>],
-) -> (usize, usize) {
+pub fn ingest_actions(graph: &GraphDB, action_bytes_list: &[Vec<u8>]) -> (usize, usize) {
     let Some(dag_store) = graph.dag_store() else {
         return (0, action_bytes_list.len());
     };

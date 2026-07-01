@@ -99,9 +99,9 @@ impl RocksStorage {
 
     /// Get column family handle
     fn cf(&self, name: &str) -> Result<&ColumnFamily> {
-        self.db
-            .cf_handle(name)
-            .ok_or_else(|| crate::error::Error::storage(format!("Column family '{}' not found", name)))
+        self.db.cf_handle(name).ok_or_else(|| {
+            crate::error::Error::storage(format!("Column family '{}' not found", name))
+        })
     }
 
     /// Serialize key for actions (hash-based)
@@ -136,7 +136,10 @@ impl RocksStorage {
                     arr.copy_from_slice(&v[..8]);
                     Some(i64::from_be_bytes(arr))
                 } else {
-                    log::warn!("Corrupt sequence counter: expected 8 bytes, got {}", v.len());
+                    log::warn!(
+                        "Corrupt sequence counter: expected 8 bytes, got {}",
+                        v.len()
+                    );
                     None
                 }
             })

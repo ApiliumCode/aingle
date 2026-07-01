@@ -9,6 +9,9 @@ use crate::rest::dag::{
 };
 use crate::state::AppState;
 
+/// Default action-history limit shared by REST and MCP endpoints.
+pub(crate) const DEFAULT_HISTORY_LIMIT: usize = 50;
+
 /// Return DAG actions affecting a subject, newest first, up to `limit`.
 pub async fn history_by_subject(
     state: &AppState,

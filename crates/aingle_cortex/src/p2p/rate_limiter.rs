@@ -41,9 +41,10 @@ impl IngressRateLimiter {
     ///
     /// Returns the number of allowed triples (0..=count).
     pub fn check(&mut self, addr: &SocketAddr, count: usize) -> usize {
-        let bucket = self.per_peer.entry(*addr).or_insert_with(|| {
-            TokenBucket::with_params(self.per_peer_max, self.per_peer_rate)
-        });
+        let bucket = self
+            .per_peer
+            .entry(*addr)
+            .or_insert_with(|| TokenBucket::with_params(self.per_peer_max, self.per_peer_rate));
 
         let mut allowed = 0;
         for _ in 0..count {

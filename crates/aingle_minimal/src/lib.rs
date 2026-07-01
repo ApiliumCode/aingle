@@ -266,6 +266,8 @@ pub use ota::{OtaManager, UpdateChannel, UpdateInfo, UpdateState};
 pub use power::{BatteryInfo, PowerManager, PowerProfile};
 #[cfg(feature = "quic")]
 pub use quic::{QuicConfig, QuicServer};
+#[cfg(feature = "rest")]
+pub use rest::{RestConfig, RestServer};
 pub use sensors::{CalibrationParams, Sensor, SensorManager, SensorReading, SensorType};
 #[cfg(feature = "smart_agents")]
 pub use smart::{IoTPolicyBuilder, SensorAdapter, SmartNode, SmartNodeConfig, SmartNodeStats};
@@ -281,8 +283,6 @@ pub use webrtc::{
     ConnectionState, PeerConnection, SignalingClient, SignalingConfig, SignalingMessage,
     SignalingServer, WebRtcConfig, WebRtcServer, WebRtcStats,
 };
-#[cfg(feature = "rest")]
-pub use rest::{RestConfig, RestServer};
 
 /// Version information for the crate.
 ///

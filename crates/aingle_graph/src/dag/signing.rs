@@ -203,6 +203,7 @@ mod tests {
                     subject: "alice".into(),
                     predicate: "knows".into(),
                     object: serde_json::json!("bob"),
+                    provenance: None,
                 }],
             },
             signature: None,
@@ -338,8 +339,8 @@ mod tests {
     #[test]
     fn test_verifying_key_from_bytes_invalid() {
         let bad_bytes = [0u8; 32]; // not a valid Ed25519 point
-        // This may or may not fail depending on the point — use all-zero which is identity
-        // For safety, just test that the API doesn't panic
+                                   // This may or may not fail depending on the point — use all-zero which is identity
+                                   // For safety, just test that the API doesn't panic
         let _ = DagVerifyingKey::from_bytes(&bad_bytes);
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "ineru"
-version = "0.6.3"
+version = "0.7.0"
 description = "Ineru: Neural-inspired memory system for AIngle AI agents"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -21,6 +21,9 @@ persistent = []
 wasm = []
 # Compression for memory entries
 compression = []
+# Real neural embeddings via fastembed (ONNX). ort loaded dynamically at
+# runtime from a controlled path (no build-time binary download, no network).
+neural-embeddings = ["dep:fastembed"]
 
 [dependencies]
 # Serialization
@@ -39,6 +42,11 @@ log = "0.4"
 
 # Optional: SQLite for persistent LTM (matching workspace version)
 rusqlite = { version = "0.32", default-features = false, features = ["bundled"], optional = true }
+
+# Optional: real neural embeddings (multilingual-e5-small via ONNX).
+# default-features off → no hf-hub network deps; ort-load-dynamic → onnxruntime
+# is loaded from a runtime path we ship, not downloaded/linked at build time.
+fastembed = { version = "5", default-features = false, features = ["ort-load-dynamic"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

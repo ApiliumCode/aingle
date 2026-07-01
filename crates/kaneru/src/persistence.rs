@@ -223,7 +223,8 @@ impl AgentPersistence for KaneruAgent {
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)?;
 
-        let state: crate::kaneru_agent::SerializedState = deserialize_with_options(&bytes, options)?;
+        let state: crate::kaneru_agent::SerializedState =
+            deserialize_with_options(&bytes, options)?;
 
         let mut agent = KaneruAgent::new(state.config.clone());
         agent.load_state(state);

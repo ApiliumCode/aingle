@@ -191,6 +191,7 @@ impl MutationRoot {
                             subject: input.subject.clone(),
                             predicate: input.predicate.clone(),
                             object: serde_json::json!({}),
+                            provenance: None,
                         }],
                     },
                     signature: None,
@@ -200,9 +201,9 @@ impl MutationRoot {
                     key.sign(&mut action);
                 }
 
-                dag_store.put(&action).map_err(|e| {
-                    Error::new(format!("DAG action failed: {e}"))
-                })?;
+                dag_store
+                    .put(&action)
+                    .map_err(|e| Error::new(format!("DAG action failed: {e}")))?;
             }
         }
 
@@ -258,9 +259,9 @@ impl MutationRoot {
                         key.sign(&mut action);
                     }
 
-                    dag_store.put(&action).map_err(|e| {
-                        Error::new(format!("DAG action failed: {e}"))
-                    })?;
+                    dag_store
+                        .put(&action)
+                        .map_err(|e| Error::new(format!("DAG action failed: {e}")))?;
                 }
             }
 

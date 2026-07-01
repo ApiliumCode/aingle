@@ -22,6 +22,9 @@ Thumbs.db
 CLAUDE.md
 .claude_settings
 .claudeignore
+.mcp.json
+docs/superpowers/
+.superpowers/
 
 # GitHub Copilot
 .copilot/
@@ -113,6 +116,8 @@ llm-instructions.md
 *.profraw
 *.profdata
 aingle_iot.db
+data/
+*.sled
 
 # Logs
 *.log
@@ -128,3 +133,8 @@ aingle_iot.db
 .secrets
 contexto/
 contexto/*
+
+# Local neural-embedder test models (never commit — ~470MB fp32 e5-small, fetched on demand)
+crates/ineru/test-models/
+# Local ONNX Runtime dylib for running the gated neural tests (set ORT_DYLIB_PATH to it)
+.tmp-ort/

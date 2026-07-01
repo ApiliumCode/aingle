@@ -166,18 +166,15 @@ impl RaftNetworkFactory<C> for CortexNetworkFactory {
     async fn new_client(&mut self, target: NodeId, node: &CortexNode) -> Self::Network {
         // Use REST address for HTTP-based Raft RPC routing.
         // Fallback is constructed infallibly (no parse) to avoid panics.
-        let addr: SocketAddr = node
-            .rest_addr
-            .parse()
-            .unwrap_or_else(|e| {
-                tracing::warn!(
-                    target_node = target,
-                    addr = %node.rest_addr,
-                    error = %e,
-                    "Invalid REST address for Raft peer, falling back to localhost:19090"
-                );
-                SocketAddr::from(([127, 0, 0, 1], 19090))
-            });
+        let addr: SocketAddr = node.rest_addr.parse().unwrap_or_else(|e| {
+            tracing::warn!(
+                target_node = target,
+                addr = %node.rest_addr,
+                error = %e,
+                "Invalid REST address for Raft peer, falling back to localhost:19090"
+            );
+            SocketAddr::from(([127, 0, 0, 1], 19090))
+        });
 
         CortexNetworkConnection {
             target,
@@ -284,18 +281,15 @@ impl RaftNetworkV2<C> for CortexNetworkConnection {
             "meta": snapshot.meta,
             "data": snapshot.snapshot.into_inner(),
         });
-        let payload = serde_json::to_vec(&snap_data).map_err(|e| {
-            StreamingError::Unreachable(Unreachable::new(&AnyError::error(e)))
-        })?;
+        let payload = serde_json::to_vec(&snap_data)
+            .map_err(|e| StreamingError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
 
         // Use chunked transfer for payloads > 1MB to avoid timeouts
         // and reduce memory pressure on the receiver.
         const CHUNK_THRESHOLD: usize = 1024 * 1024; // 1MB
 
         if payload.len() > CHUNK_THRESHOLD {
-            return self
-                .send_chunked_snapshot(&payload, option)
-                .await;
+            return self.send_chunked_snapshot(&payload, option).await;
         }
 
         // Small snapshot: send monolithic
@@ -327,7 +321,6 @@ impl RaftNetworkV2<C> for CortexNetworkConnection {
             ))),
         }
     }
-
 }
 
 impl CortexNetworkConnection {
@@ -390,9 +383,7 @@ impl CortexNetworkConnection {
                     "Snapshot chunk at offset {offset} timed out after {per_chunk_timeout:?}"
                 ))))
             })?
-            .map_err(|e| {
-                StreamingError::Unreachable(Unreachable::new(&AnyError::error(e)))
-            })?;
+            .map_err(|e| StreamingError::Unreachable(Unreachable::new(&AnyError::error(e))))?;
 
             match response {
                 // Final chunk returns the install response

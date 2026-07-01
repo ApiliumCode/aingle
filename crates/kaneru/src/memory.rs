@@ -11,7 +11,7 @@ use crate::agent::{Agent, AgentId, AgentState, SimpleAgent};
 use crate::config::AgentConfig;
 use crate::error::Result;
 use crate::observation::Observation;
-use ineru::{MemoryConfig, MemoryEntry, MemoryQuery, IneruMemory};
+use ineru::{IneruMemory, MemoryConfig, MemoryEntry, MemoryQuery};
 
 /// An agent wrapper that adds memory capabilities using `IneruMemory`.
 ///

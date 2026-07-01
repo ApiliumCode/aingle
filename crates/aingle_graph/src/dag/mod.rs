@@ -25,10 +25,12 @@ pub mod sync;
 pub mod timetravel;
 pub mod tips;
 
-pub use action::{DagAction, DagActionHash, DagPayload, MemoryOpKind, TripleInsertPayload};
-pub use backend::{DagBackend, MemoryDagBackend};
+pub use action::{
+    DagAction, DagActionHash, DagPayload, MemoryOpKind, Provenance, TripleInsertPayload,
+};
 #[cfg(feature = "sled-backend")]
 pub use backend::SledDagBackend;
+pub use backend::{DagBackend, MemoryDagBackend};
 pub use export::{DagGraph, ExportFormat};
 pub use pruning::{PruneResult, RetentionPolicy};
 #[cfg(feature = "dag-sign")]

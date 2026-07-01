@@ -7,7 +7,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use ineru::{
-    ConsolidationConfig, LtmConfig, MemoryConfig, MemoryEntry, MemoryQuery, StmConfig, IneruMemory,
+    ConsolidationConfig, IneruMemory, LtmConfig, MemoryConfig, MemoryEntry, MemoryQuery, StmConfig,
 };
 
 /// Benchmark STM store operations

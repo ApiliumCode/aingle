@@ -51,7 +51,11 @@ pub struct CortexNode {
 
 impl fmt::Display for CortexNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CortexNode(rest={}, p2p={})", self.rest_addr, self.p2p_addr)
+        write!(
+            f,
+            "CortexNode(rest={}, p2p={})",
+            self.rest_addr, self.p2p_addr
+        )
     }
 }
 

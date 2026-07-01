@@ -12,9 +12,7 @@
 
 use aingle_minimal::*;
 use kaneru::policy::Condition;
-use kaneru::{
-    Action, ActionType, AgentConfig, Goal, Observation, ObservationType, Policy, Rule,
-};
+use kaneru::{Action, ActionType, AgentConfig, Goal, Observation, ObservationType, Policy, Rule};
 
 /// Helper to create test configuration
 fn test_smart_config() -> SmartNodeConfig {
