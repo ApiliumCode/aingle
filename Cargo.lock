@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_ai"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "blake2",
  "candle-core 0.9.2",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_contracts"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "blake3",
  "dashmap 6.1.0",
@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "aingle_graph",
  "aingle_ingest",
@@ -199,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_graph"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "bincode",
  "blake3",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_ingest"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "aingle_graph",
  "blake3",
@@ -235,7 +235,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_logic"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "aingle_graph",
  "chrono",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_minimal"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "async-io",
  "async-tungstenite",
@@ -293,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_raft"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "aingle_graph",
  "aingle_wal",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_viz"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "aingle_graph",
  "aingle_minimal",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_wal"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "bincode",
  "blake3",
@@ -348,7 +348,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_zk"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "blake3",
  "bulletproofs",
@@ -4262,7 +4262,7 @@ dependencies = [
 
 [[package]]
 name = "ineru"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "bincode",
  "blake3",
@@ -4522,7 +4522,7 @@ dependencies = [
 
 [[package]]
 name = "kaneru"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "criterion",
