@@ -74,9 +74,9 @@ pub mod types;
 
 pub use config::{ConsolidationConfig, LtmConfig, MemoryConfig, StmConfig};
 pub use consolidation::Consolidator;
-pub use embedder::{Embedder, HashEmbedder};
 #[cfg(feature = "neural-embeddings")]
 pub use embedder::NeuralEmbedder;
+pub use embedder::{Embedder, HashEmbedder};
 pub use error::{Error, Result};
 pub use ltm::{KnowledgeGraph, LongTermMemory};
 pub use stm::ShortTermMemory;

@@ -103,8 +103,8 @@ impl NeuralEmbedder {
         };
 
         // E5 REQUIRES mean pooling; the fastembed default is Cls.
-        let model = UserDefinedEmbeddingModel::new(onnx, tokenizer_files)
-            .with_pooling(Pooling::Mean);
+        let model =
+            UserDefinedEmbeddingModel::new(onnx, tokenizer_files).with_pooling(Pooling::Mean);
         let options = InitOptionsUserDefined::new().with_max_length(512);
 
         let embedding = TextEmbedding::try_new_from_user_defined(model, options)
@@ -117,9 +117,7 @@ impl NeuralEmbedder {
 
     fn embed_one(&self, prefixed: String) -> Embedding {
         let mut guard = self.model.lock().expect("embedder mutex poisoned");
-        let out = guard
-            .embed(vec![prefixed], None)
-            .expect("e5 embed failed");
+        let out = guard.embed(vec![prefixed], None).expect("e5 embed failed");
         let vector = out
             .into_iter()
             .next()
@@ -197,7 +195,11 @@ mod neural_tests {
     /// Returns the model dir, or `None` (test skips) if it isn't present.
     fn model_dir() -> Option<PathBuf> {
         let dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
-            concat!(env!("CARGO_MANIFEST_DIR"), "/test-models/multilingual-e5-small").to_string()
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/test-models/multilingual-e5-small"
+            )
+            .to_string()
         });
         let p = PathBuf::from(dir);
         if p.join("onnx/model.onnx").exists() {
@@ -234,10 +236,12 @@ mod neural_tests {
         // single words cluster too tightly to test meaningfully; realistic
         // sentence-level inputs produce a clear semantic margin.
         let query = e.embed_query("¿Cómo debo cuidar a mi perro?");
-        let related =
-            e.embed_passage("Los perros necesitan paseos diarios, agua fresca y una dieta equilibrada.");
-        let unrelated =
-            e.embed_passage("La bolsa de valores cerró hoy con fuertes pérdidas para los inversores.");
+        let related = e.embed_passage(
+            "Los perros necesitan paseos diarios, agua fresca y una dieta equilibrada.",
+        );
+        let unrelated = e.embed_passage(
+            "La bolsa de valores cerró hoy con fuertes pérdidas para los inversores.",
+        );
 
         let near = query.cosine_similarity(&related);
         let far = query.cosine_similarity(&unrelated);
