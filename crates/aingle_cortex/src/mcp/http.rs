@@ -80,7 +80,14 @@ pub fn mcp_http_router(
     allowed_hosts.extend(public_hosts.clone());
 
     // StreamableHttpServerConfig is #[non_exhaustive]; build via Default + builder.
-    let config = StreamableHttpServerConfig::default().with_allowed_hosts(allowed_hosts);
+    // Stateless JSON request/response mode: aingle's tools are all request/response
+    // (no server-initiated notifications), so we don't need the SSE notification
+    // stream. This also maximizes client compatibility — clients that don't open a
+    // GET text/event-stream channel (e.g. some HTTP MCP clients) work without 406s.
+    let config = StreamableHttpServerConfig::default()
+        .with_allowed_hosts(allowed_hosts)
+        .with_stateful_mode(false)
+        .with_json_response(true);
     let service = StreamableHttpService::new(
         move || Ok(AingleMcp::new(factory_state.clone())),
         Arc::new(LocalSessionManager::default()),
