@@ -58,6 +58,19 @@ pub async fn ingest_path(
 ) -> Result<IngestReport> {
     let mut report = IngestReport::default();
 
+    // Resilience: if the vault working-copy root does not exist yet, start empty
+    // instead of taking the whole engine down. This happens on macOS when a
+    // post-update restart races with vault/working-copy setup, or when an iCloud
+    // vault has not synced down at boot. A missing root is a soft, transient
+    // condition — a later ingest (once the vault is mounted) will pick up files.
+    if !std::path::Path::new(root_path).exists() {
+        tracing::warn!(
+            path = %root_path,
+            "ingest root does not exist yet; starting empty (engine stays up)"
+        );
+        return Ok(report);
+    }
+
     // Build a walk that respects .gitignore / .ignore files
     let walker = ignore::WalkBuilder::new(root_path)
         .hidden(false)
@@ -67,7 +80,16 @@ pub async fn ingest_path(
     let mut files: Vec<(String, String)> = Vec::new(); // (rel_path, content)
 
     for entry in walker {
-        let entry = entry.map_err(|e| Error::Internal(format!("walk error: {e}")))?;
+        // A single unreadable entry (a file that vanished mid-walk, an iCloud
+        // `.icloud` placeholder that is not downloaded, a permission error on a
+        // subpath) must not abort the entire ingest — log it and skip.
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                tracing::warn!("skipping unreadable path during ingest walk: {e}");
+                continue;
+            }
+        };
         let path = entry.path();
 
         // Skip directories
@@ -88,10 +110,20 @@ pub async fn ingest_path(
             continue;
         }
 
-        report.files_seen += 1;
+        // A file that cannot be read (iCloud placeholder not downloaded, a race
+        // where it was deleted, a permission error) should be skipped, not fatal.
+        let content = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                tracing::warn!(
+                    "skipping unreadable file during ingest: {}: {e}",
+                    path.display()
+                );
+                continue;
+            }
+        };
 
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| Error::Internal(format!("read {}: {e}", path.display())))?;
+        report.files_seen += 1;
 
         // Compute relative path from root_path for use as the note subject
         let rel_path = path
@@ -440,5 +472,26 @@ mod tests {
             1,
             "stale links_to should be purged, leaving only the new link, got: {links:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn ingest_missing_path_is_graceful() {
+        // Regression: on macOS a post-update restart can race with vault
+        // working-copy setup (or an iCloud vault hasn't synced down), so the
+        // ingest root does not exist yet. That must NOT take the whole engine
+        // down with a fatal "walk error: ... No such file or directory"; it
+        // should start empty and let the engine come up.
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("vaults").join("deadbeef-not-created");
+        assert!(!missing.exists());
+        let state = enabled_state().await;
+
+        let report = ingest_path(&state, missing.to_str().unwrap(), None)
+            .await
+            .expect("ingesting a missing path must not error");
+
+        assert_eq!(report.files_seen, 0);
+        assert_eq!(report.files_ingested, 0);
+        assert_eq!(report.triples_written, 0);
     }
 }
