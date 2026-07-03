@@ -111,6 +111,11 @@ pub struct AppState {
     /// Ed25519 signing key for DAG actions (mandatory in production).
     #[cfg(feature = "dag")]
     pub dag_signing_key: Option<std::sync::Arc<aingle_graph::dag::DagSigningKey>>,
+    /// Runtime MCP policy (folder scope + permission mode) consulted by the MCP
+    /// tool router. Shared behind an `Arc<RwLock<_>>` so Akashi can push policy
+    /// updates at runtime while tool calls read a snapshot.
+    #[cfg(feature = "mcp")]
+    pub mcp_policy: std::sync::Arc<std::sync::RwLock<crate::mcp::policy::McpPolicy>>,
 }
 
 impl AppState {
@@ -165,6 +170,10 @@ impl AppState {
             dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
+            #[cfg(feature = "mcp")]
+            mcp_policy: std::sync::Arc::new(std::sync::RwLock::new(
+                crate::mcp::policy::McpPolicy::default(),
+            )),
         })
     }
 
@@ -217,6 +226,10 @@ impl AppState {
             dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
+            #[cfg(feature = "mcp")]
+            mcp_policy: std::sync::Arc::new(std::sync::RwLock::new(
+                crate::mcp::policy::McpPolicy::default(),
+            )),
         }
     }
 
@@ -269,6 +282,10 @@ impl AppState {
             dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
+            #[cfg(feature = "mcp")]
+            mcp_policy: std::sync::Arc::new(std::sync::RwLock::new(
+                crate::mcp::policy::McpPolicy::default(),
+            )),
         })
     }
 
@@ -418,6 +435,10 @@ impl AppState {
             dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
+            #[cfg(feature = "mcp")]
+            mcp_policy: std::sync::Arc::new(std::sync::RwLock::new(
+                crate::mcp::policy::McpPolicy::default(),
+            )),
         })
     }
 
@@ -471,6 +492,29 @@ impl AppState {
             object_count: stats.object_count,
             connected_clients: self.broadcaster.client_count(),
         }
+    }
+
+    /// Replaces the runtime MCP policy consulted by the MCP tool router.
+    ///
+    /// Akashi calls this to push folder-scope + permission-mode changes at
+    /// runtime. A poisoned lock is treated as a no-op rather than a panic.
+    #[cfg(feature = "mcp")]
+    pub fn set_mcp_policy(&self, p: crate::mcp::policy::McpPolicy) {
+        if let Ok(mut g) = self.mcp_policy.write() {
+            *g = p;
+        }
+    }
+
+    /// Returns a clone of the current MCP policy for a single tool call to read.
+    ///
+    /// A poisoned lock yields the default (read-only, no exclusions) policy so a
+    /// tool call fails safe.
+    #[cfg(feature = "mcp")]
+    pub fn mcp_policy_snapshot(&self) -> crate::mcp::policy::McpPolicy {
+        self.mcp_policy
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 }
 

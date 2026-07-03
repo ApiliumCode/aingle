@@ -18,8 +18,13 @@ use rmcp::{RoleClient, ServiceExt};
 /// read tool plus a create→query round-trip.
 #[tokio::test]
 async fn mcp_in_process_client_server() {
-    // 1. In-memory application state.
+    // 1. In-memory application state. This test exercises a create→query
+    //    round-trip, so it opts into write access (MCP defaults to read-only).
     let state = AppState::with_db_path(":memory:", None).expect("build in-memory AppState");
+    state.set_mcp_policy(aingle_cortex::mcp::policy::McpPolicy {
+        permission: aingle_cortex::mcp::policy::Permission::ReadWrite,
+        ..Default::default()
+    });
 
     // 2. Duplex transport: server on one half, client on the other.
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);

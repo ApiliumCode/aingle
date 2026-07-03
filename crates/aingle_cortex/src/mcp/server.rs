@@ -10,6 +10,48 @@ use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 
 use crate::state::AppState;
 
+/// Error result returned by mutation tools when the runtime MCP policy is
+/// read-only. Centralised so every mutation tool emits the same message.
+fn read_only_denied() -> CallToolResult {
+    CallToolResult::error(vec![Content::text(
+        "MCP is read-only: enable write access in Akashi to allow this.",
+    )])
+}
+
+/// Drop every path-bearing entry of a vault map that the policy hides, so an
+/// excluded folder never leaks through the map/navigation surface.
+fn filter_vault_map(
+    map: &mut crate::service::vault_map::VaultMap,
+    pol: &crate::mcp::policy::McpPolicy,
+) {
+    map.entry_points.retain(|e| !pol.is_hidden(&e.path));
+    map.orphans.retain(|p| !pol.is_hidden(p));
+    map.skills.retain(|p| !pol.is_hidden(p));
+    for g in &mut map.tag_clusters {
+        g.notes.retain(|n| !pol.is_hidden(n));
+    }
+    map.tag_clusters.retain(|g| !g.notes.is_empty());
+    map.topics.retain(|t| !pol.is_hidden(&t.representative));
+    for t in &mut map.topics {
+        t.notes.retain(|n| !pol.is_hidden(n));
+        t.size = t.notes.len();
+    }
+    map.graph.nodes.retain(|n| !pol.is_hidden(&n.id));
+    map.graph
+        .edges
+        .retain(|e| !pol.is_hidden(&e.source) && !pol.is_hidden(&e.target));
+    if map
+        .identity
+        .as_deref()
+        .map(|id| pol.is_hidden(id))
+        .unwrap_or(false)
+    {
+        map.identity = None;
+    }
+    map.totals.orphans = map.orphans.len();
+    map.totals.clusters = map.topics.len();
+}
+
 /// Parameters for the `aingle_dag_history` tool.
 #[cfg(feature = "dag")]
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -101,6 +143,9 @@ impl AingleMcp {
         &self,
         params: Parameters<IngestParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(p) = params;
         let resp = crate::service::ingest::ingest_path(&self.state, &p.path, None)
             .await
@@ -121,9 +166,11 @@ impl AingleMcp {
         params: Parameters<GroundParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let resp = crate::service::ground::ground(&self.state, &p.question, p.k)
+        let mut resp = crate::service::ground::ground(&self.state, &p.question, p.k)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.answer_context.retain(|c| !pol.is_hidden(&c.source));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -139,7 +186,11 @@ impl AingleMcp {
         params: Parameters<BacklinksParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let resp = crate::service::backlinks::backlinks(&self.state, &p.note).await;
+        let mut resp = crate::service::backlinks::backlinks(&self.state, &p.note).await;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.backlinks.retain(|b| !pol.is_hidden(&b.path));
+        resp.outgoing.retain(|path| !pol.is_hidden(path));
+        resp.unlinked.retain(|path| !pol.is_hidden(path));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -157,12 +208,14 @@ impl AingleMcp {
         params: Parameters<NoteContextParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let resp = crate::service::context::note_context_cached(
+        let mut resp = crate::service::context::note_context_cached(
             &self.state,
             &p.note,
             p.limit.unwrap_or(8),
         )
         .await;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.neighbors.retain(|n| !pol.is_hidden(&n.path));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -173,9 +226,11 @@ impl AingleMcp {
         annotations(read_only_hint = true)
     )]
     async fn aingle_sources(&self) -> Result<CallToolResult, ErrorData> {
-        let resp = crate::service::ingest::list_sources(&self.state)
+        let mut resp = crate::service::ingest::list_sources(&self.state)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.retain(|r| !pol.is_hidden(&r.path));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -188,7 +243,9 @@ impl AingleMcp {
         annotations(read_only_hint = true)
     )]
     async fn aingle_vault_map(&self) -> Result<CallToolResult, ErrorData> {
-        let resp = crate::service::vault_map::vault_map_cached(&self.state).await;
+        let mut resp = crate::service::vault_map::vault_map_cached(&self.state).await;
+        let pol = self.state.mcp_policy_snapshot();
+        filter_vault_map(&mut resp, &pol);
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -258,6 +315,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::CreateTripleRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let dto = crate::service::triples::create_triple(&self.state, req, None)
             .await
@@ -283,6 +343,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::BatchInsertRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let resp = crate::service::triples::batch_insert(&self.state, req, None)
             .await
@@ -323,6 +386,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::TripleIdRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         crate::service::triples::delete_triple(&self.state, &req.id, None)
             .await
@@ -428,6 +494,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::CreateSandboxRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let resp = crate::service::skill::create_sandbox(&self.state, req).await;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
@@ -450,6 +519,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::DeleteSandboxRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let resp = crate::service::skill::delete_sandbox(&self.state, &req.id).await;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
@@ -607,6 +679,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::dag::PruneRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let resp = crate::service::dag::prune(&self.state, req)
             .await
@@ -716,5 +791,142 @@ mod ingest_tools_tests {
                 "missing tool {expected}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod policy_enforcement_tests {
+    use super::*;
+    use crate::mcp::policy::{McpPolicy, Permission};
+
+    /// The JSON payload a tool serialises into its first (text) content block.
+    fn json_of(result: &CallToolResult) -> serde_json::Value {
+        let text = result
+            .content
+            .first()
+            .and_then(|c| c.as_text())
+            .expect("tool result must have a text content block")
+            .text
+            .clone();
+        serde_json::from_str(&text).expect("tool content must be valid JSON")
+    }
+
+    /// A ready state whose graph has ingested two notes: one under an excluded
+    /// folder and one public. Returns the state and the temp dir (kept alive).
+    async fn state_with_vault() -> (AppState, tempfile::TempDir) {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Personal").join("Finanzas")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Public")).unwrap();
+        std::fs::write(
+            dir.path()
+                .join("Personal")
+                .join("Finanzas")
+                .join("secret.md"),
+            "# Secreto\n\nMi presupuesto privado y numeros de cuenta.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Public").join("open.md"),
+            "# Abierto\n\nContenido publico del roadmap del proyecto.\n",
+        )
+        .unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        (state, dir)
+    }
+
+    /// A note inside an excluded folder must not appear in `aingle_sources`,
+    /// while a note outside every excluded folder is still returned.
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_sources() {
+        let (state, _dir) = state_with_vault().await;
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        let mcp = AingleMcp::new(state);
+
+        let result = mcp.aingle_sources().await.expect("aingle_sources ok");
+        let paths: Vec<String> = json_of(&result)
+            .as_array()
+            .expect("sources is an array")
+            .iter()
+            .map(|r| {
+                r.get("path")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("")
+                    .replace('\\', "/")
+            })
+            .collect();
+
+        assert!(
+            paths.iter().any(|p| p == "Public/open.md"),
+            "public note must remain visible: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.starts_with("Personal/Finanzas")),
+            "excluded-folder note must be hidden: {paths:?}"
+        );
+    }
+
+    /// Under the default (ReadOnly) policy a mutation tool returns an error
+    /// result instead of touching the graph.
+    #[tokio::test]
+    async fn mutation_denied_under_read_only_default() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let mcp = AingleMcp::new(state); // default policy = ReadOnly
+
+        let req: crate::rest::CreateTripleRequest = serde_json::from_value(serde_json::json!({
+            "subject": "http://example.org/a",
+            "predicate": "http://example.org/knows",
+            "object": "b",
+        }))
+        .unwrap();
+
+        let result = mcp
+            .aingle_create_triple(Parameters(req))
+            .await
+            .expect("tool returns a result (not a protocol error)");
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "read-only default must deny mutation: {result:?}"
+        );
+    }
+
+    /// With ReadWrite enabled the same mutation succeeds — proving the gate is a
+    /// real switch, not an unconditional denial.
+    #[tokio::test]
+    async fn mutation_allowed_under_read_write() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        state.set_mcp_policy(McpPolicy {
+            permission: Permission::ReadWrite,
+            ..Default::default()
+        });
+        let mcp = AingleMcp::new(state);
+
+        let req: crate::rest::CreateTripleRequest = serde_json::from_value(serde_json::json!({
+            "subject": "http://example.org/a",
+            "predicate": "http://example.org/knows",
+            "object": "b",
+        }))
+        .unwrap();
+
+        let result = mcp
+            .aingle_create_triple(Parameters(req))
+            .await
+            .expect("tool returns a result");
+        assert_ne!(
+            result.is_error,
+            Some(true),
+            "read-write policy must allow mutation: {result:?}"
+        );
     }
 }
