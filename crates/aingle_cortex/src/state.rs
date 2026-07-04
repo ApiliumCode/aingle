@@ -116,6 +116,12 @@ pub struct AppState {
     /// updates at runtime while tool calls read a snapshot.
     #[cfg(feature = "mcp")]
     pub mcp_policy: std::sync::Arc<std::sync::RwLock<crate::mcp::policy::McpPolicy>>,
+    /// Runtime MCP bearer token consulted by the MCP-over-HTTP auth middleware.
+    /// Shared behind an `Arc<RwLock<_>>` so a revoke (token rotation) takes effect
+    /// live: the middleware reads a snapshot per request instead of the value it
+    /// captured at router-build time. `None` means no static token is configured.
+    #[cfg(feature = "mcp")]
+    pub mcp_token: std::sync::Arc<std::sync::RwLock<Option<String>>>,
 }
 
 impl AppState {
@@ -174,6 +180,8 @@ impl AppState {
             mcp_policy: std::sync::Arc::new(std::sync::RwLock::new(
                 crate::mcp::policy::McpPolicy::default(),
             )),
+            #[cfg(feature = "mcp")]
+            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -230,6 +238,8 @@ impl AppState {
             mcp_policy: std::sync::Arc::new(std::sync::RwLock::new(
                 crate::mcp::policy::McpPolicy::default(),
             )),
+            #[cfg(feature = "mcp")]
+            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -286,6 +296,8 @@ impl AppState {
             mcp_policy: std::sync::Arc::new(std::sync::RwLock::new(
                 crate::mcp::policy::McpPolicy::default(),
             )),
+            #[cfg(feature = "mcp")]
+            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -439,6 +451,8 @@ impl AppState {
             mcp_policy: std::sync::Arc::new(std::sync::RwLock::new(
                 crate::mcp::policy::McpPolicy::default(),
             )),
+            #[cfg(feature = "mcp")]
+            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -515,6 +529,24 @@ impl AppState {
             .read()
             .map(|g| g.clone())
             .unwrap_or_default()
+    }
+
+    /// Replaces the runtime MCP bearer token consulted by the MCP-over-HTTP auth
+    /// middleware. Akashi calls this on revoke so the running endpoint rejects the
+    /// previous token immediately, without a restart. A poisoned lock is treated
+    /// as a no-op rather than a panic.
+    #[cfg(feature = "mcp")]
+    pub fn set_mcp_token(&self, t: Option<String>) {
+        if let Ok(mut g) = self.mcp_token.write() {
+            *g = t;
+        }
+    }
+
+    /// Returns a clone of the current MCP bearer token for a single request to
+    /// check. A poisoned lock yields `None` so authentication fails closed.
+    #[cfg(feature = "mcp")]
+    pub fn mcp_token_snapshot(&self) -> Option<String> {
+        self.mcp_token.read().ok().and_then(|g| g.clone())
     }
 }
 

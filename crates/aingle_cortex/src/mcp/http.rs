@@ -68,6 +68,12 @@ pub fn mcp_http_router(
         return None;
     }
 
+    // Seed the shared token from the startup value. The auth middleware reads it
+    // live per request (via `mcp_token_snapshot`), so a later rotation (revoke)
+    // takes effect immediately without rebuilding the router or restarting.
+    state.set_mcp_token(token.clone());
+
+    let auth_state = state.clone();
     let factory_state = state;
     // Default loopback hosts plus any public host(s) for remote deployment.
     // `::1` is included by StreamableHttpServerConfig::default(), but we rebuild
@@ -94,7 +100,6 @@ pub fn mcp_http_router(
     let mut router = Router::new().fallback_service(service);
 
     if !allow_anonymous {
-        let static_token = token.clone();
         #[cfg(feature = "mcp-oauth")]
         let oauth_for_layer = oauth.clone();
         let resource_metadata_url = {
@@ -114,7 +119,7 @@ pub fn mcp_http_router(
         };
         router = router.layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {
-                let static_token = static_token.clone();
+                let auth_state = auth_state.clone();
                 #[cfg(feature = "mcp-oauth")]
                 let oauth_for_layer = oauth_for_layer.clone();
                 let rmu = resource_metadata_url.clone();
@@ -123,7 +128,9 @@ pub fn mcp_http_router(
                         .headers()
                         .get(axum::http::header::AUTHORIZATION)
                         .and_then(|v| v.to_str().ok());
-                    if let Some(ref t) = static_token {
+                    // Read the expected token live per request so a revoke that
+                    // rotates the shared token is enforced immediately.
+                    if let Some(ref t) = auth_state.mcp_token_snapshot() {
                         if bearer_ok(t, hdr) {
                             return next.run(req).await;
                         }
@@ -168,5 +175,50 @@ mod tests {
         assert!(!bearer_ok("secret", Some("secret"))); // missing prefix
         assert!(!bearer_ok("secret", None)); // missing header
         assert!(!bearer_ok("secret", Some("Bearer sec"))); // length mismatch
+    }
+
+    /// The auth middleware must consult the token on shared state per request, so
+    /// rotating it (a revoke) is enforced immediately without rebuilding the
+    /// router. Build a router seeded with `tok-a`, then rotate to `tok-b` on the
+    /// live state and confirm which bearer is accepted flips accordingly.
+    #[tokio::test]
+    async fn token_rotation_is_live() {
+        use axum::body::Body;
+        use axum::http::{header::AUTHORIZATION, Request, StatusCode};
+        use tower::ServiceExt;
+
+        let state = AppState::new().expect("in-memory state");
+        let router = mcp_http_router(
+            state.clone(),
+            Some("tok-a".to_string()),
+            false,
+            vec![],
+            #[cfg(feature = "mcp-oauth")]
+            None,
+        )
+        .expect("router builds when a token is configured");
+
+        // Send a GET carrying `Bearer <bearer>`, return the response status.
+        async fn status_for(router: &Router, bearer: &str) -> StatusCode {
+            let req = Request::builder()
+                .uri("/")
+                .header(AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap();
+            router.clone().oneshot(req).await.unwrap().status()
+        }
+
+        // Seeded token `tok-a`: accepted (passes the auth layer, is not a 401);
+        // `tok-b`: rejected with 401 by the auth layer.
+        assert_ne!(status_for(&router, "tok-a").await, StatusCode::UNAUTHORIZED);
+        assert!(status_for(&router, "tok-a").await.as_u16() < 500);
+        assert_eq!(status_for(&router, "tok-b").await, StatusCode::UNAUTHORIZED);
+
+        // Rotate the live token; the SAME router must now reject the old token
+        // and accept the new one, proving the middleware reads state per request.
+        state.set_mcp_token(Some("tok-b".to_string()));
+        assert_eq!(status_for(&router, "tok-a").await, StatusCode::UNAUTHORIZED);
+        assert_ne!(status_for(&router, "tok-b").await, StatusCode::UNAUTHORIZED);
+        assert!(status_for(&router, "tok-b").await.as_u16() < 500);
     }
 }
