@@ -197,12 +197,38 @@ impl AingleMcp {
         params: Parameters<GroundParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let mut resp = crate::service::ground::ground(&self.state, &p.question, p.k)
+        let mut g = crate::service::ground::ground(&self.state, &p.question, p.k)
             .await
             .map_err(super::convert::to_mcp_error)?;
         let pol = self.state.mcp_policy_snapshot();
-        resp.answer_context.retain(|c| !pol.is_hidden(&c.source));
-        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+
+        // Grounding gate: when the connected client requires grounded answers,
+        // decline to hand back answerable context that isn't grounded. Omitting
+        // the source chunks leaves the model nothing weakly-related to answer
+        // from, so it must say it doesn't know instead of hallucinating.
+        if pol.require_grounding && g.groundedness != "grounded" {
+            let refusal = serde_json::json!({
+                "groundedness": g.groundedness,
+                "answerable": false,
+                "answer_context": [],
+                "gaps": g.gaps,
+                "instruction": "No hay suficiente evidencia en tus notas; responde que no lo sabes.",
+            });
+            return Ok(CallToolResult::success(vec![Content::json(refusal)?]));
+        }
+
+        g.answer_context.retain(|c| !pol.is_hidden(&c.source));
+        // Normal branch: carry the grounded context as before plus an explicit
+        // `answerable:true`, so clients can rely on the same boolean regardless
+        // of whether the grounding gate is active.
+        let payload = serde_json::json!({
+            "groundedness": g.groundedness,
+            "answerable": true,
+            "answer_context": g.answer_context,
+            "gaps": g.gaps,
+            "instruction": g.instruction,
+        });
+        Ok(CallToolResult::success(vec![Content::json(payload)?]))
     }
 
     /// Verified backlinks + outgoing links + unlinked mentions for a note.
@@ -1104,6 +1130,73 @@ mod policy_enforcement_tests {
             result.is_error,
             Some(true),
             "read-only default must deny mutation: {result:?}"
+        );
+    }
+
+    /// With `require_grounding` ON, an off-topic question the retrieval cannot
+    /// ground must be refused: the tool signals `answerable:false`, omits the
+    /// source chunks (so nothing weakly-related can be answered from), and reports
+    /// a non-"grounded" groundedness. With the flag OFF (default) the SAME question
+    /// returns the normal context shape (answerable not-false, sources present) —
+    /// proving the gate only triggers under the flag.
+    #[tokio::test]
+    async fn require_grounding_declines_ungrounded_answers() {
+        // Clearly off-topic w.r.t. the ingested finance/roadmap notes, so the
+        // retrieval will not be "grounded".
+        let off_topic = "¿Cuál es la mejor receta de pizza napolitana con mozzarella?";
+
+        // Case A (refusal): gate ON.
+        let (state, _dir) = state_with_vault().await;
+        state.set_mcp_policy(McpPolicy {
+            require_grounding: true,
+            ..Default::default()
+        });
+        let mcp = AingleMcp::new(state);
+        let req = GroundParams {
+            question: off_topic.to_string(),
+            k: 6,
+        };
+        let result = mcp
+            .aingle_ground(Parameters(req))
+            .await
+            .expect("ground ok");
+        let payload = json_of(&result);
+        assert_eq!(
+            payload.get("answerable").and_then(|v| v.as_bool()),
+            Some(false),
+            "gated refusal must signal answerable:false: {payload}"
+        );
+        let ctx = payload.get("answer_context").and_then(|v| v.as_array());
+        assert!(
+            ctx.map(|a| a.is_empty()).unwrap_or(true),
+            "refusal must omit source chunks so nothing weak can be answered from: {payload}"
+        );
+        assert_ne!(
+            payload.get("groundedness").and_then(|v| v.as_str()),
+            Some("grounded"),
+            "an off-topic question must not be grounded: {payload}"
+        );
+
+        // Case B (control): gate OFF (default) — normal context shape.
+        let (state, _dir2) = state_with_vault().await;
+        let mcp = AingleMcp::new(state); // default policy: require_grounding = false
+        let req = GroundParams {
+            question: off_topic.to_string(),
+            k: 6,
+        };
+        let result = mcp
+            .aingle_ground(Parameters(req))
+            .await
+            .expect("ground ok");
+        let payload = json_of(&result);
+        assert_ne!(
+            payload.get("answerable").and_then(|v| v.as_bool()),
+            Some(false),
+            "with the gate off the tool must not refuse: {payload}"
+        );
+        assert!(
+            payload.get("answer_context").is_some(),
+            "normal shape must still carry answer_context: {payload}"
         );
     }
 
