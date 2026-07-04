@@ -382,9 +382,10 @@ impl AingleMcp {
             return Ok(read_only_denied());
         }
         let Parameters(req) = params;
-        let dto = crate::service::triples::create_triple(&self.state, req, None)
-            .await
-            .map_err(super::convert::to_mcp_error)?;
+        let dto =
+            crate::service::triples::create_triple(&self.state, req, None, Some(super::MCP_ORIGIN))
+                .await
+                .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(dto)?]))
     }
 
@@ -461,7 +462,7 @@ impl AingleMcp {
             return Ok(read_only_denied());
         }
         let Parameters(req) = params;
-        crate::service::triples::delete_triple(&self.state, &req.id, None)
+        crate::service::triples::delete_triple(&self.state, &req.id, None, Some(super::MCP_ORIGIN))
             .await
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(
@@ -1197,6 +1198,54 @@ mod policy_enforcement_tests {
         assert!(
             payload.get("answer_context").is_some(),
             "normal shape must still carry answer_context: {payload}"
+        );
+    }
+
+    /// A create_triple issued through the MCP tool must tag the resulting DAG
+    /// action with `origin = mcp`, so Akashi can later attribute "what your AI
+    /// did". A non-MCP caller would leave the author at its node default.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn mcp_create_triple_tags_dag_origin_mcp() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        state.set_mcp_policy(McpPolicy {
+            permission: Permission::ReadWrite,
+            ..Default::default()
+        });
+        let mcp = AingleMcp::new(state.clone());
+
+        let req: crate::rest::CreateTripleRequest = serde_json::from_value(serde_json::json!({
+            "subject": "note.md",
+            "predicate": "links_to",
+            "object": { "node": "other.md" },
+        }))
+        .unwrap();
+
+        let result = mcp
+            .aingle_create_triple(Parameters(req))
+            .await
+            .expect("create_triple ok");
+        assert_ne!(
+            result.is_error,
+            Some(true),
+            "read-write policy must allow the mutation: {result:?}"
+        );
+
+        // Read the subject's DAG history via the same graph accessor the
+        // `aingle_dag_history` tool uses, and assert the newest action's author
+        // is the MCP origin tag.
+        let graph = state.graph.read().await;
+        let actions = graph.dag_history_by_subject("note.md", 10).unwrap();
+        let newest = actions.first().expect("one DAG action recorded for the insert");
+        assert_eq!(
+            newest.author.as_name(),
+            Some(crate::mcp::MCP_ORIGIN),
+            "MCP-originated create must tag the DAG action author with origin=mcp, got {:?}",
+            newest.author
         );
     }
 

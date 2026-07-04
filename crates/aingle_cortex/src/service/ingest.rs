@@ -195,6 +195,7 @@ pub async fn ingest_path(
                 #[cfg(not(feature = "dag"))]
                 None,
                 namespace.clone(),
+                None,
             )
             .await;
 
@@ -256,6 +257,7 @@ pub async fn ingest_path(
             #[cfg(not(feature = "dag"))]
             None,
             namespace.clone(),
+            None,
         )
         .await
         .map_err(|e| Error::Internal(format!("registry triple insert error: {e}")))?;
@@ -292,7 +294,7 @@ async fn purge_source(state: &AppState, rel_path: &str, namespace: Option<String
     };
     for hex_id in stale_ids {
         // Best-effort: a concurrently-removed triple is fine to skip.
-        let _ = delete_triple(state, &hex_id, namespace.clone()).await;
+        let _ = delete_triple(state, &hex_id, namespace.clone(), None).await;
     }
 
     // Ineru: forget every chunk that came from this source.
