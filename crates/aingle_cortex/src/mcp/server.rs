@@ -202,25 +202,36 @@ impl AingleMcp {
             .map_err(super::convert::to_mcp_error)?;
         let pol = self.state.mcp_policy_snapshot();
 
-        // Grounding gate: when the connected client requires grounded answers,
-        // decline to hand back answerable context that isn't grounded. Omitting
-        // the source chunks leaves the model nothing weakly-related to answer
-        // from, so it must say it doesn't know instead of hallucinating.
-        if pol.require_grounding && g.groundedness != "grounded" {
+        // Filter folder-excluded sources out of the answer context BEFORE deciding
+        // answerability. Deciding first and filtering afterwards produced a
+        // contradictory signal (`grounded`/`answerable:true` alongside an empty
+        // context) whenever a question's only evidence lived in an excluded folder.
+        g.answer_context.retain(|c| !pol.is_hidden(&c.source));
+
+        // `answerable` is the authoritative flag and must never be `true` with an
+        // empty context: an answer is only answerable when at least one visible
+        // source remains AND (when the grounding gate is active) the retrieval is
+        // grounded. Omitting the chunks on refusal leaves the model nothing
+        // weakly-related to answer from, so it must say it doesn't know.
+        let has_visible_source = !g.answer_context.is_empty();
+        let grounding_ok = !pol.require_grounding || g.groundedness == "grounded";
+        let answerable = has_visible_source && grounding_ok;
+
+        if !answerable {
             let refusal = serde_json::json!({
                 "groundedness": g.groundedness,
                 "answerable": false,
                 "answer_context": [],
                 "gaps": g.gaps,
-                "instruction": "No hay suficiente evidencia en tus notas; responde que no lo sabes.",
+                "instruction": "Insufficient grounded evidence in your notes; \
+                    say you don't know and do not invent facts.",
             });
             return Ok(CallToolResult::success(vec![Content::json(refusal)?]));
         }
 
-        g.answer_context.retain(|c| !pol.is_hidden(&c.source));
-        // Normal branch: carry the grounded context as before plus an explicit
-        // `answerable:true`, so clients can rely on the same boolean regardless
-        // of whether the grounding gate is active.
+        // Normal branch: carry the visible grounded context plus an explicit
+        // `answerable:true`. `groundedness` stays as computed (still informative),
+        // but `answerable` is the flag clients should gate on.
         let payload = serde_json::json!({
             "groundedness": g.groundedness,
             "answerable": true,
@@ -1198,6 +1209,61 @@ mod policy_enforcement_tests {
         assert!(
             payload.get("answer_context").is_some(),
             "normal shape must still carry answer_context: {payload}"
+        );
+    }
+
+    /// Regression: when every grounded source for a question lives inside an
+    /// excluded folder, the tool must NOT claim the answer is answerable while
+    /// handing back an empty context. Before the fix, the normal branch hardcoded
+    /// `answerable:true` and only afterwards filtered `answer_context` down to
+    /// nothing — a contradictory signal (grounded/answerable but zero context)
+    /// that invites hallucination. `answerable` must follow the visible context.
+    #[tokio::test]
+    async fn all_sources_excluded_makes_unanswerable() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Personal").join("Finanzas")).unwrap();
+        std::fs::write(
+            dir.path()
+                .join("Personal")
+                .join("Finanzas")
+                .join("presupuesto.md"),
+            "# Presupuesto\n\nEl presupuesto mensual de marketing es de 4200 euros.\n",
+        )
+        .unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        let mcp = AingleMcp::new(state);
+
+        let req = GroundParams {
+            question: "¿Cuál es el presupuesto mensual de marketing?".to_string(),
+            k: 6,
+        };
+        let result = mcp
+            .aingle_ground(Parameters(req))
+            .await
+            .expect("ground ok");
+        let payload = json_of(&result);
+
+        let ctx = payload.get("answer_context").and_then(|v| v.as_array());
+        assert!(
+            ctx.map(|a| a.is_empty()).unwrap_or(true),
+            "all evidence is folder-excluded, so answer_context must be empty: {payload}"
+        );
+        assert_eq!(
+            payload.get("answerable").and_then(|v| v.as_bool()),
+            Some(false),
+            "answerable must be false when no visible source remains: {payload}"
         );
     }
 
