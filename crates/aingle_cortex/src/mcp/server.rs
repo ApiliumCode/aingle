@@ -52,6 +52,37 @@ fn filter_vault_map(
     map.totals.clusters = map.topics.len();
 }
 
+/// A stored triple is hidden if its subject or its (node) object resolves to an
+/// excluded note path. Note paths are used as triple subjects, and `links_to`
+/// targets are node objects — both are folder-scoped. Scalar/string objects are
+/// never note paths, so they pass through.
+fn triple_dto_hidden(pol: &crate::mcp::policy::McpPolicy, t: &crate::rest::TripleDto) -> bool {
+    if pol.is_hidden(&t.subject) {
+        return true;
+    }
+    matches!(&t.object, crate::rest::ValueDto::Node { node } if pol.is_hidden(node))
+}
+
+/// A SPARQL result row (a JSON object of bound values) is hidden if any bound
+/// value string resolves to an excluded note path.
+fn binding_hidden(pol: &crate::mcp::policy::McpPolicy, row: &serde_json::Value) -> bool {
+    row.as_object().is_some_and(|m| {
+        m.values()
+            .filter_map(|v| v.as_str())
+            .any(|s| pol.is_hidden(s))
+    })
+}
+
+/// A DAG action DTO is hidden if its human-readable payload summary embeds a
+/// path under any excluded folder. Only single-triple insert/delete summaries
+/// inline note paths verbatim (batch/count summaries carry no path and the
+/// content hash is a digest, not a path), so a conservative substring scrub over
+/// the summary is a sound filter that never under-matches a real exclusion.
+#[cfg(feature = "dag")]
+fn dag_dto_hidden(pol: &crate::mcp::policy::McpPolicy, d: &crate::rest::dag::DagActionDto) -> bool {
+    pol.text_references_excluded(&d.payload_summary)
+}
+
 /// Parameters for the `aingle_dag_history` tool.
 #[cfg(feature = "dag")]
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -259,9 +290,12 @@ impl AingleMcp {
         params: Parameters<crate::rest::PatternQueryRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp = crate::service::query::query_pattern(&self.state, req, None)
+        let mut resp = crate::service::query::query_pattern(&self.state, req, None)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.matches.retain(|t| !triple_dto_hidden(&pol, t));
+        resp.total = resp.matches.len();
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -275,9 +309,12 @@ impl AingleMcp {
         params: Parameters<crate::rest::ListSubjectsQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp = crate::service::query::list_subjects(&self.state, req, None)
+        let mut resp = crate::service::query::list_subjects(&self.state, req, None)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.subjects.retain(|s| !pol.is_hidden(s));
+        resp.total = resp.subjects.len();
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -366,6 +403,14 @@ impl AingleMcp {
         let dto = crate::service::triples::get_triple(&self.state, &req.id)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // Do not reveal a triple whose subject/object lives in an excluded
+        // folder; report it as absent (same shape as a genuinely missing id).
+        let pol = self.state.mcp_policy_snapshot();
+        if triple_dto_hidden(&pol, &dto) {
+            return Err(super::convert::to_mcp_error(crate::error::Error::NotFound(
+                format!("Triple {} not found", req.id),
+            )));
+        }
         Ok(CallToolResult::success(vec![Content::json(dto)?]))
     }
 
@@ -408,9 +453,12 @@ impl AingleMcp {
         params: Parameters<crate::rest::ListTriplesQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp = crate::service::triples::list_triples(&self.state, req, None)
+        let mut resp = crate::service::triples::list_triples(&self.state, req, None)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.triples.retain(|t| !triple_dto_hidden(&pol, t));
+        resp.total = resp.triples.len();
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -601,9 +649,19 @@ impl AingleMcp {
         params: Parameters<DagHistoryParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let h = crate::service::dag::history_by_subject(&self.state, &p.subject, p.limit)
+        let pol = self.state.mcp_policy_snapshot();
+        // The subject is an explicit input: never surface the history of a note
+        // that lives in an excluded folder.
+        if pol.is_hidden(&p.subject) {
+            let empty: Vec<crate::rest::dag::DagActionDto> = Vec::new();
+            return Ok(CallToolResult::success(vec![Content::json(empty)?]));
+        }
+        let mut h = crate::service::dag::history_by_subject(&self.state, &p.subject, p.limit)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // Defense in depth: a batch action affecting this (public) subject could
+        // still inline a co-edited hidden path in its summary; scrub those.
+        h.retain(|a| !dag_dto_hidden(&pol, a));
         Ok(CallToolResult::success(vec![Content::json(h)?]))
     }
 
@@ -632,6 +690,14 @@ impl AingleMcp {
         let resp = crate::service::dag::action(&self.state, &p.hash)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // If the action's summary references an excluded path, report it as
+        // absent rather than revealing the excluded note's mutation.
+        let pol = self.state.mcp_policy_snapshot();
+        if dag_dto_hidden(&pol, &resp) {
+            return Err(super::convert::to_mcp_error(crate::error::Error::NotFound(
+                format!("DAG action {} not found", p.hash),
+            )));
+        }
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -645,9 +711,12 @@ impl AingleMcp {
         params: Parameters<DagChainParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let resp = crate::service::dag::chain(&self.state, &p.author, p.limit)
+        let mut resp = crate::service::dag::chain(&self.state, &p.author, p.limit)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // Drop actions whose summary references an excluded note path.
+        let pol = self.state.mcp_policy_snapshot();
+        resp.retain(|a| !dag_dto_hidden(&pol, a));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -706,9 +775,30 @@ impl AingleMcp {
         params: Parameters<crate::sparql::SparqlRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp = crate::service::sparql::execute(&self.state, req)
+        let query_text = req.query.clone();
+        let mut resp = crate::service::sparql::execute(&self.state, req)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        if !pol.excluded_folders.is_empty() {
+            // SELECT / CONSTRUCT / DESCRIBE: drop any result row that binds a
+            // value referencing an excluded note path.
+            if let Some(rows) = resp.bindings.as_mut() {
+                rows.retain(|row| !binding_hidden(&pol, row));
+                if resp.triple_count.is_some() {
+                    resp.triple_count = Some(rows.len());
+                }
+            }
+            // ASK yields only a boolean, so there is no row to filter. Refuse the
+            // query if its text names an excluded path — answering true/false
+            // would itself leak the existence of a hidden note.
+            if resp.boolean.is_some() && pol.text_references_excluded(&query_text) {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "SPARQL ASK over an excluded folder is not allowed while folder \
+                     exclusions are active.",
+                )]));
+            }
+        }
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 }
@@ -873,6 +963,122 @@ mod policy_enforcement_tests {
         assert!(
             !paths.iter().any(|p| p.starts_with("Personal/Finanzas")),
             "excluded-folder note must be hidden: {paths:?}"
+        );
+    }
+
+    /// Build an MCP handler over the shared vault with `Personal/Finanzas`
+    /// excluded (ReadOnly). Returns the handler and the temp dir (kept alive).
+    async fn excluded_mcp() -> (AingleMcp, tempfile::TempDir) {
+        let (state, dir) = state_with_vault().await;
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        (AingleMcp::new(state), dir)
+    }
+
+    /// `aingle_list_subjects` must drop subjects under an excluded folder while
+    /// keeping public ones. Note paths are triple subjects, so an unfiltered
+    /// listing would leak the excluded note's very existence.
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_list_subjects() {
+        let (mcp, _dir) = excluded_mcp().await;
+        let req: crate::rest::ListSubjectsQuery =
+            serde_json::from_value(serde_json::json!({ "limit": 10_000 })).unwrap();
+
+        let result = mcp
+            .aingle_list_subjects(Parameters(req))
+            .await
+            .expect("list_subjects ok");
+        let subjects: Vec<String> = json_of(&result)
+            .get("subjects")
+            .and_then(|s| s.as_array())
+            .expect("subjects array")
+            .iter()
+            .map(|v| v.as_str().unwrap_or("").replace('\\', "/"))
+            .collect();
+
+        assert!(
+            subjects.iter().any(|s| s.contains("Public/open.md")),
+            "public subject must remain visible: {subjects:?}"
+        );
+        assert!(
+            !subjects.iter().any(|s| s.contains("Personal/Finanzas")),
+            "excluded subject must be hidden: {subjects:?}"
+        );
+    }
+
+    /// `aingle_query_pattern` with a wildcard pattern must not return any triple
+    /// whose subject/object lives under an excluded folder.
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_query_pattern() {
+        let (mcp, _dir) = excluded_mcp().await;
+        let req: crate::rest::PatternQueryRequest =
+            serde_json::from_value(serde_json::json!({ "limit": 10_000 })).unwrap();
+
+        let result = mcp
+            .aingle_query_pattern(Parameters(req))
+            .await
+            .expect("query_pattern ok");
+        let payload = json_of(&result);
+        let dump = payload.to_string().replace('\\', "/");
+        assert!(
+            dump.contains("Public/open.md"),
+            "public triples must remain: {dump}"
+        );
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "excluded-folder triples must be hidden: {dump}"
+        );
+    }
+
+    /// `aingle_sparql` `SELECT ?s ?p ?o` must not bind any row that references
+    /// an excluded note path.
+    #[cfg(feature = "sparql")]
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_sparql_select() {
+        let (mcp, _dir) = excluded_mcp().await;
+        let req: crate::sparql::SparqlRequest = serde_json::from_value(serde_json::json!({
+            "query": "SELECT ?s ?p ?o WHERE { ?s ?p ?o }"
+        }))
+        .unwrap();
+
+        let result = mcp.aingle_sparql(Parameters(req)).await.expect("sparql ok");
+        let dump = json_of(&result).to_string().replace('\\', "/");
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "SPARQL rows must not reference excluded paths: {dump}"
+        );
+    }
+
+    /// `aingle_dag_history` for a subject inside an excluded folder must surface
+    /// nothing, and must never leak the excluded path.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_dag_history() {
+        let (mcp, _dir) = excluded_mcp().await;
+        let params = DagHistoryParams {
+            subject: "Personal/Finanzas/secret.md".to_string(),
+            limit: 50,
+        };
+
+        let result = mcp
+            .aingle_dag_history(Parameters(params))
+            .await
+            .expect("dag_history ok");
+        let payload = json_of(&result);
+        let rows = payload.as_array().expect("history is an array");
+        assert!(
+            rows.is_empty(),
+            "history of an excluded subject must be empty: {payload}"
+        );
+        assert!(
+            !payload
+                .to_string()
+                .replace('\\', "/")
+                .contains("Personal/Finanzas"),
+            "dag_history must not leak the excluded path: {payload}"
         );
     }
 
