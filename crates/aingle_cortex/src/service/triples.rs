@@ -12,6 +12,22 @@ use crate::rest::{
 use crate::state::{AppState, Event};
 use aingle_graph::{NodeId, Predicate, Triple, TripleId, TriplePattern, Value};
 
+/// Resolve the author identity to stamp on a DAG action.
+///
+/// An explicit `origin` (e.g. `"mcp"` from the MCP mutation tools) wins so the
+/// action can be attributed to its source; otherwise the node's configured
+/// `dag_author` is used, falling back to `"node:local"`.
+#[cfg(feature = "dag")]
+fn dag_action_author(state: &AppState, origin: Option<&str>) -> aingle_graph::NodeId {
+    match origin {
+        Some(o) => aingle_graph::NodeId::named(o),
+        None => state
+            .dag_author
+            .clone()
+            .unwrap_or_else(|| aingle_graph::NodeId::named("node:local")),
+    }
+}
+
 /// Create (insert) a single triple, returning its stored form (with hash id).
 ///
 /// Performs the same side-effects as the REST handler's direct-write path:
@@ -23,10 +39,15 @@ use aingle_graph::{NodeId, Predicate, Triple, TripleId, TriplePattern, Value};
 /// NOTE: cluster/Raft routing and `HeaderMap`-based replication are transport
 /// concerns and remain in the REST handler; this function is the non-cluster
 /// direct-write path that both surfaces share for local writes.
+///
+/// `origin`, when `Some`, is stamped as the DAG action author (e.g. `"mcp"` for
+/// writes coming through the MCP tools) so the mutation can later be attributed;
+/// `None` keeps the node's default author (`state.dag_author`).
 pub async fn create_triple(
     state: &AppState,
     req: CreateTripleRequest,
     namespace: Option<String>,
+    origin: Option<&str>,
 ) -> Result<TripleDto> {
     if req.subject.is_empty() {
         return Err(Error::InvalidInput("Subject cannot be empty".to_string()));
@@ -41,6 +62,7 @@ pub async fn create_triple(
         &req.predicate,
         None,
         namespace,
+        origin,
     )
     .await
 }
@@ -57,6 +79,7 @@ pub async fn insert_triple_inner(
     #[cfg(feature = "dag")] provenance: Option<aingle_graph::dag::Provenance>,
     #[cfg(not(feature = "dag"))] _provenance: Option<()>,
     namespace: Option<String>,
+    #[cfg_attr(not(feature = "dag"), allow(unused_variables))] origin: Option<&str>,
 ) -> Result<TripleDto> {
     let object: Value = object_dto.clone().into();
     let triple = Triple::new(NodeId::named(subject), Predicate::named(predicate), object);
@@ -67,10 +90,7 @@ pub async fn insert_triple_inner(
 
         #[cfg(feature = "dag")]
         if let Some(dag_store) = graph.dag_store() {
-            let dag_author = state
-                .dag_author
-                .clone()
-                .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
+            let dag_author = dag_action_author(state, origin);
             let dag_seq = state
                 .dag_seq_counter
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -273,7 +293,15 @@ pub async fn get_triple(state: &AppState, id: &str) -> Result<TripleDto> {
 ///
 /// NOTE: cluster/Raft routing and namespace ENFORCEMENT remain in the REST
 /// handler.
-pub async fn delete_triple(state: &AppState, id: &str, namespace: Option<String>) -> Result<()> {
+///
+/// `origin`, when `Some`, is stamped as the DAG action author (e.g. `"mcp"`) so
+/// the deletion can later be attributed; `None` keeps the node's default author.
+pub async fn delete_triple(
+    state: &AppState,
+    id: &str,
+    namespace: Option<String>,
+    #[cfg_attr(not(feature = "dag"), allow(unused_variables))] origin: Option<&str>,
+) -> Result<()> {
     let triple_id = TripleId::from_hex(id)
         .ok_or_else(|| Error::InvalidInput(format!("Invalid triple ID: {}", id)))?;
 
@@ -294,10 +322,7 @@ pub async fn delete_triple(state: &AppState, id: &str, namespace: Option<String>
         #[cfg(feature = "dag")]
         if deleted {
             if let Some(dag_store) = graph.dag_store() {
-                let dag_author = state
-                    .dag_author
-                    .clone()
-                    .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
+                let dag_author = dag_action_author(state, origin);
                 let dag_seq = state
                     .dag_seq_counter
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -419,7 +444,7 @@ mod tests {
                 node: "ex:bob".into(),
             },
         };
-        let dto = create_triple(&state, req, None).await.unwrap();
+        let dto = create_triple(&state, req, None, None).await.unwrap();
         assert!(dto.id.is_some());
         let count = state.graph.read().await.count();
         assert_eq!(count, 1);
@@ -490,11 +515,13 @@ mod tests {
         };
         assert_eq!(state.graph.read().await.count(), 1);
 
-        delete_triple(&state, &id.to_hex(), None).await.unwrap();
+        delete_triple(&state, &id.to_hex(), None, None).await.unwrap();
         assert_eq!(state.graph.read().await.count(), 0);
 
         // Deleting again => NotFound.
-        let err = delete_triple(&state, &id.to_hex(), None).await.unwrap_err();
+        let err = delete_triple(&state, &id.to_hex(), None, None)
+            .await
+            .unwrap_err();
         assert!(matches!(err, Error::NotFound(_)));
     }
 
@@ -523,6 +550,7 @@ mod tests {
             "docs/x.md",
             "links_to",
             Some(prov.clone()),
+            None,
             None,
         )
         .await

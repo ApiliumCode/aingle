@@ -359,7 +359,7 @@ pub async fn create_triple(
         serde_json::to_value(&req.object).unwrap_or_default(),
     );
 
-    let dto = crate::service::triples::create_triple(&state, req, namespace).await?;
+    let dto = crate::service::triples::create_triple(&state, req, namespace, None).await?;
 
     // Append to WAL (cluster mode without Raft — legacy path).
     // NOTE: ordering — the service call above has already performed the graph
@@ -560,7 +560,7 @@ pub async fn delete_triple(
         .as_ref()
         .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
 
-    crate::service::triples::delete_triple(&state, &id, namespace).await?;
+    crate::service::triples::delete_triple(&state, &id, namespace, None).await?;
 
     // Append to WAL (legacy cluster path). The service call above already
     // performed the graph delete and side-effects; a WAL failure here happens

@@ -14,11 +14,18 @@ mod convert;
 pub mod http;
 #[cfg(feature = "mcp-oauth")]
 pub mod oauth;
+pub mod policy;
 mod server;
 
 pub use server::AingleMcp;
 
 use crate::state::AppState;
+
+/// Origin/author tag stamped onto DAG actions produced through MCP mutation
+/// tools. Lets Akashi attribute "what your AI did" by filtering the DAG action
+/// history on this author identity (e.g. via `aingle_dag_chain`). Non-MCP
+/// callers keep their own author.
+pub const MCP_ORIGIN: &str = "mcp";
 
 /// Serves the MCP server over stdio until the client disconnects.
 ///

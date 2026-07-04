@@ -10,6 +10,79 @@ use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 
 use crate::state::AppState;
 
+/// Error result returned by mutation tools when the runtime MCP policy is
+/// read-only. Centralised so every mutation tool emits the same message.
+fn read_only_denied() -> CallToolResult {
+    CallToolResult::error(vec![Content::text(
+        "MCP is read-only: enable write access in Akashi to allow this.",
+    )])
+}
+
+/// Drop every path-bearing entry of a vault map that the policy hides, so an
+/// excluded folder never leaks through the map/navigation surface.
+fn filter_vault_map(
+    map: &mut crate::service::vault_map::VaultMap,
+    pol: &crate::mcp::policy::McpPolicy,
+) {
+    map.entry_points.retain(|e| !pol.is_hidden(&e.path));
+    map.orphans.retain(|p| !pol.is_hidden(p));
+    map.skills.retain(|p| !pol.is_hidden(p));
+    for g in &mut map.tag_clusters {
+        g.notes.retain(|n| !pol.is_hidden(n));
+    }
+    map.tag_clusters.retain(|g| !g.notes.is_empty());
+    map.topics.retain(|t| !pol.is_hidden(&t.representative));
+    for t in &mut map.topics {
+        t.notes.retain(|n| !pol.is_hidden(n));
+        t.size = t.notes.len();
+    }
+    map.graph.nodes.retain(|n| !pol.is_hidden(&n.id));
+    map.graph
+        .edges
+        .retain(|e| !pol.is_hidden(&e.source) && !pol.is_hidden(&e.target));
+    if map
+        .identity
+        .as_deref()
+        .map(|id| pol.is_hidden(id))
+        .unwrap_or(false)
+    {
+        map.identity = None;
+    }
+    map.totals.orphans = map.orphans.len();
+    map.totals.clusters = map.topics.len();
+}
+
+/// A stored triple is hidden if its subject or its (node) object resolves to an
+/// excluded note path. Note paths are used as triple subjects, and `links_to`
+/// targets are node objects — both are folder-scoped. Scalar/string objects are
+/// never note paths, so they pass through.
+fn triple_dto_hidden(pol: &crate::mcp::policy::McpPolicy, t: &crate::rest::TripleDto) -> bool {
+    if pol.is_hidden(&t.subject) {
+        return true;
+    }
+    matches!(&t.object, crate::rest::ValueDto::Node { node } if pol.is_hidden(node))
+}
+
+/// A SPARQL result row (a JSON object of bound values) is hidden if any bound
+/// value string resolves to an excluded note path.
+fn binding_hidden(pol: &crate::mcp::policy::McpPolicy, row: &serde_json::Value) -> bool {
+    row.as_object().is_some_and(|m| {
+        m.values()
+            .filter_map(|v| v.as_str())
+            .any(|s| pol.is_hidden(s))
+    })
+}
+
+/// A DAG action DTO is hidden if its human-readable payload summary embeds a
+/// path under any excluded folder. Only single-triple insert/delete summaries
+/// inline note paths verbatim (batch/count summaries carry no path and the
+/// content hash is a digest, not a path), so a conservative substring scrub over
+/// the summary is a sound filter that never under-matches a real exclusion.
+#[cfg(feature = "dag")]
+fn dag_dto_hidden(pol: &crate::mcp::policy::McpPolicy, d: &crate::rest::dag::DagActionDto) -> bool {
+    pol.text_references_excluded(&d.payload_summary)
+}
+
 /// Parameters for the `aingle_dag_history` tool.
 #[cfg(feature = "dag")]
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -101,6 +174,9 @@ impl AingleMcp {
         &self,
         params: Parameters<IngestParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(p) = params;
         let resp = crate::service::ingest::ingest_path(&self.state, &p.path, None)
             .await
@@ -121,10 +197,49 @@ impl AingleMcp {
         params: Parameters<GroundParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let resp = crate::service::ground::ground(&self.state, &p.question, p.k)
+        let mut g = crate::service::ground::ground(&self.state, &p.question, p.k)
             .await
             .map_err(super::convert::to_mcp_error)?;
-        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+        let pol = self.state.mcp_policy_snapshot();
+
+        // Filter folder-excluded sources out of the answer context BEFORE deciding
+        // answerability. Deciding first and filtering afterwards produced a
+        // contradictory signal (`grounded`/`answerable:true` alongside an empty
+        // context) whenever a question's only evidence lived in an excluded folder.
+        g.answer_context.retain(|c| !pol.is_hidden(&c.source));
+
+        // `answerable` is the authoritative flag and must never be `true` with an
+        // empty context: an answer is only answerable when at least one visible
+        // source remains AND (when the grounding gate is active) the retrieval is
+        // grounded. Omitting the chunks on refusal leaves the model nothing
+        // weakly-related to answer from, so it must say it doesn't know.
+        let has_visible_source = !g.answer_context.is_empty();
+        let grounding_ok = !pol.require_grounding || g.groundedness == "grounded";
+        let answerable = has_visible_source && grounding_ok;
+
+        if !answerable {
+            let refusal = serde_json::json!({
+                "groundedness": g.groundedness,
+                "answerable": false,
+                "answer_context": [],
+                "gaps": g.gaps,
+                "instruction": "Insufficient grounded evidence in your notes; \
+                    say you don't know and do not invent facts.",
+            });
+            return Ok(CallToolResult::success(vec![Content::json(refusal)?]));
+        }
+
+        // Normal branch: carry the visible grounded context plus an explicit
+        // `answerable:true`. `groundedness` stays as computed (still informative),
+        // but `answerable` is the flag clients should gate on.
+        let payload = serde_json::json!({
+            "groundedness": g.groundedness,
+            "answerable": true,
+            "answer_context": g.answer_context,
+            "gaps": g.gaps,
+            "instruction": g.instruction,
+        });
+        Ok(CallToolResult::success(vec![Content::json(payload)?]))
     }
 
     /// Verified backlinks + outgoing links + unlinked mentions for a note.
@@ -139,7 +254,11 @@ impl AingleMcp {
         params: Parameters<BacklinksParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let resp = crate::service::backlinks::backlinks(&self.state, &p.note).await;
+        let mut resp = crate::service::backlinks::backlinks(&self.state, &p.note).await;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.backlinks.retain(|b| !pol.is_hidden(&b.path));
+        resp.outgoing.retain(|path| !pol.is_hidden(path));
+        resp.unlinked.retain(|path| !pol.is_hidden(path));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -157,12 +276,14 @@ impl AingleMcp {
         params: Parameters<NoteContextParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let resp = crate::service::context::note_context_cached(
+        let mut resp = crate::service::context::note_context_cached(
             &self.state,
             &p.note,
             p.limit.unwrap_or(8),
         )
         .await;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.neighbors.retain(|n| !pol.is_hidden(&n.path));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -173,9 +294,11 @@ impl AingleMcp {
         annotations(read_only_hint = true)
     )]
     async fn aingle_sources(&self) -> Result<CallToolResult, ErrorData> {
-        let resp = crate::service::ingest::list_sources(&self.state)
+        let mut resp = crate::service::ingest::list_sources(&self.state)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.retain(|r| !pol.is_hidden(&r.path));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -188,7 +311,9 @@ impl AingleMcp {
         annotations(read_only_hint = true)
     )]
     async fn aingle_vault_map(&self) -> Result<CallToolResult, ErrorData> {
-        let resp = crate::service::vault_map::vault_map_cached(&self.state).await;
+        let mut resp = crate::service::vault_map::vault_map_cached(&self.state).await;
+        let pol = self.state.mcp_policy_snapshot();
+        filter_vault_map(&mut resp, &pol);
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -202,9 +327,12 @@ impl AingleMcp {
         params: Parameters<crate::rest::PatternQueryRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp = crate::service::query::query_pattern(&self.state, req, None)
+        let mut resp = crate::service::query::query_pattern(&self.state, req, None)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.matches.retain(|t| !triple_dto_hidden(&pol, t));
+        resp.total = resp.matches.len();
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -218,9 +346,12 @@ impl AingleMcp {
         params: Parameters<crate::rest::ListSubjectsQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp = crate::service::query::list_subjects(&self.state, req, None)
+        let mut resp = crate::service::query::list_subjects(&self.state, req, None)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.subjects.retain(|s| !pol.is_hidden(s));
+        resp.total = resp.subjects.len();
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -258,10 +389,14 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::CreateTripleRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
-        let dto = crate::service::triples::create_triple(&self.state, req, None)
-            .await
-            .map_err(super::convert::to_mcp_error)?;
+        let dto =
+            crate::service::triples::create_triple(&self.state, req, None, Some(super::MCP_ORIGIN))
+                .await
+                .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(dto)?]))
     }
 
@@ -283,6 +418,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::BatchInsertRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let resp = crate::service::triples::batch_insert(&self.state, req, None)
             .await
@@ -303,6 +441,14 @@ impl AingleMcp {
         let dto = crate::service::triples::get_triple(&self.state, &req.id)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // Do not reveal a triple whose subject/object lives in an excluded
+        // folder; report it as absent (same shape as a genuinely missing id).
+        let pol = self.state.mcp_policy_snapshot();
+        if triple_dto_hidden(&pol, &dto) {
+            return Err(super::convert::to_mcp_error(crate::error::Error::NotFound(
+                format!("Triple {} not found", req.id),
+            )));
+        }
         Ok(CallToolResult::success(vec![Content::json(dto)?]))
     }
 
@@ -323,8 +469,11 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::TripleIdRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
-        crate::service::triples::delete_triple(&self.state, &req.id, None)
+        crate::service::triples::delete_triple(&self.state, &req.id, None, Some(super::MCP_ORIGIN))
             .await
             .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(
@@ -342,9 +491,12 @@ impl AingleMcp {
         params: Parameters<crate::rest::ListTriplesQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp = crate::service::triples::list_triples(&self.state, req, None)
+        let mut resp = crate::service::triples::list_triples(&self.state, req, None)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        resp.triples.retain(|t| !triple_dto_hidden(&pol, t));
+        resp.total = resp.triples.len();
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -428,6 +580,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::CreateSandboxRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let resp = crate::service::skill::create_sandbox(&self.state, req).await;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
@@ -450,6 +605,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::DeleteSandboxRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let resp = crate::service::skill::delete_sandbox(&self.state, &req.id).await;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
@@ -529,9 +687,19 @@ impl AingleMcp {
         params: Parameters<DagHistoryParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let h = crate::service::dag::history_by_subject(&self.state, &p.subject, p.limit)
+        let pol = self.state.mcp_policy_snapshot();
+        // The subject is an explicit input: never surface the history of a note
+        // that lives in an excluded folder.
+        if pol.is_hidden(&p.subject) {
+            let empty: Vec<crate::rest::dag::DagActionDto> = Vec::new();
+            return Ok(CallToolResult::success(vec![Content::json(empty)?]));
+        }
+        let mut h = crate::service::dag::history_by_subject(&self.state, &p.subject, p.limit)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // Defense in depth: a batch action affecting this (public) subject could
+        // still inline a co-edited hidden path in its summary; scrub those.
+        h.retain(|a| !dag_dto_hidden(&pol, a));
         Ok(CallToolResult::success(vec![Content::json(h)?]))
     }
 
@@ -560,6 +728,14 @@ impl AingleMcp {
         let resp = crate::service::dag::action(&self.state, &p.hash)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // If the action's summary references an excluded path, report it as
+        // absent rather than revealing the excluded note's mutation.
+        let pol = self.state.mcp_policy_snapshot();
+        if dag_dto_hidden(&pol, &resp) {
+            return Err(super::convert::to_mcp_error(crate::error::Error::NotFound(
+                format!("DAG action {} not found", p.hash),
+            )));
+        }
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -573,9 +749,12 @@ impl AingleMcp {
         params: Parameters<DagChainParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(p) = params;
-        let resp = crate::service::dag::chain(&self.state, &p.author, p.limit)
+        let mut resp = crate::service::dag::chain(&self.state, &p.author, p.limit)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // Drop actions whose summary references an excluded note path.
+        let pol = self.state.mcp_policy_snapshot();
+        resp.retain(|a| !dag_dto_hidden(&pol, a));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -607,6 +786,9 @@ impl AingleMcp {
         &self,
         params: Parameters<crate::rest::dag::PruneRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
         let Parameters(req) = params;
         let resp = crate::service::dag::prune(&self.state, req)
             .await
@@ -631,9 +813,30 @@ impl AingleMcp {
         params: Parameters<crate::sparql::SparqlRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp = crate::service::sparql::execute(&self.state, req)
+        let query_text = req.query.clone();
+        let mut resp = crate::service::sparql::execute(&self.state, req)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        let pol = self.state.mcp_policy_snapshot();
+        if !pol.excluded_folders.is_empty() {
+            // SELECT / CONSTRUCT / DESCRIBE: drop any result row that binds a
+            // value referencing an excluded note path.
+            if let Some(rows) = resp.bindings.as_mut() {
+                rows.retain(|row| !binding_hidden(&pol, row));
+                if resp.triple_count.is_some() {
+                    resp.triple_count = Some(rows.len());
+                }
+            }
+            // ASK yields only a boolean, so there is no row to filter. Refuse the
+            // query if its text names an excluded path — answering true/false
+            // would itself leak the existence of a hidden note.
+            if resp.boolean.is_some() && pol.text_references_excluded(&query_text) {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "SPARQL ASK over an excluded folder is not allowed while folder \
+                     exclusions are active.",
+                )]));
+            }
+        }
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 }
@@ -716,5 +919,428 @@ mod ingest_tools_tests {
                 "missing tool {expected}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod policy_enforcement_tests {
+    use super::*;
+    use crate::mcp::policy::{McpPolicy, Permission};
+
+    /// The JSON payload a tool serialises into its first (text) content block.
+    fn json_of(result: &CallToolResult) -> serde_json::Value {
+        let text = result
+            .content
+            .first()
+            .and_then(|c| c.as_text())
+            .expect("tool result must have a text content block")
+            .text
+            .clone();
+        serde_json::from_str(&text).expect("tool content must be valid JSON")
+    }
+
+    /// A ready state whose graph has ingested two notes: one under an excluded
+    /// folder and one public. Returns the state and the temp dir (kept alive).
+    async fn state_with_vault() -> (AppState, tempfile::TempDir) {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Personal").join("Finanzas")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Public")).unwrap();
+        std::fs::write(
+            dir.path()
+                .join("Personal")
+                .join("Finanzas")
+                .join("secret.md"),
+            "# Secreto\n\nMi presupuesto privado y numeros de cuenta.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Public").join("open.md"),
+            "# Abierto\n\nContenido publico del roadmap del proyecto.\n",
+        )
+        .unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        (state, dir)
+    }
+
+    /// A note inside an excluded folder must not appear in `aingle_sources`,
+    /// while a note outside every excluded folder is still returned.
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_sources() {
+        let (state, _dir) = state_with_vault().await;
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        let mcp = AingleMcp::new(state);
+
+        let result = mcp.aingle_sources().await.expect("aingle_sources ok");
+        let paths: Vec<String> = json_of(&result)
+            .as_array()
+            .expect("sources is an array")
+            .iter()
+            .map(|r| {
+                r.get("path")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("")
+                    .replace('\\', "/")
+            })
+            .collect();
+
+        assert!(
+            paths.iter().any(|p| p == "Public/open.md"),
+            "public note must remain visible: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.starts_with("Personal/Finanzas")),
+            "excluded-folder note must be hidden: {paths:?}"
+        );
+    }
+
+    /// Build an MCP handler over the shared vault with `Personal/Finanzas`
+    /// excluded (ReadOnly). Returns the handler and the temp dir (kept alive).
+    async fn excluded_mcp() -> (AingleMcp, tempfile::TempDir) {
+        let (state, dir) = state_with_vault().await;
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        (AingleMcp::new(state), dir)
+    }
+
+    /// `aingle_list_subjects` must drop subjects under an excluded folder while
+    /// keeping public ones. Note paths are triple subjects, so an unfiltered
+    /// listing would leak the excluded note's very existence.
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_list_subjects() {
+        let (mcp, _dir) = excluded_mcp().await;
+        let req: crate::rest::ListSubjectsQuery =
+            serde_json::from_value(serde_json::json!({ "limit": 10_000 })).unwrap();
+
+        let result = mcp
+            .aingle_list_subjects(Parameters(req))
+            .await
+            .expect("list_subjects ok");
+        let subjects: Vec<String> = json_of(&result)
+            .get("subjects")
+            .and_then(|s| s.as_array())
+            .expect("subjects array")
+            .iter()
+            .map(|v| v.as_str().unwrap_or("").replace('\\', "/"))
+            .collect();
+
+        assert!(
+            subjects.iter().any(|s| s.contains("Public/open.md")),
+            "public subject must remain visible: {subjects:?}"
+        );
+        assert!(
+            !subjects.iter().any(|s| s.contains("Personal/Finanzas")),
+            "excluded subject must be hidden: {subjects:?}"
+        );
+    }
+
+    /// `aingle_query_pattern` with a wildcard pattern must not return any triple
+    /// whose subject/object lives under an excluded folder.
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_query_pattern() {
+        let (mcp, _dir) = excluded_mcp().await;
+        let req: crate::rest::PatternQueryRequest =
+            serde_json::from_value(serde_json::json!({ "limit": 10_000 })).unwrap();
+
+        let result = mcp
+            .aingle_query_pattern(Parameters(req))
+            .await
+            .expect("query_pattern ok");
+        let payload = json_of(&result);
+        let dump = payload.to_string().replace('\\', "/");
+        assert!(
+            dump.contains("Public/open.md"),
+            "public triples must remain: {dump}"
+        );
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "excluded-folder triples must be hidden: {dump}"
+        );
+    }
+
+    /// `aingle_sparql` `SELECT ?s ?p ?o` must not bind any row that references
+    /// an excluded note path.
+    #[cfg(feature = "sparql")]
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_sparql_select() {
+        let (mcp, _dir) = excluded_mcp().await;
+        let req: crate::sparql::SparqlRequest = serde_json::from_value(serde_json::json!({
+            "query": "SELECT ?s ?p ?o WHERE { ?s ?p ?o }"
+        }))
+        .unwrap();
+
+        let result = mcp.aingle_sparql(Parameters(req)).await.expect("sparql ok");
+        let dump = json_of(&result).to_string().replace('\\', "/");
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "SPARQL rows must not reference excluded paths: {dump}"
+        );
+    }
+
+    /// `aingle_dag_history` for a subject inside an excluded folder must surface
+    /// nothing, and must never leak the excluded path.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn excluded_folder_hidden_from_dag_history() {
+        let (mcp, _dir) = excluded_mcp().await;
+        let params = DagHistoryParams {
+            subject: "Personal/Finanzas/secret.md".to_string(),
+            limit: 50,
+        };
+
+        let result = mcp
+            .aingle_dag_history(Parameters(params))
+            .await
+            .expect("dag_history ok");
+        let payload = json_of(&result);
+        let rows = payload.as_array().expect("history is an array");
+        assert!(
+            rows.is_empty(),
+            "history of an excluded subject must be empty: {payload}"
+        );
+        assert!(
+            !payload
+                .to_string()
+                .replace('\\', "/")
+                .contains("Personal/Finanzas"),
+            "dag_history must not leak the excluded path: {payload}"
+        );
+    }
+
+    /// Under the default (ReadOnly) policy a mutation tool returns an error
+    /// result instead of touching the graph.
+    #[tokio::test]
+    async fn mutation_denied_under_read_only_default() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let mcp = AingleMcp::new(state); // default policy = ReadOnly
+
+        let req: crate::rest::CreateTripleRequest = serde_json::from_value(serde_json::json!({
+            "subject": "http://example.org/a",
+            "predicate": "http://example.org/knows",
+            "object": "b",
+        }))
+        .unwrap();
+
+        let result = mcp
+            .aingle_create_triple(Parameters(req))
+            .await
+            .expect("tool returns a result (not a protocol error)");
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "read-only default must deny mutation: {result:?}"
+        );
+    }
+
+    /// With `require_grounding` ON, an off-topic question the retrieval cannot
+    /// ground must be refused: the tool signals `answerable:false`, omits the
+    /// source chunks (so nothing weakly-related can be answered from), and reports
+    /// a non-"grounded" groundedness. With the flag OFF (default) the SAME question
+    /// returns the normal context shape (answerable not-false, sources present) —
+    /// proving the gate only triggers under the flag.
+    #[tokio::test]
+    async fn require_grounding_declines_ungrounded_answers() {
+        // Clearly off-topic w.r.t. the ingested finance/roadmap notes, so the
+        // retrieval will not be "grounded".
+        let off_topic = "¿Cuál es la mejor receta de pizza napolitana con mozzarella?";
+
+        // Case A (refusal): gate ON.
+        let (state, _dir) = state_with_vault().await;
+        state.set_mcp_policy(McpPolicy {
+            require_grounding: true,
+            ..Default::default()
+        });
+        let mcp = AingleMcp::new(state);
+        let req = GroundParams {
+            question: off_topic.to_string(),
+            k: 6,
+        };
+        let result = mcp
+            .aingle_ground(Parameters(req))
+            .await
+            .expect("ground ok");
+        let payload = json_of(&result);
+        assert_eq!(
+            payload.get("answerable").and_then(|v| v.as_bool()),
+            Some(false),
+            "gated refusal must signal answerable:false: {payload}"
+        );
+        let ctx = payload.get("answer_context").and_then(|v| v.as_array());
+        assert!(
+            ctx.map(|a| a.is_empty()).unwrap_or(true),
+            "refusal must omit source chunks so nothing weak can be answered from: {payload}"
+        );
+        assert_ne!(
+            payload.get("groundedness").and_then(|v| v.as_str()),
+            Some("grounded"),
+            "an off-topic question must not be grounded: {payload}"
+        );
+
+        // Case B (control): gate OFF (default) — normal context shape.
+        let (state, _dir2) = state_with_vault().await;
+        let mcp = AingleMcp::new(state); // default policy: require_grounding = false
+        let req = GroundParams {
+            question: off_topic.to_string(),
+            k: 6,
+        };
+        let result = mcp
+            .aingle_ground(Parameters(req))
+            .await
+            .expect("ground ok");
+        let payload = json_of(&result);
+        assert_ne!(
+            payload.get("answerable").and_then(|v| v.as_bool()),
+            Some(false),
+            "with the gate off the tool must not refuse: {payload}"
+        );
+        assert!(
+            payload.get("answer_context").is_some(),
+            "normal shape must still carry answer_context: {payload}"
+        );
+    }
+
+    /// Regression: when every grounded source for a question lives inside an
+    /// excluded folder, the tool must NOT claim the answer is answerable while
+    /// handing back an empty context. Before the fix, the normal branch hardcoded
+    /// `answerable:true` and only afterwards filtered `answer_context` down to
+    /// nothing — a contradictory signal (grounded/answerable but zero context)
+    /// that invites hallucination. `answerable` must follow the visible context.
+    #[tokio::test]
+    async fn all_sources_excluded_makes_unanswerable() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Personal").join("Finanzas")).unwrap();
+        std::fs::write(
+            dir.path()
+                .join("Personal")
+                .join("Finanzas")
+                .join("presupuesto.md"),
+            "# Presupuesto\n\nEl presupuesto mensual de marketing es de 4200 euros.\n",
+        )
+        .unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        let mcp = AingleMcp::new(state);
+
+        let req = GroundParams {
+            question: "¿Cuál es el presupuesto mensual de marketing?".to_string(),
+            k: 6,
+        };
+        let result = mcp
+            .aingle_ground(Parameters(req))
+            .await
+            .expect("ground ok");
+        let payload = json_of(&result);
+
+        let ctx = payload.get("answer_context").and_then(|v| v.as_array());
+        assert!(
+            ctx.map(|a| a.is_empty()).unwrap_or(true),
+            "all evidence is folder-excluded, so answer_context must be empty: {payload}"
+        );
+        assert_eq!(
+            payload.get("answerable").and_then(|v| v.as_bool()),
+            Some(false),
+            "answerable must be false when no visible source remains: {payload}"
+        );
+    }
+
+    /// A create_triple issued through the MCP tool must tag the resulting DAG
+    /// action with `origin = mcp`, so Akashi can later attribute "what your AI
+    /// did". A non-MCP caller would leave the author at its node default.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn mcp_create_triple_tags_dag_origin_mcp() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        state.set_mcp_policy(McpPolicy {
+            permission: Permission::ReadWrite,
+            ..Default::default()
+        });
+        let mcp = AingleMcp::new(state.clone());
+
+        let req: crate::rest::CreateTripleRequest = serde_json::from_value(serde_json::json!({
+            "subject": "note.md",
+            "predicate": "links_to",
+            "object": { "node": "other.md" },
+        }))
+        .unwrap();
+
+        let result = mcp
+            .aingle_create_triple(Parameters(req))
+            .await
+            .expect("create_triple ok");
+        assert_ne!(
+            result.is_error,
+            Some(true),
+            "read-write policy must allow the mutation: {result:?}"
+        );
+
+        // Read the subject's DAG history via the same graph accessor the
+        // `aingle_dag_history` tool uses, and assert the newest action's author
+        // is the MCP origin tag.
+        let graph = state.graph.read().await;
+        let actions = graph.dag_history_by_subject("note.md", 10).unwrap();
+        let newest = actions.first().expect("one DAG action recorded for the insert");
+        assert_eq!(
+            newest.author.as_name(),
+            Some(crate::mcp::MCP_ORIGIN),
+            "MCP-originated create must tag the DAG action author with origin=mcp, got {:?}",
+            newest.author
+        );
+    }
+
+    /// With ReadWrite enabled the same mutation succeeds — proving the gate is a
+    /// real switch, not an unconditional denial.
+    #[tokio::test]
+    async fn mutation_allowed_under_read_write() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        state.set_mcp_policy(McpPolicy {
+            permission: Permission::ReadWrite,
+            ..Default::default()
+        });
+        let mcp = AingleMcp::new(state);
+
+        let req: crate::rest::CreateTripleRequest = serde_json::from_value(serde_json::json!({
+            "subject": "http://example.org/a",
+            "predicate": "http://example.org/knows",
+            "object": "b",
+        }))
+        .unwrap();
+
+        let result = mcp
+            .aingle_create_triple(Parameters(req))
+            .await
+            .expect("tool returns a result");
+        assert_ne!(
+            result.is_error,
+            Some(true),
+            "read-write policy must allow mutation: {result:?}"
+        );
     }
 }
