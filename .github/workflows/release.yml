@@ -191,6 +191,13 @@ jobs:
         run: cargo publish -p ai_hash --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         continue-on-error: true
 
+      # aingle_wal has no internal aingle deps → belongs in Phase 1. It is an
+      # (optional, `cluster`-feature) dependency of aingle_cortex, so crates.io
+      # requires it published before cortex can be published.
+      - name: Publish aingle_wal
+        run: cargo publish -p aingle_wal --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        continue-on-error: true
+
       - name: Wait for crates.io index update
         run: sleep 30
 
@@ -205,6 +212,19 @@ jobs:
 
       - name: Publish kaneru
         run: cargo publish -p kaneru --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        continue-on-error: true
+
+      # aingle_ingest (deps: aingle_graph) — a NON-optional dependency of
+      # aingle_cortex. It was missing from the pipeline, which is why the 0.7.0
+      # cortex publish failed and crates.io stayed at 0.6.3.
+      - name: Publish aingle_ingest
+        run: cargo publish -p aingle_ingest --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        continue-on-error: true
+
+      # aingle_raft (deps: aingle_wal, aingle_graph, ineru — all Phase 1) — an
+      # (optional, `cluster`-feature) dependency of aingle_cortex.
+      - name: Publish aingle_raft
+        run: cargo publish -p aingle_raft --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         continue-on-error: true
 
       - name: Wait for crates.io index update
