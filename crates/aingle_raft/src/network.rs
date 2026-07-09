@@ -145,18 +145,18 @@ pub trait RaftRpcSender: Send + Sync + 'static {
 // ============================================================================
 
 /// Factory that creates per-target network connections for Raft RPC.
+///
+/// The factory needs no [`NodeResolver`]: openraft hands [`Self::new_client`] the
+/// target's [`CortexNode`] (with its address) directly from cluster membership, so
+/// there is no separate address lookup to perform here.
 pub struct CortexNetworkFactory {
-    resolver: Arc<NodeResolver>,
     rpc_sender: Arc<dyn RaftRpcSender>,
 }
 
 impl CortexNetworkFactory {
     /// Create a new network factory.
-    pub fn new(resolver: Arc<NodeResolver>, rpc_sender: Arc<dyn RaftRpcSender>) -> Self {
-        Self {
-            resolver,
-            rpc_sender,
-        }
+    pub fn new(rpc_sender: Arc<dyn RaftRpcSender>) -> Self {
+        Self { rpc_sender }
     }
 }
 
