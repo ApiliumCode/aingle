@@ -518,21 +518,10 @@ pub async fn init_cluster(
         std::sync::Arc::new(sm)
     };
 
-    let resolver = std::sync::Arc::new(aingle_raft::network::NodeResolver::new());
     let node_id = config.node_id;
 
-    resolver
-        .register(
-            node_id,
-            aingle_raft::CortexNode {
-                rest_addr: bind_addr.to_string(),
-                p2p_addr: p2p_addr.to_string(),
-            },
-        )
-        .await;
-
     let rpc_sender = std::sync::Arc::new(HttpRaftRpcSender::new(config.secret.clone(), config.tls));
-    let network = aingle_raft::network::CortexNetworkFactory::new(resolver, rpc_sender);
+    let network = aingle_raft::network::CortexNetworkFactory::new(rpc_sender);
 
     let raft_config = openraft::Config {
         heartbeat_interval: 500,
