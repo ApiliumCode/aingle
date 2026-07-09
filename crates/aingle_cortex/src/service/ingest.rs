@@ -56,6 +56,24 @@ pub async fn ingest_path(
     root_path: &str,
     namespace: Option<String>,
 ) -> Result<IngestReport> {
+    ingest_path_with_progress(state, root_path, namespace, None).await
+}
+
+/// A progress reporter invoked once per candidate file as `(processed, total)`.
+/// `Sync` so it can be held across the ingest's `.await` points.
+pub type IngestProgress<'a> = &'a (dyn Fn(usize, usize) + Sync);
+
+/// Like [`ingest_path`], but reports incremental progress after each candidate
+/// file. Used by the app's initial ingest to drive a *determinate* progress bar
+/// while a vault (re-)embeds (e.g. after an embedder-dimension change). The
+/// callback is called on EVERY file (skipped or embedded); throttling to the UI
+/// is the caller's concern.
+pub async fn ingest_path_with_progress(
+    state: &AppState,
+    root_path: &str,
+    namespace: Option<String>,
+    on_progress: Option<IngestProgress<'_>>,
+) -> Result<IngestReport> {
     let mut report = IngestReport::default();
 
     // Resilience: if the vault working-copy root does not exist yet, start empty
@@ -135,7 +153,13 @@ pub async fn ingest_path(
         files.push((rel_path, content));
     }
 
-    for (rel_path, content) in files {
+    let total = files.len();
+    for (idx, (rel_path, content)) in files.into_iter().enumerate() {
+        // Report progress before the (potentially slow) embed of this file, so the
+        // UI advances steadily; the caller throttles what actually reaches the UI.
+        if let Some(cb) = on_progress {
+            cb(idx, total);
+        }
         let content_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
 
         // Check registry: does a triple (rel_path, aingle:source_hash, <hash>) already exist?
@@ -270,6 +294,11 @@ pub async fn ingest_path(
         });
     }
 
+    // Final tick: report completion (100%) so the UI can settle to done.
+    if let Some(cb) = on_progress {
+        cb(total, total);
+    }
+
     Ok(report)
 }
 
@@ -382,6 +411,27 @@ mod tests {
         let mem = state.memory.read().await;
         let hits = mem.recall_text("sled storage").unwrap();
         assert!(!hits.is_empty());
+    }
+
+    #[tokio::test]
+    async fn progress_callback_reports_per_file_and_completes() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "a.md", "# A\n\nalpha\n");
+        write(dir.path(), "b.md", "# B\n\nbeta\n");
+        write(dir.path(), "c.md", "# C\n\ngamma\n");
+        let state = enabled_state().await;
+
+        let calls = std::sync::Mutex::new(Vec::<(usize, usize)>::new());
+        let cb = |done: usize, total: usize| calls.lock().unwrap().push((done, total));
+        let report = ingest_path_with_progress(&state, dir.path().to_str().unwrap(), None, Some(&cb))
+            .await
+            .unwrap();
+
+        assert_eq!(report.files_seen, 3);
+        let calls = calls.into_inner().unwrap();
+        assert!(!calls.is_empty(), "callback must fire");
+        assert!(calls.iter().all(|&(_, t)| t == 3), "total must be the file count: {calls:?}");
+        assert_eq!(*calls.last().unwrap(), (3, 3), "must finish at 100% (3/3): {calls:?}");
     }
 
     #[tokio::test]
