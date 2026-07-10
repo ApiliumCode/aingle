@@ -578,6 +578,35 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn approval_is_listed_after_ingest_with_named_author() {
+        // Reproduces the desktop app's exact path: a named dag_author + an ingest
+        // that writes provenance DAG actions (advancing tips + the author index),
+        // THEN a review approval — which must show up in list_approvals. Guards
+        // against a seq collision or a parent-validation failure making the signed
+        // approval silently unrecorded.
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "note.md", "# A\n\nWe use [[sled]]. #durability\n");
+        let mut state = enabled_state().await;
+        state.dag_author = Some(NodeId::named("Alice"));
+        let root = dir.path().to_str().unwrap();
+
+        ingest_path(&state, root, Some("initial".into())).await.unwrap();
+
+        crate::service::review::record_approval(&state, "note.md", "approved body", "mcp")
+            .await
+            .unwrap();
+
+        let approvals = crate::service::review::list_approvals(&state, 50).await;
+        assert_eq!(
+            approvals.len(),
+            1,
+            "the approval must be listed after an ingest under the same named author; got {approvals:?}"
+        );
+        assert_eq!(approvals[0].note_path, "note.md");
+    }
+
     #[tokio::test]
     async fn ingest_missing_path_is_graceful() {
         // Regression: on macOS a post-update restart can race with vault
