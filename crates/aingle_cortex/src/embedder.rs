@@ -142,6 +142,16 @@ impl Embedder for SwappableEmbedder {
             .clone();
         inner.embed_query(text)
     }
+    fn embed_passages(&self, texts: &[String]) -> Vec<Embedding> {
+        // Delegate to the installed model so its batched inference is reached;
+        // the default trait loop would re-serialize into per-passage calls.
+        let inner = self
+            .inner
+            .read()
+            .expect("swappable embedder poisoned")
+            .clone();
+        inner.embed_passages(texts)
+    }
     fn dimensions(&self) -> usize {
         self.dims
     }

@@ -17,6 +17,15 @@ pub trait Embedder: Send + Sync {
     fn embed_passage(&self, text: &str) -> Embedding;
     /// Embed a search query.
     fn embed_query(&self, text: &str) -> Embedding;
+    /// Embed many passages at once, returning one embedding per input in order.
+    ///
+    /// The default loops over [`embed_passage`], which is correct for any
+    /// implementation. Model-based embedders (ONNX) override this to run a SINGLE
+    /// batched inference instead of one call per passage — the dominant cost when
+    /// indexing, since per-call model overhead otherwise repeats for every chunk.
+    fn embed_passages(&self, texts: &[String]) -> Vec<Embedding> {
+        texts.iter().map(|t| self.embed_passage(t)).collect()
+    }
     /// Dimensionality of the vectors this embedder produces.
     fn dimensions(&self) -> usize;
     /// `(strong, weak)` cosine-similarity cutoffs for this embedder's score
@@ -124,6 +133,52 @@ impl NeuralEmbedder {
             .expect("e5 returned empty batch for single-item input");
         Embedding::new(vector)
     }
+
+    /// Embed a whole batch with ONE model invocation, falling back to per-item
+    /// embedding if the batched call fails or returns an unexpected count.
+    ///
+    /// The fallback matters most on a first-run full index: the batched ONNX call
+    /// can fail on some runtimes/hardware (or a pathological input), and that must
+    /// NEVER sink the whole index. Worst case this is exactly as correct — and as
+    /// slow — as the proven per-item path; best case it's the fast batched path.
+    /// Never panics on an embed error (unlike [`embed_one`], which is only reached
+    /// for single queries).
+    fn embed_prefixed_batch(&self, prefixed: Vec<String>) -> Vec<Embedding> {
+        if prefixed.is_empty() {
+            return Vec::new();
+        }
+        {
+            let mut guard = self.model.lock().expect("embedder mutex poisoned");
+            match guard.embed(prefixed.clone(), None) {
+                Ok(out) if out.len() == prefixed.len() => {
+                    return out.into_iter().map(Embedding::new).collect();
+                }
+                Ok(out) => log::warn!(
+                    "batch embed returned {} vectors for {} inputs; using per-item fallback",
+                    out.len(),
+                    prefixed.len()
+                ),
+                Err(e) => log::warn!("batch embed failed ({e}); using per-item fallback"),
+            }
+        } // drop the model lock before the per-item path re-acquires it
+
+        // Per-item fallback: embed each passage on its own so one bad input (or a
+        // batch-only failure) can't lose the rest. Each call re-locks the model.
+        prefixed
+            .into_iter()
+            .map(|p| {
+                let mut guard = self.model.lock().expect("embedder mutex poisoned");
+                match guard.embed(vec![p], None) {
+                    Ok(mut out) if !out.is_empty() => Embedding::new(out.remove(0)),
+                    Ok(_) => Embedding::new(vec![0.0; Self::DIM]),
+                    Err(e) => {
+                        log::warn!("per-item embed failed ({e}); storing zero vector");
+                        Embedding::new(vec![0.0; Self::DIM])
+                    }
+                }
+            })
+            .collect()
+    }
 }
 
 #[cfg(feature = "neural-embeddings")]
@@ -134,6 +189,11 @@ impl Embedder for NeuralEmbedder {
 
     fn embed_query(&self, text: &str) -> Embedding {
         self.embed_one(format!("query: {text}"))
+    }
+
+    fn embed_passages(&self, texts: &[String]) -> Vec<Embedding> {
+        let prefixed = texts.iter().map(|t| format!("passage: {t}")).collect();
+        self.embed_prefixed_batch(prefixed)
     }
 
     fn dimensions(&self) -> usize {
@@ -184,6 +244,63 @@ mod tests {
     fn hash_embedder_relevance_thresholds() {
         let e = HashEmbedder::new();
         assert_eq!(e.relevance_thresholds(), (0.55, 0.30));
+    }
+
+    #[test]
+    fn embed_passages_default_matches_per_item_and_preserves_order() {
+        let e = HashEmbedder::new();
+        let texts = vec![
+            "first passage".to_string(),
+            "second passage".to_string(),
+            "third passage".to_string(),
+        ];
+        let batch = e.embed_passages(&texts);
+        assert_eq!(batch.len(), texts.len(), "one embedding per input");
+        for (i, t) in texts.iter().enumerate() {
+            assert_eq!(batch[i].0, e.embed_passage(t).0, "batch[{i}] must equal the per-item embedding");
+        }
+    }
+
+    #[test]
+    fn embed_passages_empty_is_empty() {
+        let e = HashEmbedder::new();
+        assert!(e.embed_passages(&[]).is_empty());
+    }
+
+    #[cfg(feature = "neural-embeddings")]
+    #[test]
+    fn diag_raw_model_supports_multi_item_batch() {
+        // Diagnostic: does the bundled ONNX model actually accept a batch > 1?
+        // Bypasses the resilient fallback and calls the raw model directly, so a
+        // panic/Err here means the fast path is unavailable and indexing runs on
+        // the per-item fallback. Skips when no model is present.
+        use std::path::PathBuf;
+        let dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test-models/multilingual-e5-small").to_string()
+        });
+        let p = PathBuf::from(dir);
+        if !p.join("onnx/model.onnx").exists() {
+            eprintln!("skipping: model files not found at {}", p.display());
+            return;
+        }
+        let e = NeuralEmbedder::from_path(&p).expect("load model");
+        let inputs = vec![
+            "passage: primero".to_string(),
+            "passage: segundo".to_string(),
+            "passage: tercero".to_string(),
+        ];
+        let mut guard = e.model.lock().expect("mutex");
+        let out = guard
+            .embed(inputs.clone(), None)
+            .expect("RAW BATCH FAILED — model does not support batch>1; fast path unavailable");
+        assert_eq!(
+            out.len(),
+            inputs.len(),
+            "raw batch returned {} vectors for {} inputs",
+            out.len(),
+            inputs.len()
+        );
+        eprintln!("DIAG: raw multi-item batch OK — fast path available");
     }
 }
 
@@ -272,5 +389,29 @@ mod neural_tests {
         let Some(dir) = model_dir() else { return };
         let e = NeuralEmbedder::from_path(&dir).expect("load model");
         assert_eq!(e.relevance_thresholds(), (0.80, 0.77));
+    }
+
+    #[test]
+    fn neural_batch_embeddings_match_per_item() {
+        // The batched path (one ONNX call for N passages) must produce the SAME
+        // vectors as N single calls — otherwise indexing speed would come at the
+        // cost of retrieval correctness.
+        let Some(dir) = model_dir() else { return };
+        let e = NeuralEmbedder::from_path(&dir).expect("load model");
+        let texts = vec![
+            "el perro corre en el parque".to_string(),
+            "la bolsa cerró con pérdidas".to_string(),
+            "los gatos duermen mucho".to_string(),
+        ];
+        let batch = e.embed_passages(&texts);
+        assert_eq!(batch.len(), texts.len());
+        for (i, t) in texts.iter().enumerate() {
+            let single = e.embed_passage(t);
+            let sim = batch[i].cosine_similarity(&single);
+            assert!(
+                sim > 0.9999,
+                "batch[{i}] must match per-item embedding (cosine {sim})"
+            );
+        }
     }
 }

@@ -56,6 +56,24 @@ pub async fn ingest_path(
     root_path: &str,
     namespace: Option<String>,
 ) -> Result<IngestReport> {
+    ingest_path_with_progress(state, root_path, namespace, None).await
+}
+
+/// A progress reporter invoked once per candidate file as `(processed, total)`.
+/// `Sync` so it can be held across the ingest's `.await` points.
+pub type IngestProgress<'a> = &'a (dyn Fn(usize, usize) + Sync);
+
+/// Like [`ingest_path`], but reports incremental progress after each candidate
+/// file. Used by the app's initial ingest to drive a *determinate* progress bar
+/// while a vault (re-)embeds (e.g. after an embedder-dimension change). The
+/// callback is called on EVERY file (skipped or embedded); throttling to the UI
+/// is the caller's concern.
+pub async fn ingest_path_with_progress(
+    state: &AppState,
+    root_path: &str,
+    namespace: Option<String>,
+    on_progress: Option<IngestProgress<'_>>,
+) -> Result<IngestReport> {
     let mut report = IngestReport::default();
 
     // Resilience: if the vault working-copy root does not exist yet, start empty
@@ -97,6 +115,20 @@ pub async fn ingest_path(
             continue;
         }
 
+        // Skip the review-inbox staging area (top-level `_inbox/`): notes an agent
+        // PROPOSES land here and must NOT be indexed until a human approves them
+        // (see the review-inbox feature). Only the first path component is checked,
+        // so a nested folder that happens to be named `_inbox` deeper is unaffected.
+        if let Ok(rel) = path.strip_prefix(root_path) {
+            if rel
+                .components()
+                .next()
+                .is_some_and(|c| c.as_os_str() == "_inbox")
+            {
+                continue;
+            }
+        }
+
         // Filter to supported extensions: .md, .markdown, .txt, .rs, .py, .ts, .js
         let ext = path
             .extension()
@@ -135,7 +167,13 @@ pub async fn ingest_path(
         files.push((rel_path, content));
     }
 
-    for (rel_path, content) in files {
+    let total = files.len();
+    for (idx, (rel_path, content)) in files.into_iter().enumerate() {
+        // Report progress before the (potentially slow) embed of this file, so the
+        // UI advances steadily; the caller throttles what actually reaches the UI.
+        if let Some(cb) = on_progress {
+            cb(idx, total);
+        }
         let content_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
 
         // Check registry: does a triple (rel_path, aingle:source_hash, <hash>) already exist?
@@ -213,27 +251,34 @@ pub async fn ingest_path(
             }
         }
 
-        // Write text chunks to Ineru memory
-        for chunk in &extraction.chunks {
-            let embedding = state.embedder.embed_passage(&chunk.text);
-            let mut entry = MemoryEntry::new(
-                CHUNK_ENTRY_TYPE,
-                serde_json::json!({
-                    "text": chunk.text,
-                    "source_path": chunk.provenance.source_path,
-                    "line_start": chunk.provenance.line_start,
-                    "line_end": chunk.provenance.line_end,
-                    "content_hash": chunk.provenance.content_hash,
-                }),
-            );
-            entry.metadata = MemoryMetadata::with_source(&chunk.provenance.source_path);
-            entry.metadata.importance = 0.6;
-            entry.embedding = Some(embedding);
+        // Write text chunks to Ineru memory. Embed the file's chunks in ONE batched
+        // inference (amortizes the per-call model overhead that made indexing slow —
+        // a neural embedder pays fixed cost per invocation, so per-chunk calls were
+        // the bottleneck), then persist them under a SINGLE memory-lock acquisition.
+        if !extraction.chunks.is_empty() {
+            let texts: Vec<String> = extraction.chunks.iter().map(|c| c.text.clone()).collect();
+            let embeddings = state.embedder.embed_passages(&texts);
 
             let mut mem = state.memory.write().await;
-            mem.remember(entry)
-                .map_err(|e| Error::Internal(format!("memory write error: {e}")))?;
-            report.chunks_written += 1;
+            for (chunk, embedding) in extraction.chunks.iter().zip(embeddings) {
+                let mut entry = MemoryEntry::new(
+                    CHUNK_ENTRY_TYPE,
+                    serde_json::json!({
+                        "text": chunk.text,
+                        "source_path": chunk.provenance.source_path,
+                        "line_start": chunk.provenance.line_start,
+                        "line_end": chunk.provenance.line_end,
+                        "content_hash": chunk.provenance.content_hash,
+                    }),
+                );
+                entry.metadata = MemoryMetadata::with_source(&chunk.provenance.source_path);
+                entry.metadata.importance = 0.6;
+                entry.embedding = Some(embedding);
+
+                mem.remember(entry)
+                    .map_err(|e| Error::Internal(format!("memory write error: {e}")))?;
+                report.chunks_written += 1;
+            }
         }
 
         // Write/update the source-hash registry triple
@@ -268,6 +313,11 @@ pub async fn ingest_path(
             path: rel_path.clone(),
             content_hash: content_hash.clone(),
         });
+    }
+
+    // Final tick: report completion (100%) so the UI can settle to done.
+    if let Some(cb) = on_progress {
+        cb(total, total);
     }
 
     Ok(report)
@@ -385,6 +435,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn progress_callback_reports_per_file_and_completes() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "a.md", "# A\n\nalpha\n");
+        write(dir.path(), "b.md", "# B\n\nbeta\n");
+        write(dir.path(), "c.md", "# C\n\ngamma\n");
+        let state = enabled_state().await;
+
+        let calls = std::sync::Mutex::new(Vec::<(usize, usize)>::new());
+        let cb = |done: usize, total: usize| calls.lock().unwrap().push((done, total));
+        let report = ingest_path_with_progress(&state, dir.path().to_str().unwrap(), None, Some(&cb))
+            .await
+            .unwrap();
+
+        assert_eq!(report.files_seen, 3);
+        let calls = calls.into_inner().unwrap();
+        assert!(!calls.is_empty(), "callback must fire");
+        assert!(calls.iter().all(|&(_, t)| t == 3), "total must be the file count: {calls:?}");
+        assert_eq!(*calls.last().unwrap(), (3, 3), "must finish at 100% (3/3): {calls:?}");
+    }
+
+    #[tokio::test]
     async fn reingesting_unchanged_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "note.md", "# Title\n\nStable [[content]].\n");
@@ -473,6 +544,37 @@ mod tests {
             links.len(),
             1,
             "stale links_to should be purged, leaving only the new link, got: {links:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inbox_staging_area_is_excluded_from_ingest() {
+        // Trust-critical: notes an agent PROPOSES land in top-level `_inbox/` and
+        // must NOT be indexed until a human approves them. If the walk indexed them,
+        // unreviewed content would leak into retrieval/grounding.
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "kept.md", "# Kept\n\nWe use [[sled]] for storage.\n");
+        std::fs::create_dir_all(dir.path().join("_inbox")).unwrap();
+        write(
+            &dir.path().join("_inbox"),
+            "proposal.md",
+            "# Proposal\n\nUnreviewed claim about [[quantum]].\n",
+        );
+        let state = enabled_state().await;
+        let root = dir.path().to_str().unwrap();
+
+        let report = ingest_path(&state, root, None).await.unwrap();
+        assert_eq!(report.files_seen, 1, "only the approved note is walked");
+        assert_eq!(report.files_ingested, 1);
+
+        // The staged proposal's content must be unreachable via grounding.
+        let g = crate::service::ground::ground(&state, "Unreviewed claim about quantum", 5)
+            .await
+            .unwrap();
+        assert!(
+            !g.answer_context.iter().any(|c| c.source.contains("_inbox")),
+            "no _inbox source may appear in retrieval, got: {:?}",
+            g.answer_context
         );
     }
 
