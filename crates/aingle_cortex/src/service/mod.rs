@@ -13,6 +13,8 @@ pub mod local_graph;
 pub mod proof;
 pub mod query;
 pub mod reputation;
+#[cfg(feature = "dag")]
+pub mod review;
 pub mod skill;
 #[cfg(feature = "sparql")]
 pub mod sparql;

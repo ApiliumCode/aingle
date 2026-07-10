@@ -115,6 +115,20 @@ pub async fn ingest_path_with_progress(
             continue;
         }
 
+        // Skip the review-inbox staging area (top-level `_inbox/`): notes an agent
+        // PROPOSES land here and must NOT be indexed until a human approves them
+        // (see the review-inbox feature). Only the first path component is checked,
+        // so a nested folder that happens to be named `_inbox` deeper is unaffected.
+        if let Ok(rel) = path.strip_prefix(root_path) {
+            if rel
+                .components()
+                .next()
+                .is_some_and(|c| c.as_os_str() == "_inbox")
+            {
+                continue;
+            }
+        }
+
         // Filter to supported extensions: .md, .markdown, .txt, .rs, .py, .ts, .js
         let ext = path
             .extension()
@@ -237,27 +251,34 @@ pub async fn ingest_path_with_progress(
             }
         }
 
-        // Write text chunks to Ineru memory
-        for chunk in &extraction.chunks {
-            let embedding = state.embedder.embed_passage(&chunk.text);
-            let mut entry = MemoryEntry::new(
-                CHUNK_ENTRY_TYPE,
-                serde_json::json!({
-                    "text": chunk.text,
-                    "source_path": chunk.provenance.source_path,
-                    "line_start": chunk.provenance.line_start,
-                    "line_end": chunk.provenance.line_end,
-                    "content_hash": chunk.provenance.content_hash,
-                }),
-            );
-            entry.metadata = MemoryMetadata::with_source(&chunk.provenance.source_path);
-            entry.metadata.importance = 0.6;
-            entry.embedding = Some(embedding);
+        // Write text chunks to Ineru memory. Embed the file's chunks in ONE batched
+        // inference (amortizes the per-call model overhead that made indexing slow —
+        // a neural embedder pays fixed cost per invocation, so per-chunk calls were
+        // the bottleneck), then persist them under a SINGLE memory-lock acquisition.
+        if !extraction.chunks.is_empty() {
+            let texts: Vec<String> = extraction.chunks.iter().map(|c| c.text.clone()).collect();
+            let embeddings = state.embedder.embed_passages(&texts);
 
             let mut mem = state.memory.write().await;
-            mem.remember(entry)
-                .map_err(|e| Error::Internal(format!("memory write error: {e}")))?;
-            report.chunks_written += 1;
+            for (chunk, embedding) in extraction.chunks.iter().zip(embeddings) {
+                let mut entry = MemoryEntry::new(
+                    CHUNK_ENTRY_TYPE,
+                    serde_json::json!({
+                        "text": chunk.text,
+                        "source_path": chunk.provenance.source_path,
+                        "line_start": chunk.provenance.line_start,
+                        "line_end": chunk.provenance.line_end,
+                        "content_hash": chunk.provenance.content_hash,
+                    }),
+                );
+                entry.metadata = MemoryMetadata::with_source(&chunk.provenance.source_path);
+                entry.metadata.importance = 0.6;
+                entry.embedding = Some(embedding);
+
+                mem.remember(entry)
+                    .map_err(|e| Error::Internal(format!("memory write error: {e}")))?;
+                report.chunks_written += 1;
+            }
         }
 
         // Write/update the source-hash registry triple
@@ -523,6 +544,37 @@ mod tests {
             links.len(),
             1,
             "stale links_to should be purged, leaving only the new link, got: {links:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inbox_staging_area_is_excluded_from_ingest() {
+        // Trust-critical: notes an agent PROPOSES land in top-level `_inbox/` and
+        // must NOT be indexed until a human approves them. If the walk indexed them,
+        // unreviewed content would leak into retrieval/grounding.
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "kept.md", "# Kept\n\nWe use [[sled]] for storage.\n");
+        std::fs::create_dir_all(dir.path().join("_inbox")).unwrap();
+        write(
+            &dir.path().join("_inbox"),
+            "proposal.md",
+            "# Proposal\n\nUnreviewed claim about [[quantum]].\n",
+        );
+        let state = enabled_state().await;
+        let root = dir.path().to_str().unwrap();
+
+        let report = ingest_path(&state, root, None).await.unwrap();
+        assert_eq!(report.files_seen, 1, "only the approved note is walked");
+        assert_eq!(report.files_ingested, 1);
+
+        // The staged proposal's content must be unreachable via grounding.
+        let g = crate::service::ground::ground(&state, "Unreviewed claim about quantum", 5)
+            .await
+            .unwrap();
+        assert!(
+            !g.answer_context.iter().any(|c| c.source.contains("_inbox")),
+            "no _inbox source may appear in retrieval, got: {:?}",
+            g.answer_context
         );
     }
 
