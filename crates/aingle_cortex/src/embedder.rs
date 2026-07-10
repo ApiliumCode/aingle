@@ -18,15 +18,32 @@ use std::sync::Arc;
 pub fn build_embedder(model_dir: Option<&str>) -> Arc<dyn Embedder> {
     #[cfg(feature = "neural-embeddings")]
     if let Some(dir) = model_dir {
-        match ineru::NeuralEmbedder::from_path(std::path::Path::new(dir)) {
-            Ok(e) => {
-                log::info!("Using neural embedder from {dir}");
-                return Arc::new(e);
-            }
-            Err(e) => {
-                log::warn!("Failed to load neural embedder from {dir}: {e}. Using hash embedder.");
+        // Retry the neural load: on Windows an app restart (e.g. after creating a
+        // vault) can briefly leave the ONNX runtime DLL / model file locked by the
+        // exiting process, so the first load fails transiently and the engine would
+        // hard-fail with "engine unavailable". A few short backoff retries turn that
+        // intermittent failure into a successful load. `build_embedder` runs on a
+        // blocking thread, so sleeping here is fine.
+        let path = std::path::Path::new(dir);
+        let mut last_err = String::new();
+        for attempt in 1..=5u32 {
+            match ineru::NeuralEmbedder::from_path(path) {
+                Ok(e) => {
+                    log::info!("Using neural embedder from {dir} (attempt {attempt})");
+                    return Arc::new(e);
+                }
+                Err(e) => {
+                    last_err = e.to_string();
+                    log::warn!("neural embedder load attempt {attempt}/5 failed: {last_err}");
+                    if attempt < 5 {
+                        std::thread::sleep(std::time::Duration::from_millis(400 * attempt as u64));
+                    }
+                }
             }
         }
+        log::warn!(
+            "Failed to load neural embedder from {dir} after 5 attempts: {last_err}. Using hash embedder."
+        );
     }
     #[cfg(not(feature = "neural-embeddings"))]
     if model_dir.is_some() {

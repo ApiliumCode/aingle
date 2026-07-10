@@ -77,15 +77,29 @@ pub async fn record_approval(
         signature: None,
     };
 
-    if let Some(ref key) = state.dag_signing_key {
-        key.sign(&mut action);
+    let sign = |a: &mut aingle_graph::dag::DagAction| {
+        if let Some(ref key) = state.dag_signing_key {
+            key.sign(a);
+        }
+    };
+    sign(&mut action);
+
+    // Persist the approval. If the tips we picked as parents can't be validated
+    // (stale/missing parent — the one way `put` fails here), retry once as a
+    // genesis-style action (no parents) so the curation decision is NEVER lost to
+    // a transient DAG-tip issue. The author index (what `list_approvals` reads) is
+    // updated either way.
+    if let Err(e) = dag_store.put(&action) {
+        tracing::warn!("review approval put failed ({e}); retrying without parents");
+        action.parents = Vec::new();
+        action.signature = None;
+        sign(&mut action);
+        dag_store
+            .put(&action)
+            .map_err(|e2| Error::Internal(format!("review approval DAG put failed: {e2}")))?;
     }
     let anchor = action.compute_hash().to_hex();
     let signed = action.signature.is_some();
-
-    dag_store
-        .put(&action)
-        .map_err(|e| Error::Internal(format!("review approval DAG put failed: {e}")))?;
 
     Ok(signed.then_some(anchor))
 }
