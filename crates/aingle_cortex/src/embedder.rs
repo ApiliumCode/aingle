@@ -52,6 +52,42 @@ pub fn write_dims(dir: &std::path::Path, dims: usize) {
     }
 }
 
+/// Reads the persisted embedder identity from `<dir>/embedder.id`. `None` when the
+/// sidecar is absent (older installs that only wrote `embedder.dims`, or a fresh
+/// db). The identity is a model fingerprint (see [`ineru::Embedder::identity`]) and
+/// is the authoritative signal for whether a persisted index must be re-embedded.
+pub fn read_identity(dir: &std::path::Path) -> Option<String> {
+    let raw = std::fs::read_to_string(dir.join("embedder.id")).ok()?;
+    let s = raw.trim();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+/// Writes the active embedder identity to `<dir>/embedder.id`. Written atomically
+/// (temp + rename) so a crash mid-write never leaves a half-identity that would be
+/// read as a spurious mismatch. Refuses to persist a `pending-*` identity: a
+/// pending embedder has produced no real vectors, so stamping it would let the
+/// next launch load a placeholder index as if it were valid.
+pub fn write_identity(dir: &std::path::Path, identity: &str) {
+    if identity.starts_with("pending-") {
+        log::warn!("refusing to persist embedder identity while pending: {identity}");
+        return;
+    }
+    let final_path = dir.join("embedder.id");
+    let tmp_path = dir.join("embedder.id.tmp");
+    if let Err(e) = std::fs::write(&tmp_path, identity) {
+        log::warn!("Failed to write embedder.id sidecar: {e}");
+        return;
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
+        log::warn!("Failed to finalize embedder.id sidecar: {e}");
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+}
+
 /// Deletes every `aingle:source_hash` registry triple so the next ingest treats
 /// all files as new and re-embeds them. Returns the number removed.
 pub fn clear_source_registry(graph: &aingle_graph::GraphDB) -> Result<usize, aingle_graph::Error> {
@@ -97,6 +133,12 @@ impl Embedder for PendingEmbedder {
     }
     fn dimensions(&self) -> usize {
         self.dims
+    }
+    /// A distinct identity so an index accidentally built (or a snapshot saved)
+    /// while still pending is detected as stale once the real model installs and
+    /// gets re-embedded. Never collides with a real embedder's identity.
+    fn identity(&self) -> String {
+        format!("pending-{}", self.dims)
     }
 }
 
@@ -162,6 +204,16 @@ impl Embedder for SwappableEmbedder {
             .expect("swappable embedder poisoned")
             .clone();
         inner.relevance_thresholds()
+    }
+    /// Delegates to the installed model's identity, so callers persist the REAL
+    /// embedder's fingerprint (or `pending-N` while the model is still loading).
+    fn identity(&self) -> String {
+        let inner = self
+            .inner
+            .read()
+            .expect("swappable embedder poisoned")
+            .clone();
+        inner.identity()
     }
 }
 

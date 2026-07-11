@@ -338,21 +338,41 @@ impl AppState {
         let logic = RuleEngine::new();
 
         // Embedder-change migration + snapshot load (persistent only).
+        //
+        // The persisted index is reusable ONLY when the active embedder shares the
+        // exact identity (model + dimension) that produced it. A dimension change is
+        // a hard mismatch; a same-dimension identity change (model swap, version
+        // bump, or a placeholder that got persisted) silently poisons cosine scores
+        // and must re-embed too. An index with NO identity sidecar (older builds, or
+        // one written before this evolution) is unverifiable and re-embedded once —
+        // a bounded cost that heals any previously-poisoned index of any size.
+        //
+        // When the embedder is still a not-yet-loaded placeholder (`pending-*`), the
+        // identity check is DEFERRED: the caller reconciles via
+        // `reconcile_embedder_identity` once the real model installs. The dimension
+        // (fixed up front) is still enforced here so the index can't change shape.
         let memory = if db_path != ":memory:" {
             let dbdir = Path::new(db_path).parent().unwrap_or(Path::new("."));
             let snapshot_path = dbdir.join("ineru.snapshot");
             let active_dims = embedder.dimensions();
+            let active_identity = embedder.identity();
+            let identity_known = !active_identity.starts_with("pending-");
             // Pre-sidecar databases were written by the 64d hash embedder.
             let persisted_dims = crate::embedder::read_dims(dbdir).unwrap_or(64);
+            let persisted_identity = crate::embedder::read_identity(dbdir);
             let snapshot_exists = snapshot_path.exists();
-            let dim_mismatch = snapshot_exists && persisted_dims != active_dims;
 
-            if dim_mismatch {
+            let dim_mismatch = snapshot_exists && persisted_dims != active_dims;
+            let identity_mismatch = snapshot_exists
+                && identity_known
+                && persisted_identity.as_deref() != Some(active_identity.as_str());
+
+            if dim_mismatch || identity_mismatch {
                 let removed = crate::embedder::clear_source_registry(&graph)
                     .map_err(|e| crate::error::Error::Internal(format!("clear registry: {e}")))?;
                 log::warn!(
-                    "Embedder changed ({}d → {}d): cleared {} source-hash entries; re-ingest required.",
-                    persisted_dims, active_dims, removed
+                    "Embedder changed (persisted {:?}/{}d -> active {}/{}d): cleared {} source-hash entries; re-embed required.",
+                    persisted_identity, persisted_dims, active_identity, active_dims, removed
                 );
                 IneruMemory::agent_mode()
             } else if snapshot_exists {
@@ -472,19 +492,119 @@ impl AppState {
             log::warn!("Failed to flush proof store: {}", e);
         }
 
-        // Save Ineru memory snapshot
+        // Save Ineru memory snapshot.
+        //
+        // NEVER persist while the embedder is a not-yet-loaded placeholder
+        // (`pending-*`). A pending embedder emits zero vectors; a snapshot taken
+        // then would store a placeholder index that the next launch loads as if
+        // it were valid, and the identity sidecar (`write_identity`) would refuse
+        // the pending fingerprint — leaving `ineru.snapshot` and `embedder.id` out
+        // of sync. Skipping the save keeps the on-disk index self-consistent: the
+        // previous good snapshot (if any) stays, and a re-embed re-materializes it
+        // once the real model is installed.
         if let Some(dir) = snapshot_dir {
-            let snapshot_path = dir.join("ineru.snapshot");
-            let memory = self.memory.read().await;
-            if let Err(e) = memory.save_to_file(&snapshot_path) {
-                log::warn!("Failed to save Ineru snapshot: {}", e);
+            let identity = self.embedder.identity();
+            if identity.starts_with("pending-") {
+                log::info!(
+                    "Skipping Ineru snapshot save: embedder still pending ({identity}); \
+                     the persisted index is left untouched until the real model installs."
+                );
             } else {
-                log::info!("Ineru snapshot saved to {}", snapshot_path.display());
+                let snapshot_path = dir.join("ineru.snapshot");
+                let memory = self.memory.read().await;
+                if let Err(e) = memory.save_to_file(&snapshot_path) {
+                    log::warn!("Failed to save Ineru snapshot: {}", e);
+                } else {
+                    log::info!("Ineru snapshot saved to {}", snapshot_path.display());
+                }
+                // Stamp BOTH sidecars together so the index and its fingerprint move
+                // as a unit: dims guards shape, identity guards model provenance.
+                crate::embedder::write_dims(dir, self.embedder.dimensions());
+                crate::embedder::write_identity(dir, &identity);
             }
-            crate::embedder::write_dims(dir, self.embedder.dimensions());
         }
 
         Ok(())
+    }
+
+    /// Reconciles the persisted index against the embedder's identity once the
+    /// real model is installed, healing the `pending-*` case the constructor had
+    /// to defer.
+    ///
+    /// A UI that starts with [`SwappableEmbedder::new_pending`] cannot know the
+    /// real model's fingerprint at construction time, so the identity check in
+    /// [`with_db_path_and_embedder`] is skipped for pending embedders (only the
+    /// fixed dimension is enforced). The caller MUST invoke this AFTER installing
+    /// the real delegate and BEFORE the first ingest.
+    ///
+    /// Behaviour:
+    /// - Still pending → no-op, returns `Ok(false)` (nothing to reconcile yet).
+    /// - Persisted identity equals the now-real identity → no-op, `Ok(false)`.
+    ///   The persisted index was produced by this exact model; it is reused.
+    /// - Mismatch, OR no identity sidecar exists (older/poisoned index) → clears
+    ///   the `aingle:source_hash` registry and resets in-memory vectors, then
+    ///   returns `Ok(true)` to signal the caller to re-ingest. This is the branch
+    ///   that heals a placeholder index that was persisted while pending, or any
+    ///   index whose model changed underneath it without a dimension change.
+    ///
+    /// Returning `true` means "a re-embed is required": the caller should run its
+    /// ingest so every passage is re-embedded at the real model's identity. The
+    /// fresh `write_identity` on the next `flush` then stamps the correct
+    /// fingerprint, closing the loop.
+    pub async fn reconcile_embedder_identity(
+        &self,
+        dbdir: &Path,
+    ) -> crate::error::Result<bool> {
+        let active = self.embedder.identity();
+        if active.starts_with("pending-") {
+            // The real model has not been installed yet; nothing to reconcile.
+            return Ok(false);
+        }
+
+        let persisted = crate::embedder::read_identity(dbdir);
+        if persisted.as_deref() == Some(active.as_str()) {
+            // The persisted index was produced by this exact model — reuse it.
+            return Ok(false);
+        }
+
+        // Mismatch or unverifiable (no sidecar): the persisted vectors cannot be
+        // trusted against the real model. Clear the registry so the next ingest
+        // treats every file as new, and drop the in-memory index so no stale
+        // (possibly zero) vector survives to poison a cosine score.
+        let removed = {
+            let graph = self.graph.read().await;
+            crate::embedder::clear_source_registry(&graph)
+                .map_err(|e| crate::error::Error::Internal(format!("clear registry: {e}")))?
+        };
+        *self.memory.write().await = IneruMemory::agent_mode();
+        log::warn!(
+            "Embedder identity reconciled (persisted {:?} -> active {}): cleared {} \
+             source-hash entries; re-embed required.",
+            persisted,
+            active,
+            removed
+        );
+        Ok(true)
+    }
+
+    /// Forces a full re-embed on the next ingest by clearing the `source_hash`
+    /// registry and resetting the in-memory index. Returns the number of registry
+    /// entries cleared.
+    ///
+    /// Unlike [`reconcile_embedder_identity`], this is UNCONDITIONAL: it is the
+    /// manual "Re-index vault" action a user triggers when they suspect a stale
+    /// index (e.g. after seeing an `index_stale` signal). After calling this, run
+    /// an ingest to rebuild every vector at the active embedder's identity, then
+    /// [`flush`] to persist the rebuilt snapshot and its identity sidecar.
+    pub async fn force_reindex_reset(&self) -> crate::error::Result<usize> {
+        let removed = {
+            let graph = self.graph.read().await;
+            crate::embedder::clear_source_registry(&graph)
+                .map_err(|e| crate::error::Error::Internal(format!("clear registry: {e}")))?
+        };
+        *self.memory.write().await = IneruMemory::agent_mode();
+        log::info!("force_reindex_reset: cleared {removed} source-hash entries; re-embed pending.");
+        Ok(removed)
     }
 
     /// Returns an internal Cortex client configured for same-process access.
@@ -879,6 +999,247 @@ mod tests {
                 .len();
             assert!(n >= 1, "same-dims boot must preserve the registry");
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Regression: the SILENT same-dimension embedder change.
+    //
+    // The original bug keyed index validity on dimension alone, so a swap
+    // between two DIFFERENT models of the SAME dimension (or a placeholder that
+    // got persisted) reused stale vectors and returned cosine≈0 forever, with
+    // the engine still reporting Ready. These tests pin the identity-based
+    // migration + reconcile that closes it, independent of vault size.
+    // ---------------------------------------------------------------------
+
+    /// A 384-dim embedder with a CONFIGURABLE identity and non-zero output. The
+    /// non-zero output isolates the identity signal from the zero-vector signal:
+    /// stored vectors are "real", only the model fingerprint differs.
+    struct IdentEmbedder(&'static str);
+    impl Embedder for IdentEmbedder {
+        fn embed_passage(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.3; 384])
+        }
+        fn embed_query(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.3; 384])
+        }
+        fn dimensions(&self) -> usize {
+            384
+        }
+        fn identity(&self) -> String {
+            self.0.to_string()
+        }
+    }
+
+    /// Ingests + flushes a note with `embedder`, returning the db path string and
+    /// its parent dir. Isolates the boilerplate shared by the regression tests.
+    async fn seed_index(
+        dir: &std::path::Path,
+        db_str: &str,
+        embedder: std::sync::Arc<dyn Embedder>,
+    ) {
+        let state = AppState::with_db_path_and_embedder(db_str, None, embedder).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        std::fs::write(dir.join("note.md"), "# N\n\nsled has exclusive locks.\n").unwrap();
+        crate::service::ingest::ingest_path(&state, dir.to_str().unwrap(), None)
+            .await
+            .unwrap();
+        state.flush(Some(Path::new(db_str).parent().unwrap())).await.unwrap();
+    }
+
+    async fn registry_count(state: &AppState) -> usize {
+        use aingle_graph::{Predicate, TriplePattern};
+        let g = state.graph.read().await;
+        g.find(
+            TriplePattern::any()
+                .with_predicate(Predicate::named(crate::service::ingest::PRED_SOURCE_HASH)),
+        )
+        .unwrap()
+        .len()
+    }
+
+    #[tokio::test]
+    async fn same_dim_identity_change_clears_registry() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+        let dbdir = db.parent().unwrap();
+
+        // Boot 1: model-a (384d). Flush stamps embedder.id = "model-a".
+        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        assert_eq!(
+            crate::embedder::read_identity(dbdir).as_deref(),
+            Some("model-a"),
+            "flush must stamp the real embedder identity"
+        );
+
+        // Boot 2: model-b, SAME 384 dims, DIFFERENT identity → the exact case the
+        // dims-only check missed. Must clear the registry to force a re-embed.
+        let b: std::sync::Arc<dyn Embedder> = std::sync::Arc::new(IdentEmbedder("model-b"));
+        let state = AppState::with_db_path_and_embedder(db_str, None, b).unwrap();
+        assert_eq!(
+            registry_count(&state).await,
+            0,
+            "a same-dimension identity change MUST clear the registry (silent-bug guard)"
+        );
+    }
+
+    #[tokio::test]
+    async fn same_identity_preserves_registry() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+
+        // Boot 1 and Boot 2 with the SAME identity: no needless re-embed.
+        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        let same: std::sync::Arc<dyn Embedder> = std::sync::Arc::new(IdentEmbedder("model-a"));
+        let state = AppState::with_db_path_and_embedder(db_str, None, same).unwrap();
+        assert!(
+            registry_count(&state).await >= 1,
+            "an identical embedder must reuse the persisted index"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_reembeds_when_pending_start_installs_different_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+        let dbdir = db.parent().unwrap();
+
+        // Persist an index stamped "model-a".
+        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+
+        // Boot with a SwappableEmbedder pending(384): identity check is DEFERRED,
+        // so the registry survives the constructor (no premature clear).
+        let swap = std::sync::Arc::new(crate::embedder::SwappableEmbedder::new_pending(384));
+        let state = AppState::with_db_path_and_embedder(
+            db_str,
+            None,
+            swap.clone() as std::sync::Arc<dyn Embedder>,
+        )
+        .unwrap();
+        assert!(
+            registry_count(&state).await >= 1,
+            "pending boot must NOT clear the registry before the real model installs"
+        );
+
+        // The real model turns out to be a DIFFERENT identity than what produced
+        // the persisted index. reconcile must detect it and force a re-embed.
+        swap.install(std::sync::Arc::new(IdentEmbedder("model-b")));
+        let reembed = state.reconcile_embedder_identity(dbdir).await.unwrap();
+        assert!(reembed, "installed identity differs → reconcile must require re-embed");
+        assert_eq!(
+            registry_count(&state).await,
+            0,
+            "reconcile must clear the registry when the installed model differs"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_is_noop_when_installed_model_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+        let dbdir = db.parent().unwrap();
+
+        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+
+        let swap = std::sync::Arc::new(crate::embedder::SwappableEmbedder::new_pending(384));
+        let state = AppState::with_db_path_and_embedder(
+            db_str,
+            None,
+            swap.clone() as std::sync::Arc<dyn Embedder>,
+        )
+        .unwrap();
+        // Install the SAME model that produced the index.
+        swap.install(std::sync::Arc::new(IdentEmbedder("model-a")));
+        let reembed = state.reconcile_embedder_identity(dbdir).await.unwrap();
+        assert!(!reembed, "matching identity must reuse the index (no re-embed)");
+        assert!(
+            registry_count(&state).await >= 1,
+            "reconcile must preserve the registry when the model matches"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_reembeds_when_identity_sidecar_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+        let dbdir = db.parent().unwrap();
+
+        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        // Simulate an index from before the identity evolution: no embedder.id.
+        std::fs::remove_file(dbdir.join("embedder.id")).unwrap();
+
+        let swap = std::sync::Arc::new(crate::embedder::SwappableEmbedder::new_pending(384));
+        let state = AppState::with_db_path_and_embedder(
+            db_str,
+            None,
+            swap.clone() as std::sync::Arc<dyn Embedder>,
+        )
+        .unwrap();
+        swap.install(std::sync::Arc::new(IdentEmbedder("model-a")));
+        let reembed = state.reconcile_embedder_identity(dbdir).await.unwrap();
+        assert!(
+            reembed,
+            "an index with no identity sidecar is unverifiable → re-embed once to heal it"
+        );
+    }
+
+    #[tokio::test]
+    async fn flush_while_pending_persists_neither_snapshot_nor_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+        let dbdir = db.parent().unwrap();
+
+        // A state whose embedder never leaves the pending state.
+        let swap = std::sync::Arc::new(crate::embedder::SwappableEmbedder::new_pending(384));
+        let state = AppState::with_db_path_and_embedder(
+            db_str,
+            None,
+            swap as std::sync::Arc<dyn Embedder>,
+        )
+        .unwrap();
+        state.flush(Some(dbdir)).await.unwrap();
+
+        assert!(
+            !dbdir.join("ineru.snapshot").exists(),
+            "a snapshot taken while pending would persist placeholder vectors"
+        );
+        assert!(
+            crate::embedder::read_identity(dbdir).is_none(),
+            "a pending identity must never be stamped (would validate a placeholder index)"
+        );
+    }
+
+    #[tokio::test]
+    async fn force_reindex_reset_clears_registry_and_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.sled");
+        let db_str = db.to_str().unwrap();
+
+        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        // Re-open (same identity) so the registry/snapshot are preserved.
+        let state = AppState::with_db_path_and_embedder(
+            db_str,
+            None,
+            std::sync::Arc::new(IdentEmbedder("model-a")),
+        )
+        .unwrap();
+        assert!(registry_count(&state).await >= 1, "precondition: index populated");
+
+        let removed = state.force_reindex_reset().await.unwrap();
+        assert!(removed >= 1, "must report the cleared registry entries");
+        assert_eq!(
+            registry_count(&state).await,
+            0,
+            "force_reindex_reset must clear the source-hash registry"
+        );
     }
 
     /// A stand-in 384-dim embedder for migration tests (no model needed).

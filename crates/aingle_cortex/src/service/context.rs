@@ -20,6 +20,12 @@ pub struct NoteContext {
     /// fallback is active and no neighbor search was attempted.
     pub semantic_ready: bool,
     pub neighbors: Vec<Neighbor>,
+    /// `true` when the note pool held chunks but every stored embedding was a
+    /// placeholder (missing or all-zero), so no neighbor can ever be found. This
+    /// distinguishes a stale index that needs re-embedding from a note that
+    /// genuinely has no semantic neighbors. Mirrors `GroundedContext::index_stale`.
+    #[serde(default)]
+    pub index_stale: bool,
 }
 
 /// A note that is semantically related to the active note.
@@ -70,6 +76,7 @@ pub async fn note_context(state: &crate::state::AppState, note: &str, limit: usi
         return NoteContext {
             semantic_ready: false,
             neighbors: vec![],
+            index_stale: false,
         };
     }
 
@@ -160,14 +167,25 @@ pub async fn note_context(state: &crate::state::AppState, note: &str, limit: usi
 
     // Per-source best (rel, text).
     let mut best_by_src: BTreeMap<String, (f32, String)> = BTreeMap::new();
+    // Pool health: a fully-degenerate pool means the index is stale, not that the
+    // note simply has no neighbors (mirrors ground.rs's honest signal).
+    let mut chunk_total = 0usize;
+    let mut chunk_degenerate = 0usize;
 
     for r in &results {
         if r.entry.entry_type != crate::service::ingest::CHUNK_ENTRY_TYPE {
             continue;
         }
+        chunk_total += 1;
+        // A missing or all-zero stored embedding is a placeholder that scores 0
+        // against any query — skip it, but count it so an all-placeholder pool is
+        // reported as a stale index rather than a note with no neighbors.
         let emb = match &r.entry.embedding {
-            Some(e) => e,
-            None => continue,
+            Some(e) if e.0.iter().any(|x| *x != 0.0) => e,
+            _ => {
+                chunk_degenerate += 1;
+                continue;
+            }
         };
         let rel = q.cosine_similarity(emb);
         if rel < NEIGHBOR_FLOOR {
@@ -242,6 +260,7 @@ pub async fn note_context(state: &crate::state::AppState, note: &str, limit: usi
     NoteContext {
         semantic_ready: true,
         neighbors,
+        index_stale: chunk_total > 0 && chunk_degenerate == chunk_total,
     }
 }
 
@@ -757,6 +776,7 @@ mod tests {
                         super::NoteContext {
                             semantic_ready: false,
                             neighbors: vec![],
+                            index_stale: false,
                         },
                     ),
                 );
