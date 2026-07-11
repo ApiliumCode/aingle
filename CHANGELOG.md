@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-07-11
+
+### Changed
+- **Cortex index integrity keyed on embedder identity, not just dimension.** A
+  persisted semantic index is now reused only when the active embedder shares the
+  exact model fingerprint (`Embedder::identity`) that produced it, not merely the
+  same vector dimension. Previously an index could be reused after a
+  same-dimension model change (a model swap, a version bump, or a placeholder
+  captured before the real model finished loading), silently degrading retrieval
+  relevance until a manual rebuild. The index now migrates (re-embeds) exactly
+  when the model provenance changes, at any vault size.
+
+### Added
+- `Embedder::identity()` — a stable model fingerprint (default derived from the
+  dimension) that Cortex persists as an `embedder.id` sidecar and uses to decide
+  index reuse. `HashEmbedder` and `NeuralEmbedder` report distinct identities.
+- `AppState::reconcile_embedder_identity()` — reconciles a persisted index against
+  the real embedder once a deferred/placeholder embedder is replaced by the loaded
+  model, re-embedding only when the provenance differs (or is unverifiable).
+- `AppState::force_reindex_reset()` — an explicit, unconditional rebuild trigger.
+- An `index_stale` signal on grounded retrieval and note-context, so a placeholder
+  index reports honestly instead of looking like an empty vault.
+
+### Fixed
+- The Ineru snapshot and identity sidecar are never persisted while the embedder
+  is a not-yet-loaded placeholder, so a launch can no longer load a placeholder
+  index as if it were valid.
+
 ## [0.4.0] - 2026-03-09
 
 ### Changed

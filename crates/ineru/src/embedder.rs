@@ -35,6 +35,21 @@ pub trait Embedder: Send + Sync {
     fn relevance_thresholds(&self) -> (f32, f32) {
         (0.55, 0.30)
     }
+
+    /// A stable fingerprint of this embedder's vector space: the model identity
+    /// AND its dimensionality. Two embedders share an identity **iff** vectors
+    /// one produced are directly comparable (same cosine geometry) with the
+    /// other's — so a persisted index is only valid while the active embedder's
+    /// identity is unchanged.
+    ///
+    /// Dimensionality alone is not enough: two different models (or a
+    /// not-yet-loaded placeholder and the real model) can share a dimension yet
+    /// live in different vector spaces, which silently poisons retrieval. Callers
+    /// persist this string and re-embed when it changes. The default keys on the
+    /// dimension only; every real embedder overrides it with a model-specific tag.
+    fn identity(&self) -> String {
+        format!("emb-dim-{}", self.dimensions())
+    }
 }
 
 /// 64-dimensional fallback embedder built on the lexical hash scheme
@@ -62,6 +77,10 @@ impl Embedder for HashEmbedder {
 
     fn dimensions(&self) -> usize {
         64
+    }
+
+    fn identity(&self) -> String {
+        "hash-lexical-64".to_string()
     }
 }
 
@@ -202,6 +221,12 @@ impl Embedder for NeuralEmbedder {
 
     fn relevance_thresholds(&self) -> (f32, f32) {
         (0.80, 0.77)
+    }
+
+    fn identity(&self) -> String {
+        // Model-specific tag: bump this whenever the model (or its vector space)
+        // changes so persisted indices re-embed. multilingual-e5-small, 384-dim.
+        format!("neural-e5-small-{}", Self::DIM)
     }
 }
 

@@ -36,6 +36,13 @@ pub struct GroundedContext {
     pub gaps: Vec<String>,
     /// Instruction echoed to the model to keep it on the cited path.
     pub instruction: String,
+    /// `true` when the index holds chunks but every stored embedding in the
+    /// candidate pool is a placeholder (missing or all-zero), so no query can
+    /// ground against it. This is the honest signal for a stale index that must
+    /// be re-embedded — distinct from "ungrounded" (index is fine, topic absent).
+    /// Never `true` for a healthy or genuinely empty index.
+    #[serde(default)]
+    pub index_stale: bool,
 }
 
 use ineru::MemoryQuery;
@@ -65,17 +72,28 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
     };
 
     let mut answer_context = Vec::new();
+    // Track the health of the candidate pool so a placeholder/stale index is
+    // reported honestly instead of masquerading as a plain "ungrounded" miss.
+    let mut chunk_total = 0usize;
+    let mut chunk_degenerate = 0usize;
     for r in &results {
         // Only consider chunk memories produced by ingestion.
         if r.entry.entry_type != crate::service::ingest::CHUNK_ENTRY_TYPE {
             continue;
         }
+        chunk_total += 1;
         // Semantic relevance = cosine(query, chunk) from the active embedder,
-        // not Ineru's composite recall score. Skip chunks lacking an embedding
-        // (dimension-mismatched legacy data scores 0 via cosine_similarity).
+        // not Ineru's composite recall score. A stored embedding that is missing
+        // or all-zero is a placeholder (pending model persisted, or a poisoned
+        // legacy index): it scores 0 against every query, so it can never ground
+        // an answer. Skip it AND count it — a pool that is entirely degenerate is
+        // the fingerprint of a stale index that needs re-embedding.
         let relevance = match &r.entry.embedding {
-            Some(emb) => query_vec.cosine_similarity(emb),
-            None => continue,
+            Some(emb) if emb.0.iter().any(|x| *x != 0.0) => query_vec.cosine_similarity(emb),
+            _ => {
+                chunk_degenerate += 1;
+                continue;
+            }
         };
         let d = &r.entry.data;
         let source = d
@@ -126,8 +144,20 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
         "ungrounded"
     };
 
+    // A candidate pool that held chunks but whose every stored embedding was a
+    // placeholder means the index is stale, NOT that the topic is absent. This is
+    // the guard against the silent-retrieval failure: chunks exist, the engine
+    // reports Ready, yet nothing can ever ground because the vectors are zeros.
+    let index_stale = chunk_total > 0 && chunk_degenerate == chunk_total;
+
     let mut gaps = Vec::new();
-    if answer_context.is_empty() {
+    if index_stale {
+        gaps.push(
+            "The semantic index is stale: stored embeddings are placeholders, so no query \
+             can be grounded. Re-index the vault to rebuild the embeddings."
+                .to_string(),
+        );
+    } else if answer_context.is_empty() {
         gaps.push(format!("No ingested source matches: {question:?}."));
     } else if groundedness == "weak" {
         if best >= ground_high && strong < MIN_CORROBORATING_CHUNKS {
@@ -154,6 +184,7 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
             source:lines. If groundedness is not \"grounded\", say so explicitly \
             and do not invent facts."
             .to_string(),
+        index_stale,
     })
 }
 
@@ -211,6 +242,68 @@ mod tests {
         assert_eq!(g.groundedness, "ungrounded");
         assert!(g.answer_context.is_empty());
         assert!(!g.gaps.is_empty());
+        assert!(
+            !g.index_stale,
+            "a genuinely empty index is not stale — there are no chunks to be placeholders"
+        );
+    }
+
+    /// A 384-dim embedder that emits ONLY zero vectors — reproduces the poisoned
+    /// index (a placeholder model that got persisted, or a same-dim swap that
+    /// left every stored vector at zero).
+    struct Zero384;
+    impl ineru::Embedder for Zero384 {
+        fn embed_passage(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.0; 384])
+        }
+        fn embed_query(&self, _t: &str) -> ineru::Embedding {
+            ineru::Embedding::new(vec![0.0; 384])
+        }
+        fn dimensions(&self) -> usize {
+            384
+        }
+    }
+
+    #[tokio::test]
+    async fn stale_index_is_reported_not_silently_ungrounded() {
+        // The regression: chunks EXIST and the engine reports Ready, yet every
+        // stored embedding is a placeholder so nothing can ever ground. Before the
+        // fix this returned a plain "ungrounded" and looked like an empty vault.
+        // Now it must raise `index_stale` and say a re-index is required.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("n.md"),
+            "# N\n\nsled has exclusive lock semantics.\n",
+        )
+        .unwrap();
+        let state = AppState::with_db_path_and_embedder(
+            ":memory:",
+            None,
+            std::sync::Arc::new(Zero384),
+        )
+        .unwrap();
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+
+        let g = ground(&state, "exclusive lock semantics", 5).await.unwrap();
+        assert!(
+            g.index_stale,
+            "an all-placeholder candidate pool must be reported as a stale index"
+        );
+        assert_eq!(
+            g.groundedness, "ungrounded",
+            "a stale index cannot ground anything"
+        );
+        assert!(
+            g.gaps.iter().any(|s| s.to_lowercase().contains("stale")),
+            "the gap must tell the user to re-index; got {:?}",
+            g.gaps
+        );
     }
 
     #[tokio::test]

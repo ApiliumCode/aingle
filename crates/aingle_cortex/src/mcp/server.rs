@@ -218,13 +218,24 @@ impl AingleMcp {
         let answerable = has_visible_source && grounding_ok;
 
         if !answerable {
+            // `index_stale` distinguishes "the vault has no evidence" from "the
+            // vault's embeddings are placeholders and need a re-index" — without
+            // it, a stale index looks identical to an empty one and the client
+            // wrongly tells the user their notes are empty.
+            let instruction = if g.index_stale {
+                "The semantic index is stale (embeddings are placeholders): tell the \
+                 user to re-index the vault, and do not claim their notes are empty."
+            } else {
+                "Insufficient grounded evidence in your notes; say you don't know and \
+                 do not invent facts."
+            };
             let refusal = serde_json::json!({
                 "groundedness": g.groundedness,
                 "answerable": false,
                 "answer_context": [],
                 "gaps": g.gaps,
-                "instruction": "Insufficient grounded evidence in your notes; \
-                    say you don't know and do not invent facts.",
+                "index_stale": g.index_stale,
+                "instruction": instruction,
             });
             return Ok(CallToolResult::success(vec![Content::json(refusal)?]));
         }
@@ -237,6 +248,7 @@ impl AingleMcp {
             "answerable": true,
             "answer_context": g.answer_context,
             "gaps": g.gaps,
+            "index_stale": g.index_stale,
             "instruction": g.instruction,
         });
         Ok(CallToolResult::success(vec![Content::json(payload)?]))
