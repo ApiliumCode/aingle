@@ -281,6 +281,44 @@ impl Embedding {
 
         Self(values)
     }
+
+    /// Lexical hash embedding at an arbitrary dimension.
+    ///
+    /// `dims == 64` delegates to [`Self::from_text_simple`] BYTE-FOR-BYTE so
+    /// existing 64-dim hash indexes stay valid (that scheme only spreads a word
+    /// over blake3's 32 output bytes; changing it would silently mix
+    /// incompatible vectors into a persisted index). Any other dimension uses
+    /// blake3's XOF to derive exactly `dims` bucket contributions per word, so a
+    /// lexical embedder can stand in for a neural model at the SAME index
+    /// dimension (e.g. a 384-dim degraded mode when the ONNX runtime is
+    /// unavailable) without changing the index shape.
+    pub fn from_text_simple_dims(text: &str, dims: usize) -> Self {
+        if dims == 64 {
+            return Self::from_text_simple(text);
+        }
+        let mut values = vec![0.0f32; dims];
+
+        for word in text.to_lowercase().split_whitespace() {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(word.as_bytes());
+            let mut reader = hasher.finalize_xof();
+            let mut buf = vec![0u8; dims];
+            reader.fill(&mut buf);
+            for (i, &b) in buf.iter().enumerate() {
+                values[i] += (b as f32 / 255.0) - 0.5;
+            }
+        }
+
+        // Normalize the vector
+        let magnitude: f32 = values.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if magnitude > 0.0 {
+            for v in &mut values {
+                *v /= magnitude;
+            }
+        }
+
+        Self(values)
+    }
 }
 
 /// Defines a query for searching and retrieving memories.

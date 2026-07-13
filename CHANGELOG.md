@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] - 2026-07-13
+
+### Fixed
+- **Windows: dynamic ONNX runtime paths are normalized before loading.** An
+  extended-length (`\\?\`-prefixed) `ORT_DYLIB_PATH` — the form produced by path
+  canonicalization on Windows — made the runtime's initialization block
+  indefinitely instead of loading or failing. The path is now normalized before
+  the loader sees it, so hosts that resolve resources via canonicalized paths
+  get a working semantic engine instead of a silent hang.
+
+### Added
+- **`HashEmbedder::with_dimensions(n)`** — the lexical embedder can now be built
+  at any dimension (identity `hash-lexical-<n>`), so a host can keep serving
+  lexical retrieval at the same index shape when a neural model is unavailable,
+  and the identity-based migration re-embeds automatically once it returns. The
+  64-dimension scheme is byte-compatible with every existing index.
+
+### Changed
+- **Bounded embedding sub-batches.** Batch embedding now runs in fixed-size
+  sub-batches instead of one model invocation sized by the whole input. An
+  unbounded batch made peak memory and lock latency proportional to the largest
+  document ever indexed (a multi-megabyte document produced multi-gigabyte
+  runtime arenas and blocked interactive queries for minutes). Sub-batching
+  keeps memory flat, reduces padding waste, and lets queries interleave with a
+  long-running index; results are identical.
+- **Neural inference leaves CPU headroom.** ONNX intra-op threads are capped at
+  half the logical cores (min 2, max 8) instead of saturating every core, so a
+  bulk index no longer freezes an average machine; throughput stays close to
+  peak (≈ the physical-core count).
+- **Smallest-files-first indexing.** A full (re-)index embeds files in
+  ascending size order, so the bulk of a corpus becomes searchable within the
+  first minutes and multi-megabyte outliers grind at the end, instead of one
+  giant file early in walk order stalling visible progress near 0%.
+
 ## [0.7.3] - 2026-07-13
 
 ### Changed

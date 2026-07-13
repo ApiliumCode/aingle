@@ -52,35 +52,54 @@ pub trait Embedder: Send + Sync {
     }
 }
 
-/// 64-dimensional fallback embedder built on the lexical hash scheme
-/// (`Embedding::from_text_simple`). Always available; captures lexical overlap,
-/// not meaning. The hash scheme is symmetric, so passage and query embeddings
-/// are identical and no prefixes are applied.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct HashEmbedder;
+/// Lexical hash embedder (`Embedding::from_text_simple*`). Always available;
+/// captures lexical overlap, not meaning. The hash scheme is symmetric, so
+/// passage and query embeddings are identical and no prefixes are applied.
+///
+/// Defaults to 64 dimensions (the historical scheme, byte-compatible with every
+/// existing hash index). [`Self::with_dimensions`] builds one at any other
+/// dimension — the degraded-mode stand-in for a neural model that failed to
+/// load, matching the index shape so the engine keeps working lexically.
+#[derive(Debug, Clone, Copy)]
+pub struct HashEmbedder {
+    dims: usize,
+}
+
+impl Default for HashEmbedder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl HashEmbedder {
-    /// Creates a new `HashEmbedder`.
+    /// Creates the historical 64-dimensional `HashEmbedder`.
     pub fn new() -> Self {
-        Self
+        Self { dims: 64 }
+    }
+
+    /// Creates a `HashEmbedder` at an arbitrary dimension (e.g. 384 to stand in
+    /// for a neural model at the same index shape). `64` is byte-compatible
+    /// with [`Self::new`].
+    pub fn with_dimensions(dims: usize) -> Self {
+        Self { dims }
     }
 }
 
 impl Embedder for HashEmbedder {
     fn embed_passage(&self, text: &str) -> Embedding {
-        Embedding::from_text_simple(text)
+        Embedding::from_text_simple_dims(text, self.dims)
     }
 
     fn embed_query(&self, text: &str) -> Embedding {
-        Embedding::from_text_simple(text)
+        Embedding::from_text_simple_dims(text, self.dims)
     }
 
     fn dimensions(&self) -> usize {
-        64
+        self.dims
     }
 
     fn identity(&self) -> String {
-        "hash-lexical-64".to_string()
+        format!("hash-lexical-{}", self.dims)
     }
 }
 
@@ -133,7 +152,19 @@ impl NeuralEmbedder {
         // E5 REQUIRES mean pooling; the fastembed default is Cls.
         let model =
             UserDefinedEmbeddingModel::new(onnx, tokenizer_files).with_pooling(Pooling::Mean);
-        let options = InitOptionsUserDefined::new().with_max_length(512);
+        // Cap ONNX intra-op threads at half the logical cores (min 2, max 8).
+        // The default saturates EVERY core, which turns a first-run bulk index
+        // into a machine-freezing event on an average laptop; half the logical
+        // cores approximates the physical-core count, so throughput stays close
+        // to peak while the host keeps enough headroom to remain responsive.
+        // Beyond 8 threads this model's batches gain little anyway.
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get() / 2)
+            .unwrap_or(2)
+            .clamp(2, 8);
+        let options = InitOptionsUserDefined::new()
+            .with_max_length(512)
+            .with_intra_threads(threads);
 
         let embedding = TextEmbedding::try_new_from_user_defined(model, options)
             .map_err(|e| crate::Error::Internal(format!("init e5: {e}")))?;
@@ -176,50 +207,73 @@ impl NeuralEmbedder {
         }
     }
 
-    /// Embed a whole batch with ONE model invocation, falling back to per-item
-    /// embedding if the batched call fails or returns an unexpected count.
+    /// Number of passages embedded per ONNX invocation, and per lock hold.
     ///
-    /// The fallback matters most on a first-run full index: the batched ONNX call
+    /// The batch size bounds BOTH peak memory and lock latency, and it must:
+    /// an unbounded batch sizes the ONNX tensors (and the runtime's retained
+    /// memory arena) by the largest document ever ingested — a single
+    /// multi-megabyte note produced multi-gigabyte arenas and one model-lock
+    /// hold of many minutes, freezing interactive queries for the duration.
+    /// Sub-batching keeps the arena flat, reduces per-batch padding waste
+    /// (fastembed pads every text to the longest in its batch), and releases
+    /// the lock between sub-batches so queries interleave with a long index.
+    const EMBED_BATCH: usize = 32;
+
+    /// Embed a batch in bounded sub-batches ([`Self::EMBED_BATCH`]), falling
+    /// back to per-item embedding for any sub-batch that fails.
+    ///
+    /// The fallback matters most on a first-run full index: a batched ONNX call
     /// can fail on some runtimes/hardware (or a pathological input), and that must
-    /// NEVER sink the whole index. Worst case this is exactly as correct — and as
-    /// slow — as the proven per-item path; best case it's the fast batched path.
-    /// Never panics on an embed error (unlike [`embed_one`], which is only reached
-    /// for single queries).
+    /// NEVER sink the whole index — nor the rest of the batch. Worst case a failing
+    /// sub-batch is exactly as correct, and as slow, as the proven per-item path.
+    /// Never panics on an embed error.
     fn embed_prefixed_batch(&self, prefixed: Vec<String>) -> Vec<Embedding> {
         if prefixed.is_empty() {
             return Vec::new();
         }
-        {
-            let mut guard = self.lock_model();
-            match guard.embed(prefixed.clone(), None) {
-                Ok(out) if out.len() == prefixed.len() => {
-                    return out.into_iter().map(Embedding::new).collect();
-                }
-                Ok(out) => log::warn!(
-                    "batch embed returned {} vectors for {} inputs; using per-item fallback",
-                    out.len(),
-                    prefixed.len()
-                ),
-                Err(e) => log::warn!("batch embed failed ({e}); using per-item fallback"),
-            }
-        } // drop the model lock before the per-item path re-acquires it
-
-        // Per-item fallback: embed each passage on its own so one bad input (or a
-        // batch-only failure) can't lose the rest. Each call re-locks the model.
-        prefixed
-            .into_iter()
-            .map(|p| {
+        let mut out_all = Vec::with_capacity(prefixed.len());
+        for chunk in prefixed.chunks(Self::EMBED_BATCH) {
+            let batched = {
                 let mut guard = self.lock_model();
-                match guard.embed(vec![p], None) {
-                    Ok(mut out) if !out.is_empty() => Embedding::new(out.remove(0)),
-                    Ok(_) => Embedding::new(vec![0.0; Self::DIM]),
+                match guard.embed(chunk.to_vec(), Some(Self::EMBED_BATCH)) {
+                    Ok(out) if out.len() == chunk.len() => {
+                        out_all.extend(out.into_iter().map(Embedding::new));
+                        true
+                    }
+                    Ok(out) => {
+                        log::warn!(
+                            "batch embed returned {} vectors for {} inputs; using per-item fallback",
+                            out.len(),
+                            chunk.len()
+                        );
+                        false
+                    }
                     Err(e) => {
-                        log::warn!("per-item embed failed ({e}); storing zero vector");
-                        Embedding::new(vec![0.0; Self::DIM])
+                        log::warn!("batch embed failed ({e}); using per-item fallback");
+                        false
                     }
                 }
-            })
-            .collect()
+            }; // drop the model lock between sub-batches (and before the fallback)
+            if !batched {
+                out_all.extend(chunk.iter().map(|p| self.embed_one_fallback(p)));
+            }
+        }
+        out_all
+    }
+
+    /// Per-item fallback for a failed sub-batch: embeds one passage, yielding a
+    /// zero vector on error so one bad input can't lose the rest. Re-locks per
+    /// call so interactive queries interleave.
+    fn embed_one_fallback(&self, p: &str) -> Embedding {
+        let mut guard = self.lock_model();
+        match guard.embed(vec![p.to_string()], None) {
+            Ok(mut out) if !out.is_empty() => Embedding::new(out.remove(0)),
+            Ok(_) => Embedding::new(vec![0.0; Self::DIM]),
+            Err(e) => {
+                log::warn!("per-item embed failed ({e}); storing zero vector");
+                Embedding::new(vec![0.0; Self::DIM])
+            }
+        }
     }
 }
 
@@ -316,6 +370,37 @@ mod tests {
     }
 
     #[test]
+    fn hash_embedder_with_dimensions_matches_requested_shape() {
+        // Degraded-mode contract: a hash embedder can stand in for a neural
+        // model at the SAME index dimension (384), deterministically, with a
+        // distinct identity so the identity-reconcile re-embeds when the real
+        // model comes back.
+        let e = HashEmbedder::with_dimensions(384);
+        assert_eq!(e.dimensions(), 384);
+        assert_eq!(e.identity(), "hash-lexical-384");
+        let v = e.embed_passage("semantic fallback at neural shape");
+        assert_eq!(v.0.len(), 384, "vector must match the requested dims");
+        let v2 = e.embed_passage("semantic fallback at neural shape");
+        assert_eq!(v.0, v2.0, "must be deterministic");
+        // Not all-zero (a zero vector would silently ground nothing).
+        assert!(v.0.iter().any(|x| *x != 0.0), "vector must carry signal");
+    }
+
+    #[test]
+    fn hash_embedder_64_stays_byte_compatible() {
+        // The historical 64-dim scheme must not change: existing persisted hash
+        // indexes were built with it, and identity "hash-lexical-64" stays the
+        // same, so different vector values would poison cosine scores silently.
+        let legacy = HashEmbedder::new().embed_passage("compatibility check");
+        let via_dims = HashEmbedder::with_dimensions(64).embed_passage("compatibility check");
+        assert_eq!(legacy.0, via_dims.0, "64-dim path must stay byte-identical");
+        assert_eq!(
+            HashEmbedder::with_dimensions(64).identity(),
+            HashEmbedder::new().identity()
+        );
+    }
+
+    #[test]
     fn poisoned_mutex_recovers_instead_of_panicking() {
         // Regression: a prior embed that panicked used to poison the model mutex,
         // so every later `.lock().unwrap()` panicked forever — bricking the
@@ -333,6 +418,35 @@ mod tests {
         assert!(m.lock().is_err(), "lock should be poisoned after the panic");
         let guard = m.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         assert_eq!(*guard, 7, "recovered guard must expose the protected value");
+    }
+
+    #[cfg(feature = "neural-embeddings")]
+    #[test]
+    fn neural_batch_crossing_subbatch_boundary_preserves_order_and_count() {
+        // Regression for the bounded sub-batching: a batch larger than
+        // EMBED_BATCH must come back complete and in order across sub-batch
+        // boundaries (an unbounded batch used to size the ONNX arena by the
+        // largest document — multi-GB for a multi-MB note). Skips without a model.
+        use std::path::PathBuf;
+        let dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test-models/multilingual-e5-small").to_string()
+        });
+        let p = PathBuf::from(dir);
+        if !p.join("onnx/model.onnx").exists() {
+            eprintln!("skipping: no e5 model at {}", p.display());
+            return;
+        }
+        let e = NeuralEmbedder::from_path(&p).expect("load model");
+        let n = NeuralEmbedder::EMBED_BATCH * 2 + 5; // forces 3 sub-batches
+        let texts: Vec<String> = (0..n).map(|i| format!("passage number {i}")).collect();
+        let batch = e.embed_passages(&texts);
+        assert_eq!(batch.len(), n, "one embedding per input across sub-batches");
+        // Order pinned: items straddling the sub-batch boundaries must equal
+        // their individually-embedded versions.
+        for &i in &[0usize, NeuralEmbedder::EMBED_BATCH - 1, NeuralEmbedder::EMBED_BATCH, n - 1] {
+            let single = e.embed_passage(&texts[i]);
+            assert_eq!(batch[i].0, single.0, "batch[{i}] must match per-item embedding");
+        }
     }
 
     #[cfg(feature = "neural-embeddings")]
