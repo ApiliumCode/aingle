@@ -19,7 +19,7 @@ bulletproofs = ["dep:bulletproofs", "dep:merlin", "dep:curve25519-dalek-ng"]
 
 [dependencies]
 # Elliptic curve cryptography
-curve25519-dalek = { version = "4.1", features = ["serde", "rand_core"] }
+curve25519-dalek = { version = "5.0", features = ["serde", "rand_core"] }
 
 # Bulletproofs for range proofs (optional)
 # Note: bulletproofs uses curve25519-dalek-ng, so we need both versions
