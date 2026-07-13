@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-07-13
+
+### Changed
+- **Embedding survives a transient model fault without bricking the session.** A
+  neural embedding call that failed (an ONNX runtime fault, a pathological input)
+  used to panic and poison the model lock, so every later embedding — queries and
+  ingest alike — panicked too, taking the whole session's semantic layer down and,
+  during startup, silently aborting the boot task. A failed single embedding now
+  degrades softly to a neutral vector and the model lock recovers from poisoning,
+  so one bad call can no longer disable retrieval for the rest of the run. The
+  index-integrity guarantees from 0.7.2 are unchanged.
+
 ## [0.7.2] - 2026-07-11
 
 ### Changed

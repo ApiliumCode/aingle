@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "aingle_graph",
  "aingle_ingest",
@@ -4262,7 +4262,7 @@ dependencies = [
 
 [[package]]
 name = "ineru"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "bincode",
  "blake3",
