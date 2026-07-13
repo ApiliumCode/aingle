@@ -46,7 +46,7 @@ ignore = "0.4"
 # Web framework
 axum = { version = "0.8", features = ["ws", "macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "compression-gzip"] }
 
 # GraphQL (optional) — 8.0.0-rc for axum 0.8 compatibility
 async-graphql = { version = "8.0.0-rc", features = ["chrono", "uuid"], optional = true }
