@@ -135,10 +135,11 @@ pub fn mcp_http_router(
                         .headers()
                         .get(axum::http::header::AUTHORIZATION)
                         .and_then(|v| v.to_str().ok());
-                    // Read the expected token live per request so a revoke that
-                    // rotates the shared token is enforced immediately.
-                    if let Some(ref t) = auth_state.mcp_token_snapshot() {
-                        if bearer_ok(t, hdr) {
+                    // Read the accepted token set live per request so a revoke
+                    // (or a newly minted per-client credential) is enforced
+                    // immediately. Any one matching token authorizes the request.
+                    for t in auth_state.mcp_tokens_snapshot() {
+                        if bearer_ok(&t, hdr) {
                             return next.run(req).await;
                         }
                     }
@@ -227,5 +228,22 @@ mod tests {
         assert_eq!(status_for(&router, "tok-a").await, StatusCode::UNAUTHORIZED);
         assert_ne!(status_for(&router, "tok-b").await, StatusCode::UNAUTHORIZED);
         assert!(status_for(&router, "tok-b").await.as_u16() < 500);
+
+        // Multiple named credentials: install a SET; every member authorizes,
+        // non-members stay rejected. This is what lets a host give each client
+        // its own token and revoke one without severing the others.
+        state.set_mcp_tokens(vec!["tok-c".to_string(), "tok-d".to_string()]);
+        assert_ne!(status_for(&router, "tok-c").await, StatusCode::UNAUTHORIZED);
+        assert_ne!(status_for(&router, "tok-d").await, StatusCode::UNAUTHORIZED);
+        assert_eq!(status_for(&router, "tok-b").await, StatusCode::UNAUTHORIZED);
+
+        // Revoking ONE member (re-set without it) severs only that member.
+        state.set_mcp_tokens(vec!["tok-d".to_string()]);
+        assert_eq!(status_for(&router, "tok-c").await, StatusCode::UNAUTHORIZED);
+        assert_ne!(status_for(&router, "tok-d").await, StatusCode::UNAUTHORIZED);
+
+        // Empty set fails closed: every bearer is rejected.
+        state.set_mcp_tokens(Vec::new());
+        assert_eq!(status_for(&router, "tok-d").await, StatusCode::UNAUTHORIZED);
     }
 }

@@ -121,7 +121,7 @@ pub struct AppState {
     /// live: the middleware reads a snapshot per request instead of the value it
     /// captured at router-build time. `None` means no static token is configured.
     #[cfg(feature = "mcp")]
-    pub mcp_token: std::sync::Arc<std::sync::RwLock<Option<String>>>,
+    pub mcp_token: std::sync::Arc<std::sync::RwLock<Vec<String>>>,
 }
 
 impl AppState {
@@ -181,7 +181,7 @@ impl AppState {
                 crate::mcp::policy::McpPolicy::default(),
             )),
             #[cfg(feature = "mcp")]
-            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
         })
     }
 
@@ -239,7 +239,7 @@ impl AppState {
                 crate::mcp::policy::McpPolicy::default(),
             )),
             #[cfg(feature = "mcp")]
-            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
         }
     }
 
@@ -297,7 +297,7 @@ impl AppState {
                 crate::mcp::policy::McpPolicy::default(),
             )),
             #[cfg(feature = "mcp")]
-            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
         })
     }
 
@@ -472,7 +472,7 @@ impl AppState {
                 crate::mcp::policy::McpPolicy::default(),
             )),
             #[cfg(feature = "mcp")]
-            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
         })
     }
 
@@ -651,22 +651,40 @@ impl AppState {
             .unwrap_or_default()
     }
 
-    /// Replaces the runtime MCP bearer token consulted by the MCP-over-HTTP auth
-    /// middleware. Akashi calls this on revoke so the running endpoint rejects the
-    /// previous token immediately, without a restart. A poisoned lock is treated
-    /// as a no-op rather than a panic.
+    /// Replaces the runtime MCP bearer token set consulted by the MCP-over-HTTP
+    /// auth middleware. Single-credential convenience over
+    /// [`Self::set_mcp_tokens`]: `Some(t)` installs exactly one accepted token,
+    /// `None` clears them all (every bearer request is then rejected). Hosts
+    /// call this on revoke so the running endpoint enforces the change
+    /// immediately, without a restart. A poisoned lock is a no-op.
     #[cfg(feature = "mcp")]
     pub fn set_mcp_token(&self, t: Option<String>) {
+        self.set_mcp_tokens(t.into_iter().collect());
+    }
+
+    /// Replaces the FULL set of accepted MCP bearer tokens. Multiple named
+    /// credentials let a host hand each connected client its own token and
+    /// revoke one without severing the others. Order is irrelevant; empty means
+    /// "reject all bearers". A poisoned lock is a no-op.
+    #[cfg(feature = "mcp")]
+    pub fn set_mcp_tokens(&self, tokens: Vec<String>) {
         if let Ok(mut g) = self.mcp_token.write() {
-            *g = t;
+            *g = tokens;
         }
     }
 
-    /// Returns a clone of the current MCP bearer token for a single request to
-    /// check. A poisoned lock yields `None` so authentication fails closed.
+    /// Returns a clone of the first accepted MCP bearer token (legacy
+    /// single-token view). A poisoned lock yields `None` so auth fails closed.
     #[cfg(feature = "mcp")]
     pub fn mcp_token_snapshot(&self) -> Option<String> {
-        self.mcp_token.read().ok().and_then(|g| g.clone())
+        self.mcp_token.read().ok().and_then(|g| g.first().cloned())
+    }
+
+    /// Returns a clone of the full accepted-token set for a single request to
+    /// check. A poisoned lock yields an empty set so auth fails closed.
+    #[cfg(feature = "mcp")]
+    pub fn mcp_tokens_snapshot(&self) -> Vec<String> {
+        self.mcp_token.read().map(|g| g.clone()).unwrap_or_default()
     }
 }
 
