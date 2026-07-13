@@ -16,6 +16,20 @@ use std::sync::Arc;
 /// loads; otherwise a `HashEmbedder`. Never panics — embedding must not be able
 /// to take the server down.
 pub fn build_embedder(model_dir: Option<&str>) -> Arc<dyn Embedder> {
+    // Normalize ORT_DYLIB_PATH before the dynamic runtime ever sees it. On
+    // Windows a canonicalized path carries the extended-length `\\?\` prefix
+    // (e.g. from Tauri's resource_dir), and initializing the ONNX runtime
+    // through an extended-length path hangs indefinitely — the load neither
+    // succeeds nor fails. Verified empirically on the same machine: the same
+    // dll + model load in ~1s via the plain path and never return via the
+    // `\\?\` one. Rewriting the variable here protects every host process,
+    // whatever set it.
+    if let Ok(raw) = std::env::var("ORT_DYLIB_PATH") {
+        if let Some(plain) = strip_extended_length_prefix(&raw) {
+            log::info!("normalized extended-length ORT_DYLIB_PATH to {plain}");
+            std::env::set_var("ORT_DYLIB_PATH", plain);
+        }
+    }
     #[cfg(feature = "neural-embeddings")]
     if let Some(dir) = model_dir {
         // Retry the neural load: on Windows an app restart (e.g. after creating a
@@ -53,6 +67,21 @@ pub fn build_embedder(model_dir: Option<&str>) -> Arc<dyn Embedder> {
         );
     }
     Arc::new(HashEmbedder::new())
+}
+
+/// Strips Windows' extended-length path prefix, returning the plain path when
+/// the input carried one (`None` when there was nothing to strip).
+///
+/// `\\?\C:\dir\file` → `C:\dir\file`, and the UNC form `\\?\UNC\server\share`
+/// → `\\server\share`. Extended-length paths are valid for the filesystem but
+/// hang the ONNX runtime's initialization (see [`build_embedder`]); dependents
+/// that resolve resources via `canonicalize` get this prefix implicitly on
+/// Windows, so it must be shed before reaching the dynamic loader.
+pub fn strip_extended_length_prefix(path: &str) -> Option<String> {
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        return Some(format!(r"\\{unc}"));
+    }
+    path.strip_prefix(r"\\?\").map(str::to_owned)
 }
 
 /// Reads the persisted embedder dimensionality from `<dir>/embedder.dims`.
@@ -242,6 +271,24 @@ mod tests {
     fn build_embedder_without_model_is_hash_64d() {
         let e = build_embedder(None);
         assert_eq!(e.dimensions(), 64);
+    }
+
+    #[test]
+    fn strips_windows_extended_length_prefix() {
+        // Regression: an extended-length ORT_DYLIB_PATH hangs the ONNX runtime's
+        // init forever (splash stuck at "loading the model" on every packaged
+        // Windows install). The plain and UNC forms must both shed the prefix;
+        // anything else passes through untouched.
+        assert_eq!(
+            strip_extended_length_prefix(r"\\?\C:\app\onnxruntime.dll").as_deref(),
+            Some(r"C:\app\onnxruntime.dll")
+        );
+        assert_eq!(
+            strip_extended_length_prefix(r"\\?\UNC\srv\share\ort.dll").as_deref(),
+            Some(r"\\srv\share\ort.dll")
+        );
+        assert_eq!(strip_extended_length_prefix(r"C:\app\onnxruntime.dll"), None);
+        assert_eq!(strip_extended_length_prefix("/usr/lib/libonnxruntime.so"), None);
     }
 
     #[test]

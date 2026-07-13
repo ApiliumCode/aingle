@@ -167,6 +167,14 @@ pub async fn ingest_path_with_progress(
         files.push((rel_path, content));
     }
 
+    // Smallest files first: with an embed cost roughly proportional to content
+    // size, ascending order maximizes time-to-value — the bulk of a corpus
+    // becomes searchable in the first minutes of a full (re-)index while the
+    // few multi-megabyte outliers grind at the end, instead of one giant file
+    // early in walk order stalling visible progress near 0% for minutes.
+    // Incremental runs are unaffected (unchanged files are skipped either way).
+    files.sort_by_key(|(_, content)| content.len());
+
     let total = files.len();
     for (idx, (rel_path, content)) in files.into_iter().enumerate() {
         // Report progress before the (potentially slow) embed of this file, so the
