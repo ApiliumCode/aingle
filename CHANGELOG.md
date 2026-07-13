@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026-07-13
+
+### Added
+- **Multiple named MCP credentials.** The MCP-over-HTTP auth middleware now
+  accepts a live SET of bearer tokens (`AppState::set_mcp_tokens` /
+  `mcp_tokens_snapshot`), so a host can hand each connected client its own
+  credential and revoke one without severing the others. The single-token API
+  remains as a convenience wrapper; an empty set fails closed.
+
 ## [0.7.4] - 2026-07-13
 
 ### Fixed
