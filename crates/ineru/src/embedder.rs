@@ -143,14 +143,37 @@ impl NeuralEmbedder {
         })
     }
 
+    /// Locks the model, recovering from a poisoned mutex instead of panicking.
+    ///
+    /// A prior embed that panicked (an ONNX runtime fault, a pathological input)
+    /// would poison the mutex; a plain `.lock().unwrap()` then panics on EVERY
+    /// subsequent call, permanently bricking the embedder for the whole process
+    /// and, at startup, silently aborting the background boot task so the splash
+    /// hangs forever. The `TextEmbedding` behind the lock has no cross-call
+    /// invariant a panic could leave half-updated (each `embed` is standalone), so
+    /// taking the guard via `into_inner` is safe and keeps the engine alive.
+    fn lock_model(&self) -> std::sync::MutexGuard<'_, TextEmbedding> {
+        self.model.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Embed a single prefixed string. NEVER panics: an embed failure or an empty
+    /// result yields a zero vector (which scores ~0 cosine, so that one query just
+    /// returns nothing) rather than taking the process — or the whole session's
+    /// embedder — down. This is the single-item sibling of the batch path, which
+    /// is already fault-tolerant; the two must fail the same soft way.
     fn embed_one(&self, prefixed: String) -> Embedding {
-        let mut guard = self.model.lock().expect("embedder mutex poisoned");
-        let out = guard.embed(vec![prefixed], None).expect("e5 embed failed");
-        let vector = out
-            .into_iter()
-            .next()
-            .expect("e5 returned empty batch for single-item input");
-        Embedding::new(vector)
+        let mut guard = self.lock_model();
+        match guard.embed(vec![prefixed], None) {
+            Ok(mut out) if !out.is_empty() => Embedding::new(out.remove(0)),
+            Ok(_) => {
+                log::warn!("e5 returned empty batch for single-item input; using zero vector");
+                Embedding::new(vec![0.0; Self::DIM])
+            }
+            Err(e) => {
+                log::warn!("e5 embed failed ({e}); using zero vector");
+                Embedding::new(vec![0.0; Self::DIM])
+            }
+        }
     }
 
     /// Embed a whole batch with ONE model invocation, falling back to per-item
@@ -167,7 +190,7 @@ impl NeuralEmbedder {
             return Vec::new();
         }
         {
-            let mut guard = self.model.lock().expect("embedder mutex poisoned");
+            let mut guard = self.lock_model();
             match guard.embed(prefixed.clone(), None) {
                 Ok(out) if out.len() == prefixed.len() => {
                     return out.into_iter().map(Embedding::new).collect();
@@ -186,7 +209,7 @@ impl NeuralEmbedder {
         prefixed
             .into_iter()
             .map(|p| {
-                let mut guard = self.model.lock().expect("embedder mutex poisoned");
+                let mut guard = self.lock_model();
                 match guard.embed(vec![p], None) {
                     Ok(mut out) if !out.is_empty() => Embedding::new(out.remove(0)),
                     Ok(_) => Embedding::new(vec![0.0; Self::DIM]),
@@ -290,6 +313,54 @@ mod tests {
     fn embed_passages_empty_is_empty() {
         let e = HashEmbedder::new();
         assert!(e.embed_passages(&[]).is_empty());
+    }
+
+    #[test]
+    fn poisoned_mutex_recovers_instead_of_panicking() {
+        // Regression: a prior embed that panicked used to poison the model mutex,
+        // so every later `.lock().unwrap()` panicked forever — bricking the
+        // embedder and, at startup, silently killing the boot task so the splash
+        // hung. `lock_model` uses exactly this `into_inner` recovery; prove the
+        // pattern actually recovers a poisoned lock and yields the value.
+        use std::sync::{Arc, Mutex};
+        let m = Arc::new(Mutex::new(7));
+        let m2 = m.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = m2.lock().unwrap();
+            panic!("poison the lock");
+        })
+        .join();
+        assert!(m.lock().is_err(), "lock should be poisoned after the panic");
+        let guard = m.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert_eq!(*guard, 7, "recovered guard must expose the protected value");
+    }
+
+    #[cfg(feature = "neural-embeddings")]
+    #[test]
+    fn neural_embed_query_never_panics_after_mutex_poison() {
+        // A faulting query must not brick the model for the rest of the session.
+        // Poison the model mutex, then confirm `embed_query` still returns a
+        // (dimension-correct) vector via `lock_model`'s recovery instead of
+        // panicking. Skips when no model is present (CI without the ONNX asset).
+        use std::path::PathBuf;
+        let dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test-models/multilingual-e5-small").to_string()
+        });
+        let p = PathBuf::from(dir);
+        if !p.join("onnx/model.onnx").exists() {
+            eprintln!("skipping: no e5 model at {}", p.display());
+            return;
+        }
+        let e = NeuralEmbedder::from_path(&p).expect("load model");
+        // Poison the model mutex the same way a panicking embed would.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = e.model.lock().unwrap();
+            panic!("simulate an embed panic under the lock");
+        }));
+        assert!(e.model.lock().is_err(), "model mutex should be poisoned");
+        // The whole point: no panic here, and a usable vector comes back.
+        let v = e.embed_query("does this still work after a poison?");
+        assert_eq!(v.0.len(), NeuralEmbedder::DIM, "query vector keeps model dim");
     }
 
     #[cfg(feature = "neural-embeddings")]
