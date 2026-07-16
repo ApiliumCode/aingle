@@ -1221,10 +1221,7 @@ mod policy_enforcement_tests {
             question: off_topic.to_string(),
             k: 6,
         };
-        let result = mcp
-            .aingle_ground(Parameters(req))
-            .await
-            .expect("ground ok");
+        let result = mcp.aingle_ground(Parameters(req)).await.expect("ground ok");
         let payload = json_of(&result);
         assert_eq!(
             payload.get("answerable").and_then(|v| v.as_bool()),
@@ -1249,10 +1246,7 @@ mod policy_enforcement_tests {
             question: off_topic.to_string(),
             k: 6,
         };
-        let result = mcp
-            .aingle_ground(Parameters(req))
-            .await
-            .expect("ground ok");
+        let result = mcp.aingle_ground(Parameters(req)).await.expect("ground ok");
         let payload = json_of(&result);
         assert_ne!(
             payload.get("answerable").and_then(|v| v.as_bool()),
@@ -1302,10 +1296,7 @@ mod policy_enforcement_tests {
             question: "¿Cuál es el presupuesto mensual de marketing?".to_string(),
             k: 6,
         };
-        let result = mcp
-            .aingle_ground(Parameters(req))
-            .await
-            .expect("ground ok");
+        let result = mcp.aingle_ground(Parameters(req)).await.expect("ground ok");
         let payload = json_of(&result);
 
         let ctx = payload.get("answer_context").and_then(|v| v.as_array());
@@ -1359,7 +1350,9 @@ mod policy_enforcement_tests {
         // is the MCP origin tag.
         let graph = state.graph.read().await;
         let actions = graph.dag_history_by_subject("note.md", 10).unwrap();
-        let newest = actions.first().expect("one DAG action recorded for the insert");
+        let newest = actions
+            .first()
+            .expect("one DAG action recorded for the insert");
         assert_eq!(
             newest.author.as_name(),
             Some(crate::mcp::MCP_ORIGIN),

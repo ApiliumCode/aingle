@@ -287,8 +287,14 @@ mod tests {
             strip_extended_length_prefix(r"\\?\UNC\srv\share\ort.dll").as_deref(),
             Some(r"\\srv\share\ort.dll")
         );
-        assert_eq!(strip_extended_length_prefix(r"C:\app\onnxruntime.dll"), None);
-        assert_eq!(strip_extended_length_prefix("/usr/lib/libonnxruntime.so"), None);
+        assert_eq!(
+            strip_extended_length_prefix(r"C:\app\onnxruntime.dll"),
+            None
+        );
+        assert_eq!(
+            strip_extended_length_prefix("/usr/lib/libonnxruntime.so"),
+            None
+        );
     }
 
     #[test]
