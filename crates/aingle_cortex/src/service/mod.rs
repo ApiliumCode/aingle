@@ -7,6 +7,7 @@ pub mod backlinks;
 pub mod context;
 #[cfg(feature = "dag")]
 pub mod dag;
+pub mod git_provenance;
 pub mod ground;
 pub mod ingest;
 pub mod local_graph;
