@@ -276,12 +276,9 @@ mod tests {
             "# N\n\nsled has exclusive lock semantics.\n",
         )
         .unwrap();
-        let state = AppState::with_db_path_and_embedder(
-            ":memory:",
-            None,
-            std::sync::Arc::new(Zero384),
-        )
-        .unwrap();
+        let state =
+            AppState::with_db_path_and_embedder(":memory:", None, std::sync::Arc::new(Zero384))
+                .unwrap();
         {
             let mut graph = state.graph.write().await;
             graph.enable_dag();

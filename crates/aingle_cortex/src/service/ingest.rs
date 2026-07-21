@@ -452,15 +452,23 @@ mod tests {
 
         let calls = std::sync::Mutex::new(Vec::<(usize, usize)>::new());
         let cb = |done: usize, total: usize| calls.lock().unwrap().push((done, total));
-        let report = ingest_path_with_progress(&state, dir.path().to_str().unwrap(), None, Some(&cb))
-            .await
-            .unwrap();
+        let report =
+            ingest_path_with_progress(&state, dir.path().to_str().unwrap(), None, Some(&cb))
+                .await
+                .unwrap();
 
         assert_eq!(report.files_seen, 3);
         let calls = calls.into_inner().unwrap();
         assert!(!calls.is_empty(), "callback must fire");
-        assert!(calls.iter().all(|&(_, t)| t == 3), "total must be the file count: {calls:?}");
-        assert_eq!(*calls.last().unwrap(), (3, 3), "must finish at 100% (3/3): {calls:?}");
+        assert!(
+            calls.iter().all(|&(_, t)| t == 3),
+            "total must be the file count: {calls:?}"
+        );
+        assert_eq!(
+            *calls.last().unwrap(),
+            (3, 3),
+            "must finish at 100% (3/3): {calls:?}"
+        );
     }
 
     #[tokio::test]
@@ -561,7 +569,11 @@ mod tests {
         // must NOT be indexed until a human approves them. If the walk indexed them,
         // unreviewed content would leak into retrieval/grounding.
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), "kept.md", "# Kept\n\nWe use [[sled]] for storage.\n");
+        write(
+            dir.path(),
+            "kept.md",
+            "# Kept\n\nWe use [[sled]] for storage.\n",
+        );
         std::fs::create_dir_all(dir.path().join("_inbox")).unwrap();
         write(
             &dir.path().join("_inbox"),
@@ -595,12 +607,18 @@ mod tests {
         // against a seq collision or a parent-validation failure making the signed
         // approval silently unrecorded.
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), "note.md", "# A\n\nWe use [[sled]]. #durability\n");
+        write(
+            dir.path(),
+            "note.md",
+            "# A\n\nWe use [[sled]]. #durability\n",
+        );
         let mut state = enabled_state().await;
         state.dag_author = Some(NodeId::named("Alice"));
         let root = dir.path().to_str().unwrap();
 
-        ingest_path(&state, root, Some("initial".into())).await.unwrap();
+        ingest_path(&state, root, Some("initial".into()))
+            .await
+            .unwrap();
 
         crate::service::review::record_approval(&state, "note.md", "approved body", "mcp")
             .await

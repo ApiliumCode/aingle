@@ -184,7 +184,9 @@ impl NeuralEmbedder {
     /// invariant a panic could leave half-updated (each `embed` is standalone), so
     /// taking the guard via `into_inner` is safe and keeps the engine alive.
     fn lock_model(&self) -> std::sync::MutexGuard<'_, TextEmbedding> {
-        self.model.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.model
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Embed a single prefixed string. NEVER panics: an embed failure or an empty
@@ -359,7 +361,11 @@ mod tests {
         let batch = e.embed_passages(&texts);
         assert_eq!(batch.len(), texts.len(), "one embedding per input");
         for (i, t) in texts.iter().enumerate() {
-            assert_eq!(batch[i].0, e.embed_passage(t).0, "batch[{i}] must equal the per-item embedding");
+            assert_eq!(
+                batch[i].0,
+                e.embed_passage(t).0,
+                "batch[{i}] must equal the per-item embedding"
+            );
         }
     }
 
@@ -429,7 +435,11 @@ mod tests {
         // largest document — multi-GB for a multi-MB note). Skips without a model.
         use std::path::PathBuf;
         let dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
-            concat!(env!("CARGO_MANIFEST_DIR"), "/test-models/multilingual-e5-small").to_string()
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/test-models/multilingual-e5-small"
+            )
+            .to_string()
         });
         let p = PathBuf::from(dir);
         if !p.join("onnx/model.onnx").exists() {
@@ -443,9 +453,17 @@ mod tests {
         assert_eq!(batch.len(), n, "one embedding per input across sub-batches");
         // Order pinned: items straddling the sub-batch boundaries must equal
         // their individually-embedded versions.
-        for &i in &[0usize, NeuralEmbedder::EMBED_BATCH - 1, NeuralEmbedder::EMBED_BATCH, n - 1] {
+        for &i in &[
+            0usize,
+            NeuralEmbedder::EMBED_BATCH - 1,
+            NeuralEmbedder::EMBED_BATCH,
+            n - 1,
+        ] {
             let single = e.embed_passage(&texts[i]);
-            assert_eq!(batch[i].0, single.0, "batch[{i}] must match per-item embedding");
+            assert_eq!(
+                batch[i].0, single.0,
+                "batch[{i}] must match per-item embedding"
+            );
         }
     }
 
@@ -458,7 +476,11 @@ mod tests {
         // panicking. Skips when no model is present (CI without the ONNX asset).
         use std::path::PathBuf;
         let dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
-            concat!(env!("CARGO_MANIFEST_DIR"), "/test-models/multilingual-e5-small").to_string()
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/test-models/multilingual-e5-small"
+            )
+            .to_string()
         });
         let p = PathBuf::from(dir);
         if !p.join("onnx/model.onnx").exists() {
@@ -474,7 +496,11 @@ mod tests {
         assert!(e.model.lock().is_err(), "model mutex should be poisoned");
         // The whole point: no panic here, and a usable vector comes back.
         let v = e.embed_query("does this still work after a poison?");
-        assert_eq!(v.0.len(), NeuralEmbedder::DIM, "query vector keeps model dim");
+        assert_eq!(
+            v.0.len(),
+            NeuralEmbedder::DIM,
+            "query vector keeps model dim"
+        );
     }
 
     #[cfg(feature = "neural-embeddings")]
@@ -486,7 +512,11 @@ mod tests {
         // the per-item fallback. Skips when no model is present.
         use std::path::PathBuf;
         let dir = std::env::var("INERU_E5_MODEL_DIR").unwrap_or_else(|_| {
-            concat!(env!("CARGO_MANIFEST_DIR"), "/test-models/multilingual-e5-small").to_string()
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/test-models/multilingual-e5-small"
+            )
+            .to_string()
         });
         let p = PathBuf::from(dir);
         if !p.join("onnx/model.onnx").exists() {

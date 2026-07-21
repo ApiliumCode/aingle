@@ -117,7 +117,9 @@ pub async fn list_approvals(state: &AppState, limit: usize) -> Vec<ApprovalRecor
         .dag_author
         .clone()
         .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
-    let chain = dag_store.chain(&author, limit.saturating_mul(8).max(64)).unwrap_or_default();
+    let chain = dag_store
+        .chain(&author, limit.saturating_mul(8).max(64))
+        .unwrap_or_default();
     let mut out: Vec<ApprovalRecord> = Vec::new();
     for action in chain {
         let aingle_graph::dag::DagPayload::Custom {
@@ -138,13 +140,18 @@ pub async fn list_approvals(state: &AppState, limit: usize) -> Vec<ApprovalRecor
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
         };
-        let anchor = action.signature.as_ref().map(|_| action.compute_hash().to_hex());
+        let anchor = action
+            .signature
+            .as_ref()
+            .map(|_| action.compute_hash().to_hex());
         out.push(ApprovalRecord {
-            note_path: subject.clone().or_else(|| get("note_path")).unwrap_or_default(),
+            note_path: subject
+                .clone()
+                .or_else(|| get("note_path"))
+                .unwrap_or_default(),
             content_hash: get("content_hash").unwrap_or_default(),
             source: get("source").unwrap_or_else(|| "unknown".to_string()),
-            approved_at: get("approved_at")
-                .unwrap_or_else(|| action.timestamp.to_rfc3339()),
+            approved_at: get("approved_at").unwrap_or_else(|| action.timestamp.to_rfc3339()),
             anchor,
         });
     }

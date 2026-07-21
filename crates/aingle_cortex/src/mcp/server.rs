@@ -299,6 +299,35 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// Shortest verified connection between two notes: typed hops (link or
+    /// semantic) with evidence for every step.
+    #[tool(
+        description = "Shortest verified connection between two notes in the vault. \
+            Returns the chain of typed hops (link or semantic), each with its \
+            similarity score and signed-provenance anchor when available, so every \
+            step of the connection can be cited. Use when the user asks how two \
+            topics, notes, or decisions relate.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_path(
+        &self,
+        params: Parameters<PathParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let mut resp =
+            crate::service::path::find_path(&self.state, &p.from, &p.to, p.max_hops).await;
+        // A chain is only as visible as its most hidden node: if policy hides
+        // any node on the path, report no connection rather than leak the hop.
+        let pol = self.state.mcp_policy_snapshot();
+        if resp.found && resp.nodes.iter().any(|n| pol.is_hidden(n)) {
+            resp.found = false;
+            resp.nodes.clear();
+            resp.hops.clear();
+            resp.note = Some(format!("no connection within {} hops", resp.max_hops));
+        }
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// List ingested sources and their signed content hashes.
     #[tool(
         description = "List ingested source files with their content hashes (the \
@@ -890,6 +919,17 @@ pub struct NoteContextParams {
     pub limit: Option<usize>,
 }
 
+/// Parameters for the `aingle_path` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct PathParams {
+    /// Start note: vault-relative path or bare name (wikilink-style resolution).
+    pub from: String,
+    /// Goal note: vault-relative path or bare name (wikilink-style resolution).
+    pub to: String,
+    /// Max hops to search (default 4, capped at 6).
+    pub max_hops: Option<usize>,
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for AingleMcp {
     fn get_info(&self) -> ServerInfo {
@@ -925,6 +965,7 @@ mod ingest_tools_tests {
             "aingle_vault_map",
             "aingle_backlinks",
             "aingle_note_context",
+            "aingle_path",
         ] {
             assert!(
                 names.contains(&expected.to_string()),
@@ -1180,10 +1221,7 @@ mod policy_enforcement_tests {
             question: off_topic.to_string(),
             k: 6,
         };
-        let result = mcp
-            .aingle_ground(Parameters(req))
-            .await
-            .expect("ground ok");
+        let result = mcp.aingle_ground(Parameters(req)).await.expect("ground ok");
         let payload = json_of(&result);
         assert_eq!(
             payload.get("answerable").and_then(|v| v.as_bool()),
@@ -1208,10 +1246,7 @@ mod policy_enforcement_tests {
             question: off_topic.to_string(),
             k: 6,
         };
-        let result = mcp
-            .aingle_ground(Parameters(req))
-            .await
-            .expect("ground ok");
+        let result = mcp.aingle_ground(Parameters(req)).await.expect("ground ok");
         let payload = json_of(&result);
         assert_ne!(
             payload.get("answerable").and_then(|v| v.as_bool()),
@@ -1261,10 +1296,7 @@ mod policy_enforcement_tests {
             question: "¿Cuál es el presupuesto mensual de marketing?".to_string(),
             k: 6,
         };
-        let result = mcp
-            .aingle_ground(Parameters(req))
-            .await
-            .expect("ground ok");
+        let result = mcp.aingle_ground(Parameters(req)).await.expect("ground ok");
         let payload = json_of(&result);
 
         let ctx = payload.get("answer_context").and_then(|v| v.as_array());
@@ -1318,7 +1350,9 @@ mod policy_enforcement_tests {
         // is the MCP origin tag.
         let graph = state.graph.read().await;
         let actions = graph.dag_history_by_subject("note.md", 10).unwrap();
-        let newest = actions.first().expect("one DAG action recorded for the insert");
+        let newest = actions
+            .first()
+            .expect("one DAG action recorded for the insert");
         assert_eq!(
             newest.author.as_name(),
             Some(crate::mcp::MCP_ORIGIN),
