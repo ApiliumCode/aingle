@@ -435,6 +435,16 @@ pub async fn ingest_path_with_progress(
         });
     }
 
+    // Stamp which git commit/branch this (re-)ingest reflects, when the root is a
+    // git working tree — so the graph records the git state it was built from.
+    // No-op for a non-git vault; best-effort so provenance never fails an ingest.
+    let _ = crate::service::git_provenance::record_git_provenance(
+        state,
+        root_path,
+        report.files_ingested,
+    )
+    .await;
+
     // Final tick: report completion (100%) so the UI can settle to done.
     if let Some(cb) = on_progress {
         cb(total, total);
