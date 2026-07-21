@@ -9,7 +9,7 @@
 //! capacity.
 
 use crate::config::StmConfig;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::types::{MemoryEntry, MemoryId, MemoryQuery, MemoryResult, MemorySource, Timestamp};
 use std::collections::HashMap;
 
@@ -56,19 +56,22 @@ impl ShortTermMemory {
 
         // Check entry count capacity
         if self.entries.len() >= self.config.max_entries {
-            self.prune_one()?;
+            self.prune_one();
         }
 
-        // Check memory limit
+        // The byte budget is a pruning target, not a hard admission gate. Evict
+        // the least-important prunable entries while that keeps freeing space.
+        // We stop as soon as pruning can make no further progress — either STM
+        // is empty, or the only residents are already consolidated (which
+        // prune_one leaves in place). A single entry larger than the whole
+        // budget (a big note/file during bulk ingest) is then admitted over
+        // budget rather than bricking the write; consolidation moves it to LTM
+        // and it is evicted from STM. This must never loop forever or return a
+        // hard "STM memory capacity exceeded" error.
         while self.memory_usage + entry_size > self.config.max_memory_bytes {
-            if self.entries.is_empty() {
-                return Err(Error::capacity(
-                    "STM memory",
-                    entry_size,
-                    self.config.max_memory_bytes,
-                ));
+            if !self.prune_one() {
+                break;
             }
-            self.prune_one()?;
         }
 
         // Store the entry
@@ -209,8 +212,13 @@ impl ShortTermMemory {
         Ok(count)
     }
 
-    /// Prunes a single entry with the lowest attention score that has not been consolidated.
-    fn prune_one(&mut self) -> Result<()> {
+    /// Prunes a single entry with the lowest attention score that has not been
+    /// consolidated.
+    ///
+    /// Returns `true` if an entry was evicted, `false` if there was nothing
+    /// prunable (empty STM, or every resident is already consolidated). Callers
+    /// use the return value to stop pruning once it can make no more progress.
+    fn prune_one(&mut self) -> bool {
         // Find entry with lowest attention that hasn't been consolidated
         let to_remove = self
             .entries
@@ -225,10 +233,11 @@ impl ShortTermMemory {
             .map(|(id, _)| id.clone());
 
         if let Some(id) = to_remove {
-            self.remove(&id)?;
+            let _ = self.remove(&id);
+            true
+        } else {
+            false
         }
-
-        Ok(())
     }
 
     /// Retrieves a list of memory entries that are candidates for consolidation into LTM.
@@ -406,6 +415,57 @@ mod tests {
 
         // Should have pruned to stay within limit
         assert!(stm.len() <= 2);
+    }
+
+    #[test]
+    fn test_oversized_entry_is_accepted_not_rejected() {
+        // A single entry larger than the whole STM byte budget must still be
+        // stored (over budget) rather than bricking the write. This is the
+        // bulk-ingest "STM memory capacity exceeded" crash: a big note/file
+        // becomes one memory entry that alone exceeds max_memory_bytes, so
+        // pruning can never make room. STM is a transient buffer; consolidation
+        // moves the entry to LTM, so admitting it over budget is correct.
+        let config = StmConfig {
+            max_memory_bytes: 1024, // 1KB budget
+            ..Default::default()
+        };
+        let mut stm = ShortTermMemory::new(config);
+
+        let big = "x".repeat(8 * 1024); // ~8KB payload, far over budget
+        let entry = MemoryEntry::new("doc", serde_json::json!({ "body": big }));
+        let id = stm
+            .store(entry)
+            .expect("oversized entry must be accepted, not rejected");
+
+        assert!(stm.get(&id).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_store_terminates_when_only_consolidated_entries_remain() {
+        // If STM is over budget but every resident entry is already consolidated
+        // (prune_one only evicts non-consolidated entries), a new store must
+        // still terminate and succeed instead of spinning forever.
+        let config = StmConfig {
+            max_memory_bytes: 4 * 1024,
+            ..Default::default()
+        };
+        let mut stm = ShortTermMemory::new(config);
+
+        let payload = "y".repeat(3 * 1024);
+        let id = stm
+            .store(MemoryEntry::new(
+                "a",
+                serde_json::json!({ "b": payload.clone() }),
+            ))
+            .unwrap();
+        stm.mark_consolidated(&id).unwrap();
+
+        // Second store pushes over budget; the only prunable candidate is
+        // consolidated, so pruning stalls — store must break out and accept.
+        let id2 = stm
+            .store(MemoryEntry::new("c", serde_json::json!({ "b": payload })))
+            .unwrap();
+        assert!(stm.get(&id2).unwrap().is_some());
     }
 
     #[test]
