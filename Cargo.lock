@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.7.6"
+version = "0.7.7"
 dependencies = [
  "aingle_graph",
  "aingle_ingest",
