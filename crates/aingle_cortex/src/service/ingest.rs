@@ -22,6 +22,124 @@ pub const PRED_SOURCE_HASH: &str = "aingle:source_hash";
 /// Ineru `entry_type` used for ingested text chunks. Grounding filters on this.
 pub const CHUNK_ENTRY_TYPE: &str = "doc_chunk";
 
+/// File extensions ingested as text (source, docs, config). Broad on purpose: a
+/// real project is far more than a handful of languages, and a narrow allowlist
+/// silently drops most of a codebase (e.g. a Swift/Kotlin/Go project). Binary
+/// files are still skipped when reading as UTF-8 fails, `.gitignore` prunes build
+/// output, the noise denylist drops generated/lock files, and byte-bounded
+/// chunking keeps any single large file safe.
+const INGEST_EXTENSIONS: &[&str] = &[
+    // prose / docs
+    "md",
+    "markdown",
+    "mdx",
+    "txt",
+    "rst",
+    "org",
+    "adoc", //
+    // config / structure
+    "toml",
+    "json",
+    "jsonc",
+    "yaml",
+    "yml",
+    "xml",
+    "ini",
+    "cfg",
+    "conf",
+    "gradle",
+    "properties",
+    // web markup / styling
+    "html",
+    "htm",
+    "css",
+    "scss",
+    "sass",
+    "less",
+    // source
+    "rs",
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+    "mjs",
+    "cjs",
+    "py",
+    "go",
+    "swift",
+    "kt",
+    "kts",
+    "java",
+    "c",
+    "h",
+    "cc",
+    "cpp",
+    "cxx",
+    "hpp",
+    "hh",
+    "cs",
+    "rb",
+    "php",
+    "scala",
+    "sh",
+    "bash",
+    "zsh",
+    "lua",
+    "dart",
+    "r",
+    "m",
+    "mm",
+    "vue",
+    "svelte",
+    "sql",
+];
+
+/// Extensionless files ingested by well-known name (matched lowercased).
+const INGEST_FILENAMES: &[&str] = &[
+    "dockerfile",
+    "makefile",
+    "readme",
+    "license",
+    "cmakelists.txt",
+    "gemfile",
+    "rakefile",
+    "procfile",
+    "vagrantfile",
+];
+
+/// Returns whether `path` should be ingested as a text file: a broad extension
+/// allowlist plus a few extensionless names, minus a denylist of generated,
+/// minified, or lock files that carry no semantic signal even when they slip
+/// past `.gitignore`.
+fn is_ingestable_file(path: &std::path::Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let lower = name.to_ascii_lowercase();
+
+    // Noise denylist: minified bundles, source maps, lockfiles, generated files.
+    if lower.ends_with(".min.js")
+        || lower.ends_with(".min.css")
+        || lower.ends_with(".map")
+        || lower.ends_with(".lock")
+        || lower.contains(".generated.")
+        || matches!(lower.as_str(), "package-lock.json" | "pnpm-lock.yaml")
+    {
+        return false;
+    }
+
+    // Known extensionless files (Dockerfile, Makefile, …).
+    if INGEST_FILENAMES.contains(&lower.as_str()) {
+        return true;
+    }
+
+    // Extension allowlist.
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => INGEST_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()),
+        None => false,
+    }
+}
+
 /// One ingested source file and its content hash at ingest time.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SourceRecord {
@@ -129,16 +247,10 @@ pub async fn ingest_path_with_progress(
             }
         }
 
-        // Filter to supported extensions: .md, .markdown, .txt, .rs, .py, .ts, .js
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        if !matches!(
-            ext.as_str(),
-            "md" | "markdown" | "txt" | "rs" | "py" | "ts" | "js" | "toml" | "json"
-        ) {
+        // Only ingest recognized text files (broad source/docs/config allowlist,
+        // minus generated/lock/minified noise). Binary files are additionally
+        // skipped below when reading them as UTF-8 fails.
+        if !is_ingestable_file(path) {
             continue;
         }
 
@@ -407,6 +519,80 @@ mod tests {
 
     fn write(dir: &std::path::Path, name: &str, body: &str) {
         std::fs::write(dir.join(name), body).unwrap();
+    }
+
+    #[test]
+    fn broad_source_and_doc_extensions_are_ingestable() {
+        // A real project — not just the old md/rs/py/ts handful. Regression for
+        // "a Swift/iOS project ingests as almost nothing".
+        for f in [
+            "App.swift",
+            "View.kt",
+            "Main.java",
+            "server.go",
+            "Component.tsx",
+            "util.jsx",
+            "lib.rb",
+            "index.php",
+            "query.sql",
+            "config.yaml",
+            "styles.scss",
+            "Widget.dart",
+            "notes.md",
+            "main.c",
+            "engine.cpp",
+        ] {
+            assert!(
+                is_ingestable_file(std::path::Path::new(f)),
+                "{f} should be ingestable"
+            );
+        }
+    }
+
+    #[test]
+    fn wellknown_extensionless_files_are_ingestable() {
+        for f in [
+            "Dockerfile",
+            "Makefile",
+            "README",
+            "LICENSE",
+            "CMakeLists.txt",
+        ] {
+            assert!(
+                is_ingestable_file(std::path::Path::new(f)),
+                "{f} should be ingestable"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_lock_and_minified_noise_is_skipped() {
+        for f in [
+            "app.min.js",
+            "styles.min.css",
+            "bundle.js.map",
+            "package-lock.json",
+            "yarn.lock",
+            "Cargo.lock",
+            "Podfile.lock",
+            "pnpm-lock.yaml",
+            "types.generated.ts",
+        ] {
+            assert!(
+                !is_ingestable_file(std::path::Path::new(f)),
+                "{f} should be skipped as noise"
+            );
+        }
+    }
+
+    #[test]
+    fn binaries_and_unknown_types_are_skipped() {
+        for f in ["photo.png", "archive.zip", "app.bin", "font.woff2", "noext"] {
+            assert!(
+                !is_ingestable_file(std::path::Path::new(f)),
+                "{f} should be skipped"
+            );
+        }
     }
 
     async fn enabled_state() -> AppState {
