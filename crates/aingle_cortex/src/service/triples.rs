@@ -515,7 +515,9 @@ mod tests {
         };
         assert_eq!(state.graph.read().await.count(), 1);
 
-        delete_triple(&state, &id.to_hex(), None, None).await.unwrap();
+        delete_triple(&state, &id.to_hex(), None, None)
+            .await
+            .unwrap();
         assert_eq!(state.graph.read().await.count(), 0);
 
         // Deleting again => NotFound.

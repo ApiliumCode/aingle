@@ -551,10 +551,7 @@ impl AppState {
     /// ingest so every passage is re-embedded at the real model's identity. The
     /// fresh `write_identity` on the next `flush` then stamps the correct
     /// fingerprint, closing the loop.
-    pub async fn reconcile_embedder_identity(
-        &self,
-        dbdir: &Path,
-    ) -> crate::error::Result<bool> {
+    pub async fn reconcile_embedder_identity(&self, dbdir: &Path) -> crate::error::Result<bool> {
         let active = self.embedder.identity();
         if active.starts_with("pending-") {
             // The real model has not been installed yet; nothing to reconcile.
@@ -1064,7 +1061,10 @@ mod tests {
         crate::service::ingest::ingest_path(&state, dir.to_str().unwrap(), None)
             .await
             .unwrap();
-        state.flush(Some(Path::new(db_str).parent().unwrap())).await.unwrap();
+        state
+            .flush(Some(Path::new(db_str).parent().unwrap()))
+            .await
+            .unwrap();
     }
 
     async fn registry_count(state: &AppState) -> usize {
@@ -1086,7 +1086,12 @@ mod tests {
         let dbdir = db.parent().unwrap();
 
         // Boot 1: model-a (384d). Flush stamps embedder.id = "model-a".
-        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        seed_index(
+            dir.path(),
+            db_str,
+            std::sync::Arc::new(IdentEmbedder("model-a")),
+        )
+        .await;
         assert_eq!(
             crate::embedder::read_identity(dbdir).as_deref(),
             Some("model-a"),
@@ -1111,7 +1116,12 @@ mod tests {
         let db_str = db.to_str().unwrap();
 
         // Boot 1 and Boot 2 with the SAME identity: no needless re-embed.
-        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        seed_index(
+            dir.path(),
+            db_str,
+            std::sync::Arc::new(IdentEmbedder("model-a")),
+        )
+        .await;
         let same: std::sync::Arc<dyn Embedder> = std::sync::Arc::new(IdentEmbedder("model-a"));
         let state = AppState::with_db_path_and_embedder(db_str, None, same).unwrap();
         assert!(
@@ -1128,7 +1138,12 @@ mod tests {
         let dbdir = db.parent().unwrap();
 
         // Persist an index stamped "model-a".
-        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        seed_index(
+            dir.path(),
+            db_str,
+            std::sync::Arc::new(IdentEmbedder("model-a")),
+        )
+        .await;
 
         // Boot with a SwappableEmbedder pending(384): identity check is DEFERRED,
         // so the registry survives the constructor (no premature clear).
@@ -1148,7 +1163,10 @@ mod tests {
         // the persisted index. reconcile must detect it and force a re-embed.
         swap.install(std::sync::Arc::new(IdentEmbedder("model-b")));
         let reembed = state.reconcile_embedder_identity(dbdir).await.unwrap();
-        assert!(reembed, "installed identity differs → reconcile must require re-embed");
+        assert!(
+            reembed,
+            "installed identity differs → reconcile must require re-embed"
+        );
         assert_eq!(
             registry_count(&state).await,
             0,
@@ -1163,7 +1181,12 @@ mod tests {
         let db_str = db.to_str().unwrap();
         let dbdir = db.parent().unwrap();
 
-        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        seed_index(
+            dir.path(),
+            db_str,
+            std::sync::Arc::new(IdentEmbedder("model-a")),
+        )
+        .await;
 
         let swap = std::sync::Arc::new(crate::embedder::SwappableEmbedder::new_pending(384));
         let state = AppState::with_db_path_and_embedder(
@@ -1175,7 +1198,10 @@ mod tests {
         // Install the SAME model that produced the index.
         swap.install(std::sync::Arc::new(IdentEmbedder("model-a")));
         let reembed = state.reconcile_embedder_identity(dbdir).await.unwrap();
-        assert!(!reembed, "matching identity must reuse the index (no re-embed)");
+        assert!(
+            !reembed,
+            "matching identity must reuse the index (no re-embed)"
+        );
         assert!(
             registry_count(&state).await >= 1,
             "reconcile must preserve the registry when the model matches"
@@ -1189,7 +1215,12 @@ mod tests {
         let db_str = db.to_str().unwrap();
         let dbdir = db.parent().unwrap();
 
-        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        seed_index(
+            dir.path(),
+            db_str,
+            std::sync::Arc::new(IdentEmbedder("model-a")),
+        )
+        .await;
         // Simulate an index from before the identity evolution: no embedder.id.
         std::fs::remove_file(dbdir.join("embedder.id")).unwrap();
 
@@ -1217,12 +1248,9 @@ mod tests {
 
         // A state whose embedder never leaves the pending state.
         let swap = std::sync::Arc::new(crate::embedder::SwappableEmbedder::new_pending(384));
-        let state = AppState::with_db_path_and_embedder(
-            db_str,
-            None,
-            swap as std::sync::Arc<dyn Embedder>,
-        )
-        .unwrap();
+        let state =
+            AppState::with_db_path_and_embedder(db_str, None, swap as std::sync::Arc<dyn Embedder>)
+                .unwrap();
         state.flush(Some(dbdir)).await.unwrap();
 
         assert!(
@@ -1241,7 +1269,12 @@ mod tests {
         let db = dir.path().join("graph.sled");
         let db_str = db.to_str().unwrap();
 
-        seed_index(dir.path(), db_str, std::sync::Arc::new(IdentEmbedder("model-a"))).await;
+        seed_index(
+            dir.path(),
+            db_str,
+            std::sync::Arc::new(IdentEmbedder("model-a")),
+        )
+        .await;
         // Re-open (same identity) so the registry/snapshot are preserved.
         let state = AppState::with_db_path_and_embedder(
             db_str,
@@ -1249,7 +1282,10 @@ mod tests {
             std::sync::Arc::new(IdentEmbedder("model-a")),
         )
         .unwrap();
-        assert!(registry_count(&state).await >= 1, "precondition: index populated");
+        assert!(
+            registry_count(&state).await >= 1,
+            "precondition: index populated"
+        );
 
         let removed = state.force_reindex_reset().await.unwrap();
         assert!(removed >= 1, "must report the cleared registry entries");

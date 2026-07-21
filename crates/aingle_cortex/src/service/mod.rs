@@ -10,6 +10,7 @@ pub mod dag;
 pub mod ground;
 pub mod ingest;
 pub mod local_graph;
+pub mod path;
 pub mod proof;
 pub mod query;
 pub mod reputation;
