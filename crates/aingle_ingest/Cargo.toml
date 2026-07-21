@@ -1,6 +1,6 @@
 [package]
 name = "aingle_ingest"
-version = "0.7.1"
+version = "0.7.2"
 description = "Structural extraction of triples and text chunks from markdown/code for AIngle"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 edition = "2021"
