@@ -34,7 +34,7 @@ log = "0.4"
 ineru = { version = "0.7", path = "../ineru", optional = true }
 
 # Random for exploration (updated from 0.7)
-rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
+rand = { version = "0.10", default-features = false, features = ["std", "thread_rng"] }
 
 # Time
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

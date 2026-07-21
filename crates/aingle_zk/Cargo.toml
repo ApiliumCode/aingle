@@ -33,7 +33,7 @@ blake3 = "1.8"
 
 # Randomness
 # Pinned to rand 0.8 — curve25519-dalek 4.x requires rand_core 0.6
-rand = "0.8"
+rand = "0.10"
 
 # Parallelization for batch verification
 rayon = "1.8"
