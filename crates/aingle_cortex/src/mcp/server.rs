@@ -274,6 +274,50 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// All task facts extracted from the vault, optionally filtered by status.
+    #[tool(
+        description = "All task facts extracted from the vault (open and closed), optionally \
+            filtered by status (todo|doing|done|canceled). Each task carries its text, \
+            status, priority, scheduled/deadline dates, effective due date, and a \
+            signed-provenance anchor when available. Use to list or board a vault's tasks.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_tasks(
+        &self,
+        params: Parameters<TasksParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let mut rows = crate::service::tasks::list_tasks(&self.state, p.status.as_deref()).await;
+        let pol = self.state.mcp_policy_snapshot();
+        rows.retain(|r| r.note.as_deref().map(|n| !pol.is_hidden(n)).unwrap_or(true));
+        Ok(CallToolResult::success(vec![Content::json(rows)?]))
+    }
+
+    /// Open, dated tasks bucketed against a reference day: overdue / today / upcoming.
+    #[tool(
+        description = "Open, dated tasks bucketed against a reference day (`today`, ISO \
+            YYYY-MM-DD) into overdue, today, and upcoming (within `horizon_days`, default 7). \
+            Each task carries its effective due date, priority, and signed-provenance anchor \
+            when available. Use to plan or answer what is due.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_agenda(
+        &self,
+        params: Parameters<AgendaParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let mut resp =
+            crate::service::tasks::agenda(&self.state, &p.today, p.horizon_days.unwrap_or(7)).await;
+        let pol = self.state.mcp_policy_snapshot();
+        let prune = |v: &mut Vec<crate::service::tasks::TaskRow>| {
+            v.retain(|r| r.note.as_deref().map(|n| !pol.is_hidden(n)).unwrap_or(true));
+        };
+        prune(&mut resp.overdue);
+        prune(&mut resp.today);
+        prune(&mut resp.upcoming);
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// Verified context bundle for a note: semantically-related notes (by meaning,
     /// not just links) with the matching passage and signed provenance.
     #[tool(
@@ -910,6 +954,22 @@ pub struct BacklinksParams {
     pub note: String,
 }
 
+/// Parameters for the `aingle_tasks` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct TasksParams {
+    /// Optional status filter: `todo`, `doing`, `done`, or `canceled`.
+    pub status: Option<String>,
+}
+
+/// Parameters for the `aingle_agenda` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct AgendaParams {
+    /// Reference day as ISO `YYYY-MM-DD`; tasks bucket relative to it.
+    pub today: String,
+    /// Days ahead to include in the "upcoming" bucket (default 7).
+    pub horizon_days: Option<i64>,
+}
+
 /// Parameters for the `aingle_note_context` tool.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 pub struct NoteContextParams {
@@ -966,6 +1026,8 @@ mod ingest_tools_tests {
             "aingle_backlinks",
             "aingle_note_context",
             "aingle_path",
+            "aingle_tasks",
+            "aingle_agenda",
         ] {
             assert!(
                 names.contains(&expected.to_string()),
@@ -1171,6 +1233,143 @@ mod policy_enforcement_tests {
                 .contains("Personal/Finanzas"),
             "dag_history must not leak the excluded path: {payload}"
         );
+    }
+
+    /// A vault whose notes carry markdown tasks: a public note with an overdue,
+    /// a due-today, an upcoming and a done task, plus a task in an excluded
+    /// folder. Returns a ReadOnly MCP handler that hides `Private`, and the temp
+    /// dir (kept alive). Reference day for the agenda tests is `2026-07-24`.
+    async fn tasks_mcp() -> (AingleMcp, tempfile::TempDir) {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Notes")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Private")).unwrap();
+        std::fs::write(
+            dir.path().join("Notes").join("plan.md"),
+            "# Plan\n\n\
+             - [ ] [#A] Overdue thing \u{1F4C5} 2026-07-20\n\
+             - [ ] Today thing \u{1F4C5} 2026-07-24\n\
+             - [ ] Soon thing \u{1F4C5} 2026-07-28\n\
+             - [x] Done thing \u{1F4C5} 2026-07-15\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Private").join("secret.md"),
+            "# Secret\n\n- [ ] Secret task \u{1F4C5} 2026-07-25\n",
+        )
+        .unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Private".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        (AingleMcp::new(state), dir)
+    }
+
+    /// `aingle_tasks` returns every task with its fields populated, and drops any
+    /// task whose note lives under an excluded folder.
+    #[tokio::test]
+    async fn tasks_tool_returns_fields_and_hides_excluded() {
+        let (mcp, _dir) = tasks_mcp().await;
+
+        let result = mcp
+            .aingle_tasks(Parameters(TasksParams { status: None }))
+            .await
+            .expect("aingle_tasks ok");
+        let rows = json_of(&result);
+        let rows = rows.as_array().expect("tasks is an array");
+
+        let texts: Vec<&str> = rows
+            .iter()
+            .filter_map(|r| r.get("text").and_then(|t| t.as_str()))
+            .collect();
+        // The four public tasks are present; the excluded-folder task is not.
+        assert_eq!(rows.len(), 4, "one task is folder-excluded: {texts:?}");
+        assert!(texts.contains(&"Overdue thing"), "{texts:?}");
+        assert!(texts.contains(&"Done thing"), "{texts:?}");
+        assert!(
+            !texts.contains(&"Secret task"),
+            "excluded-folder task must be hidden: {texts:?}"
+        );
+        let dump = json_of(&result).to_string().replace('\\', "/");
+        assert!(!dump.contains("Private"), "must not leak excluded path: {dump}");
+
+        // Field shape: the high-priority overdue task keeps its status/priority/due.
+        let overdue = rows
+            .iter()
+            .find(|r| r.get("text").and_then(|t| t.as_str()) == Some("Overdue thing"))
+            .expect("overdue task present");
+        assert_eq!(overdue.get("status").and_then(|v| v.as_str()), Some("todo"));
+        assert_eq!(overdue.get("priority").and_then(|v| v.as_str()), Some("high"));
+        assert_eq!(
+            overdue.get("deadline").and_then(|v| v.as_str()),
+            Some("2026-07-20")
+        );
+        assert_eq!(
+            overdue.get("due").and_then(|v| v.as_str()),
+            Some("2026-07-20")
+        );
+    }
+
+    /// `aingle_tasks` honours the status filter.
+    #[tokio::test]
+    async fn tasks_tool_filters_by_status() {
+        let (mcp, _dir) = tasks_mcp().await;
+        let result = mcp
+            .aingle_tasks(Parameters(TasksParams {
+                status: Some("done".into()),
+            }))
+            .await
+            .expect("aingle_tasks ok");
+        let rows = json_of(&result);
+        let rows = rows.as_array().expect("tasks is an array");
+        assert_eq!(rows.len(), 1, "only one done task: {rows:?}");
+        assert_eq!(
+            rows[0].get("text").and_then(|v| v.as_str()),
+            Some("Done thing")
+        );
+    }
+
+    /// `aingle_agenda` buckets open dated tasks by date relative to `today`, and
+    /// excludes both closed tasks and tasks under an excluded folder.
+    #[tokio::test]
+    async fn agenda_tool_buckets_by_date_and_hides_excluded() {
+        let (mcp, _dir) = tasks_mcp().await;
+        let result = mcp
+            .aingle_agenda(Parameters(AgendaParams {
+                today: "2026-07-24".into(),
+                horizon_days: Some(7),
+            }))
+            .await
+            .expect("aingle_agenda ok");
+        let payload = json_of(&result);
+
+        let bucket = |name: &str| -> Vec<String> {
+            payload
+                .get(name)
+                .and_then(|v| v.as_array())
+                .expect("bucket array")
+                .iter()
+                .filter_map(|r| r.get("text").and_then(|t| t.as_str()).map(String::from))
+                .collect()
+        };
+        assert_eq!(bucket("overdue"), ["Overdue thing"]);
+        assert_eq!(bucket("today"), ["Today thing"]);
+        assert_eq!(bucket("upcoming"), ["Soon thing"]);
+
+        // The excluded-folder task (due 2026-07-25, would be upcoming) and the
+        // done task never surface, and the excluded path never leaks.
+        let dump = payload.to_string().replace('\\', "/");
+        assert!(!dump.contains("Secret task"), "excluded task hidden: {dump}");
+        assert!(!dump.contains("Done thing"), "closed task not in agenda: {dump}");
+        assert!(!dump.contains("Private"), "excluded path must not leak: {dump}");
     }
 
     /// Under the default (ReadOnly) policy a mutation tool returns an error
