@@ -177,6 +177,17 @@ pub async fn ingest_path(
     ingest_path_with_progress(state, root_path, namespace, None).await
 }
 
+/// Top-level vault directories the ingest walk never descends into.
+///
+/// - `_inbox` — the review staging area. Notes an agent PROPOSES land here and
+///   must NOT be indexed until a human approves them (see the review-inbox
+///   feature).
+/// - `.trash` — recoverable deletes keep their original relative path under
+///   `.trash/`. Ingesting them would resurrect a deleted note's facts as brand
+///   new triples under a `.trash/…` subject, so deleting a note would ADD to the
+///   graph instead of retracting from it.
+pub const SKIPPED_TOP_LEVEL_DIRS: &[&str] = &["_inbox", ".trash"];
+
 /// A progress reporter invoked once per candidate file as `(processed, total)`.
 /// `Sync` so it can be held across the ingest's `.await` points.
 pub type IngestProgress<'a> = &'a (dyn Fn(usize, usize) + Sync);
@@ -233,15 +244,14 @@ pub async fn ingest_path_with_progress(
             continue;
         }
 
-        // Skip the review-inbox staging area (top-level `_inbox/`): notes an agent
-        // PROPOSES land here and must NOT be indexed until a human approves them
-        // (see the review-inbox feature). Only the first path component is checked,
-        // so a nested folder that happens to be named `_inbox` deeper is unaffected.
+        // Skip the vault's non-knowledge subtrees. Only the FIRST path component
+        // is checked, so a nested folder that happens to share one of these
+        // names deeper in the tree is unaffected.
         if let Ok(rel) = path.strip_prefix(root_path) {
             if rel
                 .components()
                 .next()
-                .is_some_and(|c| c.as_os_str() == "_inbox")
+                .is_some_and(|c| SKIPPED_TOP_LEVEL_DIRS.iter().any(|d| c.as_os_str() == *d))
             {
                 continue;
             }
@@ -1023,6 +1033,42 @@ mod tests {
             "no _inbox source may appear in retrieval, got: {:?}",
             g.answer_context
         );
+    }
+
+    #[tokio::test]
+    async fn trash_is_excluded_from_ingest() {
+        // Deleting a note moves it to `.trash/<orig path>` INSIDE the vault. If the
+        // walk indexed it, the delete would RESURRECT the note's facts as brand new
+        // triples under a `.trash/…` subject — deleting would add to the graph.
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "kept.md", "# Kept\n\nWe use [[sled]].\n");
+        std::fs::create_dir_all(dir.path().join(".trash").join("notes")).unwrap();
+        write(
+            &dir.path().join(".trash").join("notes"),
+            "deleted.md",
+            "# Deleted\n\nA retracted claim about [[quantum]].\n",
+        );
+        let state = enabled_state().await;
+        let root = dir.path().to_str().unwrap();
+
+        let report = ingest_path(&state, root, None).await.unwrap();
+        assert_eq!(report.files_seen, 1, "only the live note is walked");
+        assert_eq!(report.files_ingested, 1);
+
+        let g = crate::service::ground::ground(&state, "A retracted claim about quantum", 5)
+            .await
+            .unwrap();
+        assert!(
+            !g.answer_context.iter().any(|c| c.source.contains(".trash")),
+            "no .trash source may appear in retrieval, got: {:?}",
+            g.answer_context
+        );
+    }
+
+    #[test]
+    fn skipped_top_level_dirs_covers_inbox_and_trash() {
+        assert!(SKIPPED_TOP_LEVEL_DIRS.contains(&"_inbox"));
+        assert!(SKIPPED_TOP_LEVEL_DIRS.contains(&".trash"));
     }
 
     #[cfg(feature = "dag")]

@@ -8,6 +8,15 @@ pub enum Permission {
     #[default]
     ReadOnly,
     ReadWrite,
+    /// RETIRED — kept only so a policy persisted by an older build still
+    /// deserializes. It is **treated as [`Permission::ReadOnly`]**.
+    ///
+    /// There is no approval interception anywhere in the tool surface: no tool
+    /// parks a mutation, asks a human, and resumes. Reporting this mode as
+    /// mutation-capable therefore granted full unattended read-write under a
+    /// label that promised a human gate — an advertised safety control that did
+    /// nothing. Until a real approval queue exists, the honest mapping is the
+    /// safe one, and the UI no longer offers it.
     ReadWriteWithApproval,
 }
 
@@ -63,11 +72,14 @@ impl McpPolicy {
     }
 
     /// True when the active permission mode allows graph mutations.
+    ///
+    /// Only [`Permission::ReadWrite`] does. [`Permission::ReadWriteWithApproval`]
+    /// is retired and deliberately maps to *no* mutation: nothing in the tool
+    /// surface intercepts a write for human approval, so treating it as
+    /// write-capable would grant unattended read-write behind a label promising
+    /// a human gate. Fail closed.
     pub fn allows_mutation(&self) -> bool {
-        matches!(
-            self.permission,
-            Permission::ReadWrite | Permission::ReadWriteWithApproval
-        )
+        matches!(self.permission, Permission::ReadWrite)
     }
 }
 
@@ -141,5 +153,17 @@ mod tests {
             ..Default::default()
         };
         assert!(rw.allows_mutation());
+    }
+
+    #[test]
+    fn retired_approval_mode_is_non_mutating() {
+        // No tool intercepts a write for human approval, so this mode must never
+        // report itself as write-capable — that granted full unattended
+        // read-write behind a label promising a human gate.
+        let pol = McpPolicy {
+            permission: Permission::ReadWriteWithApproval,
+            ..Default::default()
+        };
+        assert!(!pol.allows_mutation());
     }
 }
