@@ -65,8 +65,23 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
     }
 
     // --- Body: headings, wikilinks, inline tags (with real line numbers).
+    // Fenced code (``` / ~~~) is skipped so code samples don't become vault
+    // facts; `task_occ` disambiguates repeated task text within the note.
+    let mut in_fence = false;
+    let mut task_occ: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for (i, line) in lines.iter().enumerate().skip(body_start) {
         let line_no = (i + 1) as u32;
+
+        // A fence marker line toggles fenced state; the marker and everything
+        // inside the fence are not scanned for structural facts.
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
 
         if let Some(c) = HEADING.captures(line) {
             out.push(ProvenancedTriple {
@@ -97,12 +112,19 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
         }
 
         // A task line additionally emits a `task:` node whose identity is the
-        // hash of its text — stable across status changes, so completing a task
-        // is a `status` edit on the same node (and thus one signed DAG action
-        // downstream), not a new node. The line's wikilinks/tags above still
+        // hash of its text plus its occurrence index within the note — stable
+        // across status changes (so completing a task is a `status` edit on the
+        // same node, one signed DAG action, not a new node) yet distinct for two
+        // task lines with identical text. The line's wikilinks/tags above still
         // attach to the note itself.
         if let Some(task) = crate::tasks::parse_task(line) {
-            let hex = blake3::hash(task.text.as_bytes()).to_hex();
+            let occ = {
+                let entry = task_occ.entry(task.text.clone()).or_insert(0);
+                let v = *entry;
+                *entry += 1;
+                v
+            };
+            let hex = blake3::hash(format!("{}\u{0}{occ}", task.text).as_bytes()).to_hex();
             let subject = format!("task:{path}#{}", &hex[..12]);
             let mut emit = |predicate: &str, object: ObjectValue| {
                 out.push(ProvenancedTriple {

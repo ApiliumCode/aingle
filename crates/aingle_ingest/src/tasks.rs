@@ -48,9 +48,10 @@ pub struct ParsedTask {
     pub deadline: Option<String>,
 }
 
-// `- [ ] text` / `* [x] text` / `+ [/] text`  — capture the checkbox char + rest.
+// `- [ ] text` / `* [x] text` / `+ [/] text` / bare `- [ ]` at line end — capture
+// the checkbox char + optional rest (an empty checkbox is still a task).
 static CHECKBOX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*[-*+]\s+\[([ xX/\-])\]\s+(.*)$").unwrap());
+    Lazy::new(|| Regex::new(r"^\s*[-*+]\s+\[([ xX/\-])\](?:\s+(.*))?$").unwrap());
 // Bare keyword marker at line start (optionally after a bullet): `TODO text`.
 static KEYWORD: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\s*(?:[-*+]\s+)?(TODO|DOING|DONE|LATER|NOW|WAITING|WAIT|CANCELED|CANCELLED|IN-PROGRESS)\s+(.*)$")
@@ -84,7 +85,8 @@ fn status_from_keyword(kw: &str) -> TaskStatus {
 pub fn parse_task(line: &str) -> Option<ParsedTask> {
     let (status, rest) = if let Some(c) = CHECKBOX.captures(line) {
         let ch = c[1].chars().next().unwrap();
-        (status_from_checkbox(ch), c[2].to_string())
+        let rest = c.get(2).map_or(String::new(), |m| m.as_str().to_string());
+        (status_from_checkbox(ch), rest)
     } else if let Some(c) = KEYWORD.captures(line) {
         (status_from_keyword(&c[1]), c[2].to_string())
     } else {
@@ -171,6 +173,17 @@ mod tests {
         // extractors still see them.
         let p = t("- [ ] Follow up on [[sled]] about #durability");
         assert_eq!(p.text, "Follow up on [[sled]] about #durability");
+    }
+
+    #[test]
+    fn checkbox_at_end_of_line_is_a_task() {
+        // A bare `- [ ]` with nothing after the bracket is a valid (empty) task,
+        // matching Obsidian and the app-side parser (which allows EOL).
+        let p = t("- [ ]");
+        assert_eq!(p.status, TaskStatus::Todo);
+        assert_eq!(p.text, "");
+        assert_eq!(t("- [x]").status, TaskStatus::Done);
+        assert_eq!(t("* [/]").status, TaskStatus::Doing);
     }
 
     #[test]

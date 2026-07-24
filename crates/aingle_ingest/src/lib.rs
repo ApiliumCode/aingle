@@ -173,6 +173,64 @@ mod tests {
     }
 
     #[test]
+    fn fenced_code_is_not_extracted() {
+        // Tasks, links, tags and headings inside a ``` fence are code samples,
+        // not vault facts — they must not pollute the graph.
+        let md = "# Real\n\n\
+                  - [ ] real task\n\n\
+                  ```md\n\
+                  - [ ] code sample task\n\
+                  See [[not-a-real-link]] and #notatag\n\
+                  # not a heading\n\
+                  ```\n\
+                  - [ ] another real task\n";
+        let ex = extract("doc.md", md);
+        assert_eq!(
+            ex.triples.iter().filter(|t| t.predicate == "status").count(),
+            2,
+            "only the two real tasks become task nodes"
+        );
+        assert!(!ex
+            .triples
+            .iter()
+            .any(|t| t.object == ObjectValue::Node("not-a-real-link".into())));
+        assert!(!ex
+            .triples
+            .iter()
+            .any(|t| t.predicate == "tagged" && t.object == ObjectValue::Text("notatag".into())));
+        assert!(!ex.triples.iter().any(
+            |t| t.predicate == "has_section" && t.object == ObjectValue::Text("not a heading".into())
+        ));
+        // The genuine heading outside the fence survives.
+        assert!(ex
+            .triples
+            .iter()
+            .any(|t| t.predicate == "has_section" && t.object == ObjectValue::Text("Real".into())));
+    }
+
+    #[test]
+    fn duplicate_task_text_yields_distinct_nodes() {
+        // Two identical-text task lines must be two distinct task nodes, so
+        // completing one does not flip the other.
+        let ex = extract("t.md", "- [ ] Review PR\n- [x] Review PR\n");
+        let subjects: std::collections::BTreeSet<_> = ex
+            .triples
+            .iter()
+            .filter(|t| t.predicate == "status")
+            .map(|t| t.subject.clone())
+            .collect();
+        assert_eq!(subjects.len(), 2, "identical task text must not collapse to one node");
+        assert!(ex
+            .triples
+            .iter()
+            .any(|t| t.predicate == "status" && t.object == ObjectValue::Text("todo".into())));
+        assert!(ex
+            .triples
+            .iter()
+            .any(|t| t.predicate == "status" && t.object == ObjectValue::Text("done".into())));
+    }
+
+    #[test]
     fn task_lines_still_yield_note_links_and_tags() {
         // A task line's wikilinks/tags must still attach to the note itself.
         let ex = extract("todos.md", "- [ ] Follow up on [[sled]] about #durability\n");
