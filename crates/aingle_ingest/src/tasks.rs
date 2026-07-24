@@ -72,6 +72,17 @@ fn status_from_checkbox(c: char) -> TaskStatus {
     }
 }
 
+/// Cheap validity check for a `YYYY-MM-DD` already matched by the date regex:
+/// month 1–12, day 1–31. Keeps `aingle_ingest` dependency-free (no chrono).
+fn valid_date(s: &str) -> bool {
+    if s.len() != 10 {
+        return false;
+    }
+    let mm: u32 = s[5..7].parse().unwrap_or(0);
+    let dd: u32 = s[8..10].parse().unwrap_or(0);
+    (1..=12).contains(&mm) && (1..=31).contains(&dd)
+}
+
 fn status_from_keyword(kw: &str) -> TaskStatus {
     match kw {
         "DONE" => TaskStatus::Done,
@@ -94,14 +105,28 @@ pub fn parse_task(line: &str) -> Option<ParsedTask> {
     };
 
     let priority = PRIORITY.captures(&rest).and_then(|c| c[1].chars().next());
-    let deadline = DEADLINE_EMOJI.captures(&rest).map(|c| c[1].to_string());
-    let scheduled = SCHEDULED_EMOJI.captures(&rest).map(|c| c[1].to_string());
+    let deadline = DEADLINE_EMOJI
+        .captures(&rest)
+        .map(|c| c[1].to_string())
+        .filter(|d| valid_date(d));
+    let scheduled = SCHEDULED_EMOJI
+        .captures(&rest)
+        .map(|c| c[1].to_string())
+        .filter(|d| valid_date(d));
 
     // Strip the structured tokens, then collapse whitespace so the residual
-    // text is the human-readable task title.
+    // text is the human-readable task title. Invalid dates are left in the text
+    // (a typo stays visible instead of vanishing).
+    let strip_valid = |c: &regex::Captures| -> String {
+        if valid_date(&c[1]) {
+            String::new()
+        } else {
+            c[0].to_string()
+        }
+    };
     let stripped = PRIORITY.replace_all(&rest, "");
-    let stripped = DEADLINE_EMOJI.replace_all(&stripped, "");
-    let stripped = SCHEDULED_EMOJI.replace_all(&stripped, "");
+    let stripped = DEADLINE_EMOJI.replace_all(&stripped, strip_valid);
+    let stripped = SCHEDULED_EMOJI.replace_all(&stripped, strip_valid);
     let text = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
 
     Some(ParsedTask {
@@ -173,6 +198,20 @@ mod tests {
         // extractors still see them.
         let p = t("- [ ] Follow up on [[sled]] about #durability");
         assert_eq!(p.text, "Follow up on [[sled]] about #durability");
+    }
+
+    #[test]
+    fn invalid_dates_are_ignored_and_kept_in_text() {
+        // A malformed date must not become a deadline/scheduled and must stay
+        // visible in the text (nothing silently lost).
+        let p = t("- [ ] file taxes \u{1F4C5} 2026-13-45");
+        assert_eq!(p.deadline, None);
+        assert!(p.text.contains("2026-13-45"), "invalid date stays in text: {}", p.text);
+        // A valid date still parses and is stripped.
+        let q = t("- [ ] pay \u{1F4C5} 2026-02-15 \u{23F3} 2026-02-01");
+        assert_eq!(q.deadline.as_deref(), Some("2026-02-15"));
+        assert_eq!(q.scheduled.as_deref(), Some("2026-02-01"));
+        assert_eq!(q.text, "pay");
     }
 
     #[test]

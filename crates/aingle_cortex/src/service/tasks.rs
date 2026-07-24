@@ -73,8 +73,44 @@ pub async fn list_tasks(state: &crate::state::AppState, status: Option<&str>) ->
     rows
 }
 
-/// Open, dated tasks bucketed against `today` (ISO `YYYY-MM-DD`). "Upcoming"
-/// spans `(today, today + horizon_days]`.
+/// A task's agenda bucket, ordered by urgency (Overdue most urgent).
+#[derive(Clone, Copy, PartialEq)]
+enum Bucket {
+    Overdue,
+    Today,
+    Upcoming,
+}
+
+/// Which bucket a single ISO date falls into relative to `today`, if any.
+fn date_bucket(date: &str, today: &str, horizon_end: Option<&str>) -> Option<Bucket> {
+    if date < today {
+        Some(Bucket::Overdue)
+    } else if date == today {
+        Some(Bucket::Today)
+    } else if horizon_end.map(|end| date <= end).unwrap_or(false) {
+        Some(Bucket::Upcoming)
+    } else {
+        None
+    }
+}
+
+/// The most urgent bucket among a task's deadline and scheduled dates — so a
+/// task scheduled for today is not hidden by a later deadline, and a missed
+/// scheduled day still surfaces as overdue.
+fn task_bucket(row: &TaskRow, today: &str, horizon_end: Option<&str>) -> Option<Bucket> {
+    [row.deadline.as_deref(), row.scheduled.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter_map(|d| date_bucket(d, today, horizon_end))
+        .min_by_key(|b| match b {
+            Bucket::Overdue => 0,
+            Bucket::Today => 1,
+            Bucket::Upcoming => 2,
+        })
+}
+
+/// Open tasks bucketed against `today` (ISO `YYYY-MM-DD`) by their most urgent
+/// of deadline/scheduled. "Upcoming" spans `(today, today + horizon_days]`.
 pub async fn agenda(state: &crate::state::AppState, today: &str, horizon_days: i64) -> Agenda {
     let horizon_end = add_days(today, horizon_days);
     let mut out = Agenda::default();
@@ -82,13 +118,11 @@ pub async fn agenda(state: &crate::state::AppState, today: &str, horizon_days: i
         if !open(&row.status) {
             continue;
         }
-        let Some(due) = row.due.clone() else { continue };
-        if due.as_str() < today {
-            out.overdue.push(row);
-        } else if due.as_str() == today {
-            out.today.push(row);
-        } else if horizon_end.as_deref().map(|end| due.as_str() <= end).unwrap_or(false) {
-            out.upcoming.push(row);
+        match task_bucket(&row, today, horizon_end.as_deref()) {
+            Some(Bucket::Overdue) => out.overdue.push(row),
+            Some(Bucket::Today) => out.today.push(row),
+            Some(Bucket::Upcoming) => out.upcoming.push(row),
+            None => {}
         }
     }
     let sort = |v: &mut Vec<TaskRow>| {
@@ -262,6 +296,39 @@ mod tests {
         assert_eq!(doing.len(), 1);
         assert_eq!(doing[0].text, "C");
         assert_eq!(doing[0].due.as_deref(), Some("2026-07-25"));
+    }
+
+    #[tokio::test]
+    async fn scheduled_today_is_not_hidden_by_a_later_deadline() {
+        // A task scheduled for today with a deadline next week must land in
+        // TODAY (you planned to work it today), not get buried in upcoming.
+        let state = graph_with(&[
+            ("task:n.md#z", "is_a", "task"),
+            ("task:n.md#z", "status", "todo"),
+            ("task:n.md#z", "task_text", "Z"),
+            ("task:n.md#z", "scheduled", "2026-07-24"),
+            ("task:n.md#z", "deadline", "2026-07-31"),
+        ])
+        .await;
+        let ag = super::agenda(&state, "2026-07-24", 7).await;
+        assert!(ag.today.iter().any(|t| t.text == "Z"), "scheduled-today belongs in today");
+        assert!(!ag.upcoming.iter().any(|t| t.text == "Z"));
+    }
+
+    #[tokio::test]
+    async fn overdue_scheduled_surfaces_even_with_future_deadline() {
+        // Missed scheduled day (past) + future deadline → overdue is the most
+        // urgent signal.
+        let state = graph_with(&[
+            ("task:n.md#w", "is_a", "task"),
+            ("task:n.md#w", "status", "todo"),
+            ("task:n.md#w", "task_text", "W"),
+            ("task:n.md#w", "scheduled", "2026-07-20"),
+            ("task:n.md#w", "deadline", "2026-08-05"),
+        ])
+        .await;
+        let ag = super::agenda(&state, "2026-07-24", 7).await;
+        assert!(ag.overdue.iter().any(|t| t.text == "W"));
     }
 
     #[tokio::test]
