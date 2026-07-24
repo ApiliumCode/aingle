@@ -95,6 +95,42 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
                 provenance: prov(path, hash, line_no),
             });
         }
+
+        // A task line additionally emits a `task:` node whose identity is the
+        // hash of its text — stable across status changes, so completing a task
+        // is a `status` edit on the same node (and thus one signed DAG action
+        // downstream), not a new node. The line's wikilinks/tags above still
+        // attach to the note itself.
+        if let Some(task) = crate::tasks::parse_task(line) {
+            let hex = blake3::hash(task.text.as_bytes()).to_hex();
+            let subject = format!("task:{path}#{}", &hex[..12]);
+            let mut emit = |predicate: &str, object: ObjectValue| {
+                out.push(ProvenancedTriple {
+                    subject: subject.clone(),
+                    predicate: predicate.into(),
+                    object,
+                    provenance: prov(path, hash, line_no),
+                });
+            };
+            emit("is_a", ObjectValue::Text("task".into()));
+            emit("status", ObjectValue::Text(task.status.as_str().into()));
+            emit("task_text", ObjectValue::Text(task.text.clone()));
+            emit("in_note", ObjectValue::Node(path.into()));
+            if let Some(d) = &task.deadline {
+                emit("deadline", ObjectValue::Text(d.clone()));
+            }
+            if let Some(s) = &task.scheduled {
+                emit("scheduled", ObjectValue::Text(s.clone()));
+            }
+            if let Some(p) = task.priority {
+                let semantic = match p {
+                    'A' => "high",
+                    'B' => "medium",
+                    _ => "low",
+                };
+                emit("priority", ObjectValue::Text(semantic.into()));
+            }
+        }
     }
 
     out

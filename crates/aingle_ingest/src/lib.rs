@@ -5,6 +5,7 @@
 
 mod chunk;
 mod markdown;
+mod tasks;
 
 pub use aingle_graph::dag::Provenance;
 
@@ -116,6 +117,71 @@ mod tests {
             .chunks
             .iter()
             .all(|c| !c.provenance.content_hash.is_empty()));
+    }
+
+    #[test]
+    fn extracts_tasks_with_status_priority_and_dates() {
+        let md = "# Todos\n\n\
+                  - [ ] [#A] Ship release \u{1F4C5} 2026-08-01\n\
+                  - [x] Old thing\n\
+                  - Not a task, just a bullet\n";
+        let ex = extract("todos.md", md);
+
+        // An open task node with its detail triples on a stable `task:` subject.
+        let status = ex
+            .triples
+            .iter()
+            .find(|t| t.predicate == "status" && t.object == ObjectValue::Text("todo".into()))
+            .expect("open task status triple");
+        let subj = status.subject.clone();
+        assert!(subj.starts_with("task:todos.md#"));
+        let has = |p: &str, o: ObjectValue| {
+            ex.triples
+                .iter()
+                .any(|t| t.subject == subj && t.predicate == p && t.object == o)
+        };
+        assert!(has("is_a", ObjectValue::Text("task".into())));
+        assert!(has("task_text", ObjectValue::Text("Ship release".into())));
+        assert!(has("priority", ObjectValue::Text("high".into())));
+        assert!(has("deadline", ObjectValue::Text("2026-08-01".into())));
+        assert!(has("in_note", ObjectValue::Node("todos.md".into())));
+
+        // The done task is present; the plain bullet is not a task.
+        assert!(ex
+            .triples
+            .iter()
+            .any(|t| t.predicate == "status" && t.object == ObjectValue::Text("done".into())));
+        assert_eq!(
+            ex.triples.iter().filter(|t| t.predicate == "status").count(),
+            2,
+            "exactly the two real tasks become task nodes"
+        );
+
+        // Task identity is text-based and stable across status: the same text
+        // hashes to the same subject id whatever the checkbox state.
+        let open_id = subj.rsplit('#').next().unwrap();
+        let md_done = "- [x] [#A] Ship release \u{1F4C5} 2026-08-01\n";
+        let ex2 = extract("todos.md", md_done);
+        let done_subj = ex2
+            .triples
+            .iter()
+            .find(|t| t.predicate == "status")
+            .unwrap()
+            .subject
+            .clone();
+        assert_eq!(done_subj.rsplit('#').next().unwrap(), open_id);
+    }
+
+    #[test]
+    fn task_lines_still_yield_note_links_and_tags() {
+        // A task line's wikilinks/tags must still attach to the note itself.
+        let ex = extract("todos.md", "- [ ] Follow up on [[sled]] about #durability\n");
+        assert!(ex.triples.iter().any(|t| t.subject == "todos.md"
+            && t.predicate == "links_to"
+            && t.object == ObjectValue::Node("sled".into())));
+        assert!(ex.triples.iter().any(|t| t.subject == "todos.md"
+            && t.predicate == "tagged"
+            && t.object == ObjectValue::Text("durability".into())));
     }
 
     #[test]
