@@ -122,6 +122,16 @@ pub struct AppState {
     /// captured at router-build time. `None` means no static token is configured.
     #[cfg(feature = "mcp")]
     pub mcp_token: std::sync::Arc<std::sync::RwLock<Vec<String>>>,
+    /// Filesystem root of the vault working copy the MCP write tools edit.
+    ///
+    /// The engine otherwise never touches vault `.md` files — the app owns the
+    /// filesystem. The signed-note-edit tools (`aingle_edit_note`,
+    /// `aingle_tag_add`, `aingle_tag_remove`) need a root to resolve a
+    /// vault-relative note path against and to confine writes to; the app pushes
+    /// it at runtime via [`Self::set_vault_root`]. `None` means no root is
+    /// configured yet, so the write tools refuse to run.
+    #[cfg(feature = "mcp")]
+    pub vault_root: std::sync::Arc<std::sync::RwLock<Option<std::path::PathBuf>>>,
 }
 
 impl AppState {
@@ -182,6 +192,8 @@ impl AppState {
             )),
             #[cfg(feature = "mcp")]
             mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+            #[cfg(feature = "mcp")]
+            vault_root: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -240,6 +252,8 @@ impl AppState {
             )),
             #[cfg(feature = "mcp")]
             mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+            #[cfg(feature = "mcp")]
+            vault_root: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -298,6 +312,8 @@ impl AppState {
             )),
             #[cfg(feature = "mcp")]
             mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+            #[cfg(feature = "mcp")]
+            vault_root: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -473,6 +489,8 @@ impl AppState {
             )),
             #[cfg(feature = "mcp")]
             mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+            #[cfg(feature = "mcp")]
+            vault_root: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -646,6 +664,28 @@ impl AppState {
             .read()
             .map(|g| g.clone())
             .unwrap_or_default()
+    }
+
+    /// Sets the vault working-copy root the MCP write tools resolve note paths
+    /// against and confine their writes to.
+    ///
+    /// The app calls this at startup (and on vault switch) so the signed
+    /// note-edit tools know which directory they are allowed to write into. A
+    /// poisoned lock is treated as a no-op rather than a panic.
+    #[cfg(feature = "mcp")]
+    pub fn set_vault_root(&self, root: std::path::PathBuf) {
+        if let Ok(mut g) = self.vault_root.write() {
+            *g = Some(root);
+        }
+    }
+
+    /// Returns a clone of the configured vault root, or `None` when unset.
+    ///
+    /// A poisoned lock yields `None` so a write tool fails safe (it refuses to
+    /// touch the filesystem when it cannot establish its confinement root).
+    #[cfg(feature = "mcp")]
+    pub fn vault_root_snapshot(&self) -> Option<std::path::PathBuf> {
+        self.vault_root.read().ok().and_then(|g| g.clone())
     }
 
     /// Replaces the runtime MCP bearer token set consulted by the MCP-over-HTTP

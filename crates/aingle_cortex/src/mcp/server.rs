@@ -456,6 +456,167 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// List every tag in the vault with the number of notes carrying it.
+    #[tool(
+        description = "List every tag in the vault with the number of notes carrying it. \
+            Tags come from frontmatter `tags:` and inline `#tag`. Returns [{tag, count}], \
+            sorted by tag.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_list_tags(&self) -> Result<CallToolResult, ErrorData> {
+        let pol = self.state.mcp_policy_snapshot();
+        let tags = crate::service::query::list_tags(&self.state, &pol)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        let out: Vec<serde_json::Value> = tags
+            .into_iter()
+            .map(|(tag, count)| serde_json::json!({ "tag": tag, "count": count }))
+            .collect();
+        Ok(CallToolResult::success(vec![Content::json(out)?]))
+    }
+
+    /// List every folder (directory prefix) in the vault.
+    #[tool(
+        description = "List every folder (directory prefix) in the vault, derived from the \
+            ingested source paths. Returns a sorted array of folder paths. Excluded folders \
+            are omitted.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_list_folders(&self) -> Result<CallToolResult, ErrorData> {
+        let pol = self.state.mcp_policy_snapshot();
+        let folders = crate::service::query::list_folders(&self.state, &pol)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(folders)?]))
+    }
+
+    /// Edit a vault note (append/prepend/replace text), signed via the DAG.
+    ///
+    /// Mutation: not read-only. Destructive (it rewrites the note's file). NOT
+    /// idempotent for append/prepend (each call adds another line); a
+    /// `replace_text` whose `find` is already gone is a content no-op.
+    #[tool(
+        description = "Edit a vault note and sign the change into the DAG. `mode` is \
+            'append' (add `text` as a trailing line), 'prepend' (leading line), or \
+            'replace_text' (replace the first occurrence of `find` with `text`). Set \
+            `dry_run` to preview the content-hash change and triple diff without writing. \
+            The note path is vault-relative; paths escaping the vault or inside an excluded \
+            folder are refused.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false
+        )
+    )]
+    async fn aingle_edit_note(
+        &self,
+        params: Parameters<EditNoteParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
+        let Parameters(p) = params;
+        let mode = match p.mode.as_str() {
+            "append" => crate::service::notes::EditMode::Append,
+            "prepend" => crate::service::notes::EditMode::Prepend,
+            "replace_text" => {
+                let Some(find) = p.find else {
+                    return Ok(CallToolResult::error(vec![Content::text(
+                        "replace_text mode requires a `find` string.",
+                    )]));
+                };
+                crate::service::notes::EditMode::ReplaceText { find }
+            }
+            other => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "unknown mode '{other}': expected append|prepend|replace_text"
+                ))]));
+            }
+        };
+        let res =
+            crate::service::notes::edit_note(&self.state, &p.note, mode, &p.text, p.dry_run)
+                .await
+                .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(res)?]))
+    }
+
+    /// Add a tag to a vault note, signed via the DAG.
+    #[tool(
+        description = "Add a tag to a vault note (frontmatter `tags:` list when present, \
+            else an inline `#tag`) and sign the change into the DAG. Idempotent: adding a \
+            tag the note already has is a no-op. Set `dry_run` to preview.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
+    )]
+    async fn aingle_tag_add(
+        &self,
+        params: Parameters<TagParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
+        let Parameters(p) = params;
+        let res = crate::service::notes::tag_add(&self.state, &p.note, &p.tag, p.dry_run)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(res)?]))
+    }
+
+    /// Remove a tag from a vault note, signed via the DAG.
+    #[tool(
+        description = "Remove a tag from a vault note (frontmatter `tags:` list or inline \
+            `#tag`) and sign the change into the DAG. Idempotent: removing a tag the note \
+            does not have is a no-op. Set `dry_run` to preview.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
+    )]
+    async fn aingle_tag_remove(
+        &self,
+        params: Parameters<TagParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
+        let Parameters(p) = params;
+        let res = crate::service::notes::tag_remove(&self.state, &p.note, &p.tag, p.dry_run)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(res)?]))
+    }
+
+    /// Create a folder inside the vault.
+    #[tool(
+        description = "Create a folder (and any missing parents) inside the vault. The path \
+            is vault-relative; paths escaping the vault or inside an excluded folder are \
+            refused. Idempotent: an existing folder is fine.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
+    )]
+    async fn aingle_create_folder(
+        &self,
+        params: Parameters<CreateFolderParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
+        let Parameters(p) = params;
+        let created = crate::service::notes::create_folder(&self.state, &p.path)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(
+            serde_json::json!({ "created": created }),
+        )?]))
+    }
+
     /// Insert a triple (subject, predicate, object) into the graph.
     ///
     /// Mutation: not read-only. Non-destructive (it never removes or overwrites
@@ -979,6 +1140,42 @@ pub struct NoteContextParams {
     pub limit: Option<usize>,
 }
 
+/// Parameters for the `aingle_edit_note` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct EditNoteParams {
+    /// Vault-relative path of the note to edit, e.g. "ideas/sled.md".
+    pub note: String,
+    /// Edit mode: `append`, `prepend`, or `replace_text`.
+    pub mode: String,
+    /// Text to append/prepend, or the replacement for `replace_text`.
+    pub text: String,
+    /// For `replace_text`: the substring to find (first occurrence replaced).
+    #[serde(default)]
+    pub find: Option<String>,
+    /// Preview only: compute the diff without writing or ingesting.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+/// Parameters for the `aingle_tag_add` / `aingle_tag_remove` tools.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct TagParams {
+    /// Vault-relative path of the note to tag/untag.
+    pub note: String,
+    /// The tag (without a leading `#`).
+    pub tag: String,
+    /// Preview only: compute the diff without writing or ingesting.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+/// Parameters for the `aingle_create_folder` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct CreateFolderParams {
+    /// Vault-relative folder path to create (parents are created as needed).
+    pub path: String,
+}
+
 /// Parameters for the `aingle_path` tool.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 pub struct PathParams {
@@ -1028,6 +1225,12 @@ mod ingest_tools_tests {
             "aingle_path",
             "aingle_tasks",
             "aingle_agenda",
+            "aingle_list_tags",
+            "aingle_list_folders",
+            "aingle_edit_note",
+            "aingle_tag_add",
+            "aingle_tag_remove",
+            "aingle_create_folder",
         ] {
             assert!(
                 names.contains(&expected.to_string()),
@@ -1586,6 +1789,160 @@ mod policy_enforcement_tests {
             result.is_error,
             Some(true),
             "read-write policy must allow mutation: {result:?}"
+        );
+    }
+
+    /// Build an MCP handler over a vault with a public tagged note and an
+    /// excluded-folder tagged note. Returns the handler + temp dir (kept alive).
+    async fn tagged_vault_mcp() -> (AingleMcp, tempfile::TempDir) {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Public")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Personal").join("Finanzas")).unwrap();
+        std::fs::write(
+            dir.path().join("Public").join("roadmap.md"),
+            "# Roadmap\n\nPlan del proyecto. #roadmap\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path()
+                .join("Personal")
+                .join("Finanzas")
+                .join("secret.md"),
+            "# Secreto\n\nNumeros privados. #money\n",
+        )
+        .unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        (AingleMcp::new(state), dir)
+    }
+
+    /// `aingle_list_tags` must surface a public note's tag but never a tag that
+    /// only lives on a note inside an excluded folder.
+    #[tokio::test]
+    async fn list_tags_hides_excluded_folder_tags() {
+        let (mcp, _dir) = tagged_vault_mcp().await;
+        let result = mcp.aingle_list_tags().await.expect("list_tags ok");
+        let tags: Vec<String> = json_of(&result)
+            .as_array()
+            .expect("tags is an array")
+            .iter()
+            .filter_map(|r| r.get("tag").and_then(|t| t.as_str()).map(String::from))
+            .collect();
+        assert!(tags.iter().any(|t| t == "roadmap"), "public tag visible: {tags:?}");
+        assert!(
+            !tags.iter().any(|t| t == "money"),
+            "excluded-folder tag must be hidden: {tags:?}"
+        );
+    }
+
+    /// `aingle_list_folders` must surface a public folder but drop any folder at
+    /// or under an excluded path.
+    #[tokio::test]
+    async fn list_folders_hides_excluded() {
+        let (mcp, _dir) = tagged_vault_mcp().await;
+        let result = mcp.aingle_list_folders().await.expect("list_folders ok");
+        let folders: Vec<String> = json_of(&result)
+            .as_array()
+            .expect("folders is an array")
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.replace('\\', "/")))
+            .collect();
+        assert!(folders.iter().any(|f| f == "Public"), "public folder: {folders:?}");
+        assert!(
+            !folders.iter().any(|f| f.starts_with("Personal/Finanzas")),
+            "excluded folder must be hidden: {folders:?}"
+        );
+    }
+
+    /// The note-edit tool must refuse to write under the read-only default
+    /// policy (mirrors `mutation_denied_under_read_only_default`).
+    #[tokio::test]
+    async fn edit_note_denied_under_read_only_default() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "# N\n\nbody\n").unwrap();
+        state.set_vault_root(dir.path().to_path_buf());
+        let mcp = AingleMcp::new(state); // default policy = ReadOnly
+
+        let result = mcp
+            .aingle_edit_note(Parameters(EditNoteParams {
+                note: "note.md".into(),
+                mode: "append".into(),
+                text: "sneaky".into(),
+                find: None,
+                dry_run: false,
+            }))
+            .await
+            .expect("tool returns a result (not a protocol error)");
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "read-only default must deny note edits: {result:?}"
+        );
+        // The file must be untouched by the denied edit.
+        let on_disk = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
+        assert!(!on_disk.contains("sneaky"), "denied edit must not write: {on_disk}");
+    }
+
+    /// End-to-end through the tool: with ReadWrite enabled, `aingle_tag_add`
+    /// writes the tag and it shows up via `aingle_query_pattern(tagged)`.
+    #[tokio::test]
+    async fn tag_add_tool_surfaces_via_query_pattern() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "# N\n\nbody\n").unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        state.set_vault_root(dir.path().to_path_buf());
+        state.set_mcp_policy(McpPolicy {
+            permission: Permission::ReadWrite,
+            ..Default::default()
+        });
+        let mcp = AingleMcp::new(state);
+
+        let res = mcp
+            .aingle_tag_add(Parameters(TagParams {
+                note: "note.md".into(),
+                tag: "roadmap".into(),
+                dry_run: false,
+            }))
+            .await
+            .expect("tag_add ok");
+        assert_ne!(res.is_error, Some(true), "read-write must allow: {res:?}");
+
+        let req: crate::rest::PatternQueryRequest = serde_json::from_value(serde_json::json!({
+            "predicate": "tagged",
+            "limit": 1000,
+        }))
+        .unwrap();
+        let q = mcp
+            .aingle_query_pattern(Parameters(req))
+            .await
+            .expect("query ok");
+        assert!(
+            json_of(&q).to_string().contains("roadmap"),
+            "tagged triple must be queryable after tag_add: {}",
+            json_of(&q)
         );
     }
 }

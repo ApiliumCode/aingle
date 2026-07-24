@@ -134,6 +134,63 @@ pub async fn list_predicates(
     Ok(ListPredicatesResponse { predicates, total })
 }
 
+/// List every distinct tag in the vault with the number of notes carrying it.
+///
+/// Tags are the objects of `tagged` triples (frontmatter `tags:` + inline
+/// `#tag`, per the ingest extractor). A triple whose subject (the note path)
+/// falls under an excluded folder is dropped BEFORE counting, so a tag that
+/// only lives on hidden notes never surfaces and a tag shared by hidden and
+/// visible notes reports only its visible count. Results are sorted by tag.
+#[cfg(feature = "mcp")]
+pub async fn list_tags(
+    state: &AppState,
+    pol: &crate::mcp::policy::McpPolicy,
+) -> Result<Vec<(String, usize)>> {
+    let graph = state.graph.read().await;
+    let triples = graph.find(TriplePattern::any().with_predicate(Predicate::named("tagged")))?;
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for t in triples {
+        // The subject is the note path (rendered `<path>`); hide tags on notes
+        // under an excluded folder.
+        if pol.is_hidden(&t.subject.to_string()) {
+            continue;
+        }
+        if let Some(tag) = crate::service::triple_util::obj_string(&t) {
+            if !tag.is_empty() {
+                *counts.entry(tag).or_insert(0) += 1;
+            }
+        }
+    }
+    Ok(counts.into_iter().collect())
+}
+
+/// List every distinct folder (directory prefix) in the vault.
+///
+/// Derived from the ingested source registry: each source path contributes all
+/// of its directory prefixes (e.g. `a/b/note.md` → `a`, `a/b`). Any prefix that
+/// is itself an excluded folder (or under one) is dropped. Results are sorted.
+#[cfg(feature = "mcp")]
+pub async fn list_folders(
+    state: &AppState,
+    pol: &crate::mcp::policy::McpPolicy,
+) -> Result<Vec<String>> {
+    let sources = crate::service::ingest::list_sources(state).await?;
+    let mut folders: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for s in sources {
+        let path = s.path.replace('\\', "/");
+        let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+        // Every ancestor directory of the file (all parts except the filename).
+        for i in 1..parts.len() {
+            let prefix = parts[..i].join("/");
+            if prefix.is_empty() || pol.is_hidden(&prefix) {
+                continue;
+            }
+            folders.insert(prefix);
+        }
+    }
+    Ok(folders.into_iter().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

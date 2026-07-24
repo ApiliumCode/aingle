@@ -11,6 +11,8 @@ pub mod git_provenance;
 pub mod ground;
 pub mod ingest;
 pub mod local_graph;
+#[cfg(feature = "mcp")]
+pub mod notes;
 pub mod path;
 pub mod proof;
 pub mod query;
