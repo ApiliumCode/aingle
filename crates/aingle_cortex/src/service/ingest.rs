@@ -330,11 +330,12 @@ pub async fn ingest_path_with_progress(
 
         if existing_hash.is_some() {
             purge_source(state, &rel_path, namespace.clone()).await?;
-            // Task nodes live under `task:` subjects that the note-scoped purge
-            // above intentionally leaves alone; reconcile them by diff so a
-            // task's signed history stays minimal — only the triples that
-            // actually changed are retracted, and unchanged tasks are untouched.
-            reconcile_note_tasks(state, &rel_path, &extraction.triples, namespace.clone()).await?;
+            // Task and card nodes live under `task:` / `card:` subjects that the
+            // note-scoped purge above intentionally leaves alone; reconcile them
+            // by diff so their signed history stays minimal — only the triples
+            // that actually changed are retracted (e.g. completing one task or
+            // rescheduling one card), and unchanged facts are untouched.
+            reconcile_note_facts(state, &rel_path, &extraction.triples, namespace.clone()).await?;
         }
 
         // Write structural triples
@@ -502,19 +503,27 @@ async fn purge_source(state: &AppState, rel_path: &str, namespace: Option<String
     Ok(())
 }
 
-/// Semantic identity of a task triple across re-ingests: subject + predicate +
-/// object text. An unchanged task triple keeps the same identity, so it is
-/// neither retracted nor re-signed.
-fn task_identity(subject: &str, predicate: &str, object: &str) -> String {
+/// Semantic identity of a task/card triple across re-ingests: the subject,
+/// predicate and object text together. An unchanged triple keeps the same
+/// identity, so it is neither retracted nor re-signed.
+fn fact_identity(subject: &str, predicate: &str, object: &str) -> String {
     format!("{subject}\u{1}{predicate}\u{1}{object}")
 }
 
-/// Reconcile a note's `task:` nodes on re-ingest: retract only the task triples
-/// the current content no longer produces, and leave the rest in place. Because
-/// each retraction and insert is a signed DAG action, this keeps a task's
-/// verifiable history minimal — completing a task is one `status` retract + one
-/// insert, not a churn of every task in the note; a removed task is tombstoned.
-async fn reconcile_note_tasks(
+/// Whether a subject is a note-scoped fact node reconciled by diff on re-ingest
+/// (a `task:` or `card:` node linked to its note via `in_note`).
+fn is_note_fact_subject(subject: &str) -> bool {
+    subject.starts_with("task:") || subject.starts_with("card:")
+}
+
+/// Reconcile a note's `task:` / `card:` nodes on re-ingest: retract only the
+/// triples the current content no longer produces, and leave the rest in place.
+/// Because each retraction and insert is a signed DAG action, this keeps a task's
+/// or card's verifiable history minimal — completing a task is one `status`
+/// retract + insert, and reviewing a card rewrites only that card's `card_*`
+/// facts, not a churn of every fact in the note; a removed task/card is
+/// tombstoned.
+async fn reconcile_note_facts(
     state: &AppState,
     rel_path: &str,
     new_triples: &[aingle_ingest::ProvenancedTriple],
@@ -523,21 +532,21 @@ async fn reconcile_note_tasks(
     use crate::service::triple_util::{obj_string, strip_brackets};
     use aingle_ingest::ObjectValue;
 
-    // Identity of every task triple the current content produces.
+    // Identity of every task/card triple the current content produces.
     let new_keys: std::collections::HashSet<String> = new_triples
         .iter()
-        .filter(|t| t.subject.starts_with("task:"))
+        .filter(|t| is_note_fact_subject(&t.subject))
         .map(|t| {
             let obj = match &t.object {
                 ObjectValue::Node(n) => n.as_str(),
                 ObjectValue::Text(s) => s.as_str(),
             };
-            task_identity(&t.subject, &t.predicate, obj)
+            fact_identity(&t.subject, &t.predicate, obj)
         })
         .collect();
 
-    // Existing task triples for this note (found via their `in_note` link) whose
-    // identity is no longer produced — these are the stale ones to retract.
+    // Existing task/card triples for this note (found via their `in_note` link)
+    // whose identity is no longer produced — the stale ones to retract.
     let stale_ids: Vec<String> = {
         let graph = state.graph.read().await;
         let subjects: std::collections::HashSet<String> = graph
@@ -546,7 +555,7 @@ async fn reconcile_note_tasks(
             .into_iter()
             .filter(|t| obj_string(t).as_deref() == Some(rel_path))
             .map(|t| strip_brackets(&t.subject.to_string()).to_string())
-            .filter(|s| s.starts_with("task:"))
+            .filter(|s| is_note_fact_subject(s))
             .collect();
 
         let mut stale = Vec::new();
@@ -557,7 +566,7 @@ async fn reconcile_note_tasks(
             {
                 let predicate = strip_brackets(t.predicate.as_ref());
                 let object = obj_string(&t).unwrap_or_default();
-                if !new_keys.contains(&task_identity(subj, predicate, &object)) {
+                if !new_keys.contains(&fact_identity(subj, predicate, &object)) {
                     stale.push(t.id().to_hex());
                 }
             }
@@ -764,6 +773,100 @@ mod tests {
         let rows = list_tasks(&state, None).await;
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].text, "Task B");
+    }
+
+    #[tokio::test]
+    async fn card_review_reconciles_only_the_changed_card() {
+        // Rewriting ONE card's SRS comment must retract/re-sign only that card's
+        // facts; every other card in the note is untouched (its triple ids are
+        // stable), so a review is minimal signed churn, not a re-sign of the deck.
+        use crate::service::cards::list_cards;
+        use crate::service::triple_util::obj_string;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        let state = enabled_state().await;
+
+        // Two cards, each with a sticky id so identity survives answer edits.
+        write(
+            dir.path(),
+            "deck.md",
+            "# Deck\n\n\
+             Q1 term #card <!-- srs id=aaaaaaaaaaaa ef=2.5 due=2026-07-20 -->\n\
+             Q2 term #card <!-- srs id=bbbbbbbbbbbb ef=2.5 due=2026-08-01 -->\n",
+        );
+        ingest_path(&state, path, None).await.unwrap();
+        let rows = list_cards(&state, "2026-07-24").await;
+        assert_eq!(rows.len(), 2);
+
+        // Snapshot Q2's `card_due` triple id — it must NOT change when only Q1 is reviewed.
+        let q2_due_id_before = card_field_triple_id(&state, "card:deck.md#bbbbbbbbbbbb", "card_due")
+            .await
+            .expect("Q2 card_due before");
+
+        // Review Q1: reschedule it (new due + ef), keep its front text and id.
+        write(
+            dir.path(),
+            "deck.md",
+            "# Deck\n\n\
+             Q1 term #card <!-- srs id=aaaaaaaaaaaa ef=2.8 due=2026-09-01 -->\n\
+             Q2 term #card <!-- srs id=bbbbbbbbbbbb ef=2.5 due=2026-08-01 -->\n",
+        );
+        ingest_path(&state, path, None).await.unwrap();
+
+        let rows = list_cards(&state, "2026-07-24").await;
+        assert_eq!(
+            rows.len(),
+            2,
+            "still exactly two cards — no orphans or duplicates"
+        );
+        let q1 = rows
+            .iter()
+            .find(|r| r.subject == "card:deck.md#aaaaaaaaaaaa")
+            .unwrap();
+        assert_eq!(q1.due.as_deref(), Some("2026-09-01"), "Q1 rescheduled");
+        assert_eq!(q1.ef.as_deref(), Some("2.8"));
+
+        // Exactly one `card_due` triple remains for Q1 (no stale one lingering).
+        {
+            let g = state.graph.read().await;
+            let dues = g
+                .find(
+                    TriplePattern::any()
+                        .with_subject(NodeId::named("card:deck.md#aaaaaaaaaaaa"))
+                        .with_predicate(Predicate::named("card_due")),
+                )
+                .unwrap();
+            assert_eq!(dues.len(), 1, "no stale card_due should remain for Q1");
+            assert_eq!(obj_string(&dues[0]).as_deref(), Some("2026-09-01"));
+        }
+
+        // Q2's `card_due` triple id is unchanged — it was neither retracted nor re-signed.
+        let q2_due_id_after = card_field_triple_id(&state, "card:deck.md#bbbbbbbbbbbb", "card_due")
+            .await
+            .expect("Q2 card_due after");
+        assert_eq!(
+            q2_due_id_before, q2_due_id_after,
+            "reviewing Q1 must not churn Q2's signed facts"
+        );
+    }
+
+    /// Hex id of the single triple `(subject, predicate, *)`, if present.
+    async fn card_field_triple_id(
+        state: &AppState,
+        subject: &str,
+        predicate: &str,
+    ) -> Option<String> {
+        let g = state.graph.read().await;
+        g.find(
+            TriplePattern::any()
+                .with_subject(NodeId::named(subject))
+                .with_predicate(Predicate::named(predicate)),
+        )
+        .ok()?
+        .into_iter()
+        .next()
+        .map(|t| t.id().to_hex())
     }
 
     #[tokio::test]

@@ -3,6 +3,7 @@
 
 //! Pure, deterministic structural extraction: `(path, content)` → triples + chunks.
 
+mod cards;
 mod chunk;
 mod markdown;
 mod tasks;
@@ -188,6 +189,92 @@ mod tests {
         // Non-recurring task emits no recur triple.
         let ex2 = extract("todos.md", "- [ ] plain task\n");
         assert!(!ex2.triples.iter().any(|t| t.predicate == "recur"));
+    }
+
+    #[test]
+    fn extracts_card_with_srs_state_and_status_facts() {
+        let md = "# Deck\n\n\
+                  What is the capital of France? Paris #card <!-- srs id=cafef00dcafe ef=2.6 int=4 reps=3 due=2026-08-01 last=2026-07-24 q=5 -->\n";
+        let ex = extract("deck.md", md);
+
+        // The card node lives under a sticky `card:` subject (the stored id wins).
+        let isa = ex
+            .triples
+            .iter()
+            .find(|t| t.predicate == "is_a" && t.object == ObjectValue::Text("card".into()))
+            .expect("card is_a triple");
+        let subj = isa.subject.clone();
+        assert_eq!(subj, "card:deck.md#cafef00dcafe", "id= in comment is sticky");
+        let has = |p: &str, o: ObjectValue| {
+            ex.triples
+                .iter()
+                .any(|t| t.subject == subj && t.predicate == p && t.object == o)
+        };
+        assert!(has(
+            "card_text",
+            ObjectValue::Text("What is the capital of France? Paris".into())
+        ));
+        assert!(has("card_cloze", ObjectValue::Text("false".into())));
+        assert!(has("in_note", ObjectValue::Node("deck.md".into())));
+        assert!(has("card_due", ObjectValue::Text("2026-08-01".into())));
+        assert!(has("card_ef", ObjectValue::Text("2.6".into())));
+        assert!(has("card_int", ObjectValue::Text("4".into())));
+        assert!(has("card_reps", ObjectValue::Text("3".into())));
+        assert!(has("card_last", ObjectValue::Text("2026-07-24".into())));
+        assert!(has("card_q", ObjectValue::Text("5".into())));
+    }
+
+    #[test]
+    fn cloze_line_sets_card_cloze_true_and_computes_identity() {
+        // No `#card` tag and no stored id → identity is blake3(front + occ).
+        let ex = extract("deck.md", "The capital of France is {{cloze Paris}}.\n");
+        let isa = ex
+            .triples
+            .iter()
+            .find(|t| t.predicate == "is_a" && t.object == ObjectValue::Text("card".into()))
+            .expect("card is_a triple");
+        assert!(isa.subject.starts_with("card:deck.md#"));
+        // No stored id → 12-hex computed suffix.
+        assert_eq!(isa.subject.rsplit('#').next().unwrap().len(), 12);
+        assert!(ex.triples.iter().any(|t| t.subject == isa.subject
+            && t.predicate == "card_cloze"
+            && t.object == ObjectValue::Text("true".into())));
+        // A cloze card with no comment emits no SRS facts.
+        assert!(!ex.triples.iter().any(|t| t.predicate == "card_due"));
+    }
+
+    #[test]
+    fn duplicate_card_front_yields_distinct_nodes() {
+        let ex = extract("deck.md", "Term A #card\nTerm A #card\n");
+        let subjects: std::collections::BTreeSet<_> = ex
+            .triples
+            .iter()
+            .filter(|t| t.predicate == "is_a" && t.object == ObjectValue::Text("card".into()))
+            .map(|t| t.subject.clone())
+            .collect();
+        assert_eq!(
+            subjects.len(),
+            2,
+            "identical card fronts must not collapse to one node"
+        );
+    }
+
+    #[test]
+    fn fenced_code_is_not_a_card() {
+        let md = "real #card\n\n\
+                  ```md\n\
+                  code sample #card\n\
+                  {{cloze hidden}}\n\
+                  ```\n";
+        let ex = extract("deck.md", md);
+        assert_eq!(
+            ex.triples
+                .iter()
+                .filter(|t| t.predicate == "is_a" && t.object == ObjectValue::Text("card".into()))
+                .count(),
+            1,
+            "only the card outside the fence becomes a node"
+        );
     }
 
     #[test]

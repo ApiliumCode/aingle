@@ -4,6 +4,7 @@
 //! Business-logic layer shared by REST handlers and the MCP server.
 
 pub mod backlinks;
+pub mod cards;
 pub mod context;
 #[cfg(feature = "dag")]
 pub mod dag;

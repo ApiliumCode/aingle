@@ -318,6 +318,52 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
+    /// All spaced-repetition card facts extracted from the vault.
+    #[tool(
+        description = "All spaced-repetition card facts extracted from the vault. Each card \
+            carries its front text, whether it is a cloze card, its scheduling state \
+            (ease/interval/reps/due/last review/last grade when present), a status derived \
+            against `today` (new|due|scheduled), and a signed-provenance anchor when \
+            available. `today` is an ISO YYYY-MM-DD reference day. Use to browse or board a \
+            vault's flashcards.",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_cards(
+        &self,
+        params: Parameters<CardsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let mut rows = crate::service::cards::list_cards(&self.state, &p.today).await;
+        let pol = self.state.mcp_policy_snapshot();
+        rows.retain(|r| r.note.as_deref().map(|n| !pol.is_hidden(n)).unwrap_or(true));
+        Ok(CallToolResult::success(vec![Content::json(rows)?]))
+    }
+
+    /// Cards bucketed for a review session against a reference day: due / new / scheduled.
+    #[tool(
+        description = "Cards bucketed for a review session against a reference day (`today`, \
+            ISO YYYY-MM-DD): `due` (due on/before today), `new` (never scheduled), and \
+            `scheduled` (due after today). Each card carries its front text, cloze flag, \
+            scheduling state, and signed-provenance anchor when available. Use to drive or \
+            answer what is due for review now (study `due` + `new`).",
+        annotations(read_only_hint = true)
+    )]
+    async fn aingle_due_cards(
+        &self,
+        params: Parameters<DueCardsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(p) = params;
+        let mut resp = crate::service::cards::due_cards(&self.state, &p.today).await;
+        let pol = self.state.mcp_policy_snapshot();
+        let prune = |v: &mut Vec<crate::service::cards::CardRow>| {
+            v.retain(|r| r.note.as_deref().map(|n| !pol.is_hidden(n)).unwrap_or(true));
+        };
+        prune(&mut resp.due);
+        prune(&mut resp.new);
+        prune(&mut resp.scheduled);
+        Ok(CallToolResult::success(vec![Content::json(resp)?]))
+    }
+
     /// Verified context bundle for a note: semantically-related notes (by meaning,
     /// not just links) with the matching passage and signed provenance.
     #[tool(
@@ -1176,6 +1222,20 @@ pub struct AgendaParams {
     pub horizon_days: Option<i64>,
 }
 
+/// Parameters for the `aingle_cards` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct CardsParams {
+    /// Reference day as ISO `YYYY-MM-DD`; each card's status is derived against it.
+    pub today: String,
+}
+
+/// Parameters for the `aingle_due_cards` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct DueCardsParams {
+    /// Reference day as ISO `YYYY-MM-DD`; cards bucket relative to it.
+    pub today: String,
+}
+
 /// Parameters for the `aingle_note_context` tool.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 pub struct NoteContextParams {
@@ -1290,6 +1350,8 @@ mod ingest_tools_tests {
             "aingle_path",
             "aingle_tasks",
             "aingle_agenda",
+            "aingle_cards",
+            "aingle_due_cards",
             "aingle_list_tags",
             "aingle_list_folders",
             "aingle_edit_note",
@@ -1654,6 +1716,103 @@ mod policy_enforcement_tests {
             !dump.contains("Private"),
             "excluded path must not leak: {dump}"
         );
+    }
+
+    /// A ready state whose graph has ingested a deck of cards: some in an
+    /// excluded folder and some public. Returns the MCP handle and the temp dir.
+    async fn cards_mcp() -> (AingleMcp, tempfile::TempDir) {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Notes")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Private")).unwrap();
+        std::fs::write(
+            dir.path().join("Notes").join("deck.md"),
+            "# Deck\n\n\
+             Due card #card <!-- srs id=aaaaaaaaaaaa ef=2.5 due=2026-07-20 -->\n\
+             The capital is {{cloze Paris}}. #card <!-- srs id=bbbbbbbbbbbb ef=2.5 due=2026-08-01 -->\n\
+             Fresh card #card\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Private").join("secret.md"),
+            "# Secret\n\nSecret card #card <!-- srs id=cccccccccccc ef=2.5 due=2026-07-19 -->\n",
+        )
+        .unwrap();
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Private".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        (AingleMcp::new(state), dir)
+    }
+
+    /// `aingle_cards` lists every card with its fields, and drops any card whose
+    /// note lives under an excluded folder.
+    #[tokio::test]
+    async fn cards_tool_returns_fields_and_hides_excluded() {
+        let (mcp, _dir) = cards_mcp().await;
+        let result = mcp
+            .aingle_cards(Parameters(CardsParams {
+                today: "2026-07-24".into(),
+            }))
+            .await
+            .expect("aingle_cards ok");
+        let payload = json_of(&result);
+        let rows = payload.as_array().expect("cards is an array");
+        assert_eq!(rows.len(), 3, "three public cards: {rows:?}");
+
+        let cloze = rows
+            .iter()
+            .find(|r| r.get("cloze").and_then(|c| c.as_bool()) == Some(true))
+            .expect("a cloze card");
+        assert!(cloze
+            .get("text")
+            .and_then(|t| t.as_str())
+            .unwrap()
+            .contains("{{cloze Paris}}"));
+
+        let dump = payload.to_string().replace('\\', "/");
+        assert!(!dump.contains("Secret card"), "excluded card hidden: {dump}");
+        assert!(!dump.contains("Private"), "excluded path must not leak: {dump}");
+    }
+
+    /// `aingle_due_cards` buckets cards for review against `today`: due / new /
+    /// scheduled, hiding excluded folders.
+    #[tokio::test]
+    async fn due_cards_tool_buckets_by_status() {
+        let (mcp, _dir) = cards_mcp().await;
+        let result = mcp
+            .aingle_due_cards(Parameters(DueCardsParams {
+                today: "2026-07-24".into(),
+            }))
+            .await
+            .expect("aingle_due_cards ok");
+        let payload = json_of(&result);
+        let bucket = |name: &str| -> Vec<String> {
+            payload
+                .get(name)
+                .and_then(|v| v.as_array())
+                .expect("bucket array")
+                .iter()
+                .filter_map(|r| r.get("text").and_then(|t| t.as_str()).map(String::from))
+                .collect()
+        };
+        assert_eq!(bucket("due"), ["Due card"], "due-on/before-today card");
+        assert_eq!(bucket("new"), ["Fresh card"], "unscheduled card");
+        assert_eq!(
+            bucket("scheduled"),
+            ["The capital is {{cloze Paris}}."],
+            "future card"
+        );
+        let dump = payload.to_string().replace('\\', "/");
+        assert!(!dump.contains("Secret card"), "excluded card hidden: {dump}");
     }
 
     /// Under the default (ReadOnly) policy a mutation tool returns an error

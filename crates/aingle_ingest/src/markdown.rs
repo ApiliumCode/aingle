@@ -69,6 +69,7 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
     // facts; `task_occ` disambiguates repeated task text within the note.
     let mut in_fence = false;
     let mut task_occ: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    let mut card_occ: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for (i, line) in lines.iter().enumerate().skip(body_start) {
         let line_no = (i + 1) as u32;
 
@@ -154,6 +155,66 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
                     _ => "low",
                 };
                 emit("priority", ObjectValue::Text(semantic.into()));
+            }
+        }
+
+        // A card line (`#card` tag or a `{{cloze …}}`) emits a `card:` node whose
+        // identity mirrors the task scheme: the blake3 of its front text plus its
+        // occurrence index within the note — stable across answer/schedule edits
+        // (so a review is a `card_*` retract+insert on the same node, one signed
+        // DAG action, not a new node) yet distinct for two cards with identical
+        // fronts. Identity is STICKY: if the SRS comment carries an `id=`, that
+        // stored id is the subject verbatim, so editing the answer preserves the
+        // card's identity and schedule. The line's wikilinks/tags above still
+        // attach to the note itself. Date-dependent `card_status` is derived at
+        // query time (like the task agenda), not stored here — only the raw SRS
+        // facts are emitted so extraction stays deterministic.
+        if let Some(card) = crate::cards::parse_card(line) {
+            let occ = {
+                let entry = card_occ.entry(card.front.clone()).or_insert(0);
+                let v = *entry;
+                *entry += 1;
+                v
+            };
+            let id = card.id.clone().unwrap_or_else(|| {
+                let hex = blake3::hash(format!("{}\u{0}{occ}", card.front).as_bytes()).to_hex();
+                hex[..12].to_string()
+            });
+            let subject = format!("card:{path}#{id}");
+            let mut emit = |predicate: &str, object: ObjectValue| {
+                out.push(ProvenancedTriple {
+                    subject: subject.clone(),
+                    predicate: predicate.into(),
+                    object,
+                    provenance: prov(path, hash, line_no),
+                });
+            };
+            emit("is_a", ObjectValue::Text("card".into()));
+            emit("card_text", ObjectValue::Text(card.front.clone()));
+            emit("in_note", ObjectValue::Node(path.into()));
+            emit(
+                "card_cloze",
+                ObjectValue::Text(if card.cloze { "true" } else { "false" }.into()),
+            );
+            if let Some(srs) = &card.srs {
+                if let Some(v) = &srs.due {
+                    emit("card_due", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.ef {
+                    emit("card_ef", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.int {
+                    emit("card_int", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.reps {
+                    emit("card_reps", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.last {
+                    emit("card_last", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.q {
+                    emit("card_q", ObjectValue::Text(v.clone()));
+                }
             }
         }
     }

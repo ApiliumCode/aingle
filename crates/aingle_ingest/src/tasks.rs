@@ -82,7 +82,7 @@ fn status_from_checkbox(c: char) -> TaskStatus {
 
 /// Cheap validity check for a `YYYY-MM-DD` already matched by the date regex:
 /// month 1–12, day 1–31. Keeps `aingle_ingest` dependency-free (no chrono).
-fn valid_date(s: &str) -> bool {
+pub(crate) fn valid_date(s: &str) -> bool {
     if s.len() != 10 {
         return false;
     }
