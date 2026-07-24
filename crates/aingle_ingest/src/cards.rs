@@ -32,7 +32,16 @@ static CARD_TAG: Lazy<Regex> =
 // multiple clozes on one line stay separate).
 static CLOZE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{\{cloze\s+(.*?)\}\}").unwrap());
 // The single-line SRS state comment; its flat `key=value` body is captured.
-static SRS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?s)<!--\s*srs\b(.*?)-->").unwrap());
+// Anchored to end-of-line (`-->\s*$`) so ONLY a trailing (or standalone
+// full-line) comment is recognized as SRS state — a comment in the MIDDLE of a
+// line, with other text after it, is left untouched in the front text. This
+// mirrors the client, keeping the `blake3(front\0occ)` identity in sync.
+static SRS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?s)<!--\s*srs\b(.*?)-->\s*$").unwrap());
+// A stored sticky `id=` is only trusted when it is exactly 12 lowercase hex
+// digits — the shape of a computed `blake3(front\0occ)[..12]` suffix. Anything
+// else (hand-authored, containing `-->`, non-hex) is ignored so a malformed id
+// never becomes the card subject verbatim; the same guard runs client-side.
+static STICKY_ID: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[0-9a-f]{12}$").unwrap());
 
 /// One cloze deletion parsed from a card line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,7 +155,10 @@ pub fn parse_card(line: &str) -> Option<ParsedCard> {
                 last: date("last"),
                 q: num("q"),
             };
-            (map.get("id").filter(|v| !v.is_empty()).cloned(), Some(srs))
+            (
+                map.get("id").filter(|v| STICKY_ID.is_match(v)).cloned(),
+                Some(srs),
+            )
         }
         None => (None, None),
     };
@@ -239,7 +251,7 @@ mod tests {
     #[test]
     fn srs_comment_populates_fields() {
         let p = c(
-            "Fact #card <!-- srs id=deadbeef ef=2.6 int=4 reps=3 due=2026-08-01 last=2026-07-24 q=5 -->",
+            "Fact #card <!-- srs id=deadbeefcafe ef=2.6 int=4 reps=3 due=2026-08-01 last=2026-07-24 q=5 -->",
         );
         let s = p.srs.expect("srs state");
         assert_eq!(s.ef.as_deref(), Some("2.6"));
@@ -248,7 +260,50 @@ mod tests {
         assert_eq!(s.due.as_deref(), Some("2026-08-01"));
         assert_eq!(s.last.as_deref(), Some("2026-07-24"));
         assert_eq!(s.q.as_deref(), Some("5"));
-        assert_eq!(p.id.as_deref(), Some("deadbeef"));
+        assert_eq!(p.id.as_deref(), Some("deadbeefcafe"));
+    }
+
+    #[test]
+    fn mid_line_srs_comment_is_not_parsed_and_stays_in_front() {
+        // FIX F2: a comment in the MIDDLE of a line (text follows the `-->`) is
+        // NOT SRS state and is NOT stripped — matching the client, so the front
+        // (and thus `blake3(front\0occ)` identity) stays in sync.
+        let line = "Foo <!-- srs id=aaaaaaaaaaaa ef=1.3 due=2000-01-01 --> bar #card";
+        let p = c(line);
+        assert_eq!(p.id, None, "mid-line comment yields no sticky id");
+        assert_eq!(p.srs, None, "mid-line comment is not SRS schedule state");
+        // The comment text stays in the front, exactly as the client keeps it.
+        assert_eq!(
+            p.front,
+            "Foo <!-- srs id=aaaaaaaaaaaa ef=1.3 due=2000-01-01 --> bar"
+        );
+    }
+
+    #[test]
+    fn trailing_srs_comment_is_parsed_and_stripped() {
+        // FIX F2: a genuine trailing end-of-line comment IS parsed and removed.
+        let p = c("Q #card <!-- srs id=aaaaaaaaaaaa ef=2.5 int=6 due=2026-08-01 -->");
+        let s = p.srs.expect("trailing srs parsed");
+        assert_eq!(s.ef.as_deref(), Some("2.5"));
+        assert_eq!(s.int.as_deref(), Some("6"));
+        assert_eq!(s.due.as_deref(), Some("2026-08-01"));
+        assert_eq!(p.id.as_deref(), Some("aaaaaaaaaaaa"));
+        assert_eq!(p.front, "Q", "trailing comment and tag stripped from front");
+    }
+
+    #[test]
+    fn sticky_id_must_be_twelve_lowercase_hex() {
+        // FIX F3: only `^[0-9a-f]{12}$` is honored as a sticky id.
+        let ok = c("Q #card <!-- srs id=438fb9dd0ec3 ef=2.5 -->");
+        assert_eq!(ok.id.as_deref(), Some("438fb9dd0ec3"));
+
+        // Too short / uppercase / non-hex / injection / empty all fall back to
+        // the computed suffix (i.e. `id == None`, so markdown.rs computes it).
+        assert_eq!(c("Q #card <!-- srs id=ABC ef=2.5 -->").id, None);
+        assert_eq!(c("Q #card <!-- srs id=abcdef ef=2.5 -->").id, None);
+        assert_eq!(c("Q #card <!-- srs id=x-->evil ef=2.5 -->").id, None);
+        assert_eq!(c("Q #card <!-- srs id= ef=2.5 -->").id, None);
+        assert_eq!(c("Q #card <!-- srs id=438fb9dd0ecg ef=2.5 -->").id, None);
     }
 
     #[test]
