@@ -533,10 +533,9 @@ impl AingleMcp {
                 ))]));
             }
         };
-        let res =
-            crate::service::notes::edit_note(&self.state, &p.note, mode, &p.text, p.dry_run)
-                .await
-                .map_err(super::convert::to_mcp_error)?;
+        let res = crate::service::notes::edit_note(&self.state, &p.note, mode, &p.text, p.dry_run)
+            .await
+            .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(res)?]))
     }
 
@@ -615,6 +614,52 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(
             serde_json::json!({ "created": created }),
         )?]))
+    }
+
+    /// Stage a proposed note into the vault's `_inbox/` for human review.
+    ///
+    /// Mutation: not read-only (it writes a staging file). Non-destructive: the
+    /// file name is uniquified so an existing pending proposal is never
+    /// overwritten. The staged note is NOT ingested or signed — the ingest walk
+    /// skips top-level `_inbox/`, so it stays out of the graph until a human
+    /// approves and moves it out (that approval flow lives in the app).
+    #[tool(
+        description = "Stage a PROPOSED note into the vault's `_inbox/` for human review. Use \
+            this to add externally-sourced content (a web clip, an external AI's draft): the \
+            note is written to `_inbox/<name>.md` with `status: pending` frontmatter and is \
+            NOT indexed or signed until a human approves it and moves it out of `_inbox/`. \
+            Provide `source` (URL/app/agent) and optional `tags`. Pass a stable \
+            `idempotency_key` so a retried call returns the already-staged note instead of \
+            writing a duplicate. The suggested `name` is sanitized into a safe filename.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false
+        )
+    )]
+    async fn aingle_propose_note(
+        &self,
+        params: Parameters<ProposeNoteParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !self.state.mcp_policy_snapshot().allows_mutation() {
+            return Ok(read_only_denied());
+        }
+        let Parameters(p) = params;
+        let tags = p.tags.unwrap_or_default();
+        let res = crate::service::notes::propose_note(
+            &self.state,
+            &p.name,
+            &p.content,
+            p.source.as_deref(),
+            // `clipped` is not exposed as a tool param; the app/clipper that
+            // pre-builds frontmatter can include it there instead.
+            None,
+            &tags,
+            p.idempotency_key.as_deref(),
+        )
+        .await
+        .map_err(super::convert::to_mcp_error)?;
+        Ok(CallToolResult::success(vec![Content::json(res)?]))
     }
 
     /// Insert a triple (subject, predicate, object) into the graph.
@@ -1176,6 +1221,26 @@ pub struct CreateFolderParams {
     pub path: String,
 }
 
+/// Parameters for the `aingle_propose_note` tool.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+pub struct ProposeNoteParams {
+    /// Suggested note name/title; sanitized into a safe `_inbox/<name>.md` filename.
+    pub name: String,
+    /// The note body (markdown). If it does not already begin with a `---`
+    /// frontmatter block, one is added (`source`, `status: pending`, `tags`).
+    pub content: String,
+    /// Where the content came from (URL, app, or agent) — recorded in frontmatter.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Optional tags to record in the staged note's frontmatter.
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    /// Optional idempotency key: a repeated call with the same key returns the
+    /// already-staged note instead of writing a duplicate.
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+}
+
 /// Parameters for the `aingle_path` tool.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 pub struct PathParams {
@@ -1231,6 +1296,7 @@ mod ingest_tools_tests {
             "aingle_tag_add",
             "aingle_tag_remove",
             "aingle_create_folder",
+            "aingle_propose_note",
         ] {
             assert!(
                 names.contains(&expected.to_string()),
@@ -1502,7 +1568,10 @@ mod policy_enforcement_tests {
             "excluded-folder task must be hidden: {texts:?}"
         );
         let dump = json_of(&result).to_string().replace('\\', "/");
-        assert!(!dump.contains("Private"), "must not leak excluded path: {dump}");
+        assert!(
+            !dump.contains("Private"),
+            "must not leak excluded path: {dump}"
+        );
 
         // Field shape: the high-priority overdue task keeps its status/priority/due.
         let overdue = rows
@@ -1510,7 +1579,10 @@ mod policy_enforcement_tests {
             .find(|r| r.get("text").and_then(|t| t.as_str()) == Some("Overdue thing"))
             .expect("overdue task present");
         assert_eq!(overdue.get("status").and_then(|v| v.as_str()), Some("todo"));
-        assert_eq!(overdue.get("priority").and_then(|v| v.as_str()), Some("high"));
+        assert_eq!(
+            overdue.get("priority").and_then(|v| v.as_str()),
+            Some("high")
+        );
         assert_eq!(
             overdue.get("deadline").and_then(|v| v.as_str()),
             Some("2026-07-20")
@@ -1570,9 +1642,18 @@ mod policy_enforcement_tests {
         // The excluded-folder task (due 2026-07-25, would be upcoming) and the
         // done task never surface, and the excluded path never leaks.
         let dump = payload.to_string().replace('\\', "/");
-        assert!(!dump.contains("Secret task"), "excluded task hidden: {dump}");
-        assert!(!dump.contains("Done thing"), "closed task not in agenda: {dump}");
-        assert!(!dump.contains("Private"), "excluded path must not leak: {dump}");
+        assert!(
+            !dump.contains("Secret task"),
+            "excluded task hidden: {dump}"
+        );
+        assert!(
+            !dump.contains("Done thing"),
+            "closed task not in agenda: {dump}"
+        );
+        assert!(
+            !dump.contains("Private"),
+            "excluded path must not leak: {dump}"
+        );
     }
 
     /// Under the default (ReadOnly) policy a mutation tool returns an error
@@ -1839,7 +1920,10 @@ mod policy_enforcement_tests {
             .iter()
             .filter_map(|r| r.get("tag").and_then(|t| t.as_str()).map(String::from))
             .collect();
-        assert!(tags.iter().any(|t| t == "roadmap"), "public tag visible: {tags:?}");
+        assert!(
+            tags.iter().any(|t| t == "roadmap"),
+            "public tag visible: {tags:?}"
+        );
         assert!(
             !tags.iter().any(|t| t == "money"),
             "excluded-folder tag must be hidden: {tags:?}"
@@ -1858,7 +1942,10 @@ mod policy_enforcement_tests {
             .iter()
             .filter_map(|v| v.as_str().map(|s| s.replace('\\', "/")))
             .collect();
-        assert!(folders.iter().any(|f| f == "Public"), "public folder: {folders:?}");
+        assert!(
+            folders.iter().any(|f| f == "Public"),
+            "public folder: {folders:?}"
+        );
         assert!(
             !folders.iter().any(|f| f.starts_with("Personal/Finanzas")),
             "excluded folder must be hidden: {folders:?}"
@@ -1896,7 +1983,82 @@ mod policy_enforcement_tests {
         );
         // The file must be untouched by the denied edit.
         let on_disk = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
-        assert!(!on_disk.contains("sneaky"), "denied edit must not write: {on_disk}");
+        assert!(
+            !on_disk.contains("sneaky"),
+            "denied edit must not write: {on_disk}"
+        );
+    }
+
+    /// The propose-note tool must refuse to stage under the read-only default
+    /// policy, leaving `_inbox/` empty.
+    #[tokio::test]
+    async fn propose_note_denied_under_read_only_default() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        state.set_vault_root(dir.path().to_path_buf());
+        let mcp = AingleMcp::new(state); // default policy = ReadOnly
+
+        let result = mcp
+            .aingle_propose_note(Parameters(ProposeNoteParams {
+                name: "clip".into(),
+                content: "sneaky body".into(),
+                source: Some("https://example.com".into()),
+                tags: None,
+                idempotency_key: None,
+            }))
+            .await
+            .expect("tool returns a result (not a protocol error)");
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "read-only default must deny proposing a note: {result:?}"
+        );
+        // Nothing was staged.
+        assert!(
+            !dir.path().join("_inbox").exists(),
+            "denied proposal must not create _inbox"
+        );
+    }
+
+    /// End-to-end through the tool: with ReadWrite enabled, `aingle_propose_note`
+    /// stages a pending note into `_inbox/` without indexing it.
+    #[tokio::test]
+    async fn propose_note_tool_stages_under_read_write() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        state.set_vault_root(dir.path().to_path_buf());
+        state.set_mcp_policy(McpPolicy {
+            permission: Permission::ReadWrite,
+            ..Default::default()
+        });
+        let mcp = AingleMcp::new(state);
+
+        let result = mcp
+            .aingle_propose_note(Parameters(ProposeNoteParams {
+                name: "web idea".into(),
+                content: "Clipped content.".into(),
+                source: Some("https://example.com/x".into()),
+                tags: Some(vec!["research".into()]),
+                idempotency_key: Some("k1".into()),
+            }))
+            .await
+            .expect("propose_note ok");
+        assert_ne!(
+            result.is_error,
+            Some(true),
+            "read-write must allow: {result:?}"
+        );
+        let payload = json_of(&result);
+        let rel = payload.get("rel_path").and_then(|v| v.as_str()).unwrap();
+        assert!(rel.starts_with("_inbox/"), "staged under _inbox: {payload}");
+        assert!(
+            dir.path().join(rel).exists(),
+            "file staged on disk: {payload}"
+        );
     }
 
     /// End-to-end through the tool: with ReadWrite enabled, `aingle_tag_add`

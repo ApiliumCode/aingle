@@ -44,6 +44,16 @@ pub struct EditResult {
     pub changed: bool,
 }
 
+/// Outcome of staging a proposed note into the review inbox (`_inbox/`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProposeResult {
+    /// Vault-relative path of the staged note (always under `_inbox/`).
+    pub rel_path: String,
+    /// Whether a new file was written. `false` when an `idempotency_key`
+    /// matched an already-staged proposal, so nothing new was written.
+    pub created: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Pure content transforms (unit-tested; no filesystem, no graph).
 // ---------------------------------------------------------------------------
@@ -279,6 +289,236 @@ pub async fn create_folder(state: &AppState, rel: &str) -> Result<String> {
     Ok(rel_norm)
 }
 
+/// Stage a *proposed* note into the vault's review inbox (`_inbox/<name>.md`).
+///
+/// This is the entry point a Web Clipper / external AI uses to add content that
+/// a human reviews before it becomes part of the vault. Unlike [`edit_note`],
+/// this deliberately does **not** ingest: the ingest walk skips top-level
+/// `_inbox/`, so a staged note stays unindexed and unsigned until a human
+/// approves it and moves it out of `_inbox/` (that approval flow lives in the
+/// app, not here).
+///
+/// - `name` is sanitized into a safe `_inbox/<name>.md` filename: path
+///   separators, `..`, control chars, and reserved characters are stripped or
+///   replaced; an empty result falls back to `source` then a default. The file
+///   name is uniquified so an existing pending proposal is never clobbered.
+/// - If `content` does not already begin with a `---` frontmatter block, one is
+///   prepended (`source`, `status: pending`, optional `clipped`, and `tags`),
+///   kept FLAT-scalar so the ordinary ingest can extract it later. Values are
+///   sanitized so they cannot break a flat `key: value` line.
+/// - When `idempotency_key` is set, a repeated call whose key already staged a
+///   (still-present) note returns that note's path with `created: false` instead
+///   of writing a duplicate (MV3 service workers can double-send).
+pub async fn propose_note(
+    state: &AppState,
+    name: &str,
+    content: &str,
+    source: Option<&str>,
+    clipped: Option<&str>,
+    tags: &[String],
+    idempotency_key: Option<&str>,
+) -> Result<ProposeResult> {
+    let root = vault_root(state)?;
+    let inbox = root.join("_inbox");
+
+    // Idempotency: a prior call with this key that produced a still-present note
+    // returns that note rather than staging a duplicate.
+    if let Some(key) = idempotency_key {
+        if let Some(existing) = lookup_idempotent(&root, &inbox, key) {
+            return Ok(ProposeResult {
+                rel_path: existing,
+                created: false,
+            });
+        }
+    }
+
+    let stem = safe_stem(name, source);
+    let (final_path, file_name) = unique_inbox_path(&inbox, &stem);
+    let rel = format!("_inbox/{file_name}");
+
+    // Defense in depth: the resolved staging path must stay within the vault.
+    // (`_inbox/` is the intended target and is NOT rejected via `is_hidden`.)
+    let _ = resolve_in_root(&root, &rel)?;
+
+    // Wrap with flat-scalar frontmatter unless the caller already built one.
+    let body = if has_leading_frontmatter(content) {
+        content.to_string()
+    } else {
+        wrap_frontmatter(content, source, clipped, tags)
+    };
+
+    std::fs::create_dir_all(&inbox)
+        .map_err(|e| Error::Internal(format!("cannot create _inbox staging folder: {e}")))?;
+    std::fs::write(&final_path, &body)
+        .map_err(|e| Error::Internal(format!("cannot stage proposed note '{rel}': {e}")))?;
+
+    // Record the idempotency marker only after a successful write (best-effort:
+    // a failed marker write must not undo a successfully staged note).
+    if let Some(key) = idempotency_key {
+        record_idempotent(&inbox, key, &rel);
+    }
+
+    Ok(ProposeResult {
+        rel_path: rel,
+        created: true,
+    })
+}
+
+/// True when `content`'s first line is a bare `---` (a leading frontmatter
+/// fence), mirroring the ingest frontmatter detector.
+fn has_leading_frontmatter(content: &str) -> bool {
+    content.lines().next().map(|l| l.trim_end()) == Some("---")
+}
+
+/// Sanitize `content`-external text into a flat `key: value` scalar: control
+/// characters (including newlines) become spaces and the result is trimmed, so
+/// it can never break the single-line frontmatter it is written into.
+fn flat_value(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// Sanitize a tag into a flat list element: strip control chars and the list
+/// delimiters `,[]` (which would break `tags: [..]`), drop a leading `#`.
+fn flat_tag(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            c if c.is_control() => ' ',
+            ',' | '[' | ']' => ' ',
+            c => c,
+        })
+        .collect::<String>()
+        .trim()
+        .trim_start_matches('#')
+        .trim()
+        .to_string()
+}
+
+/// Build a flat-scalar frontmatter block and prepend it to `content`.
+fn wrap_frontmatter(
+    content: &str,
+    source: Option<&str>,
+    clipped: Option<&str>,
+    tags: &[String],
+) -> String {
+    let mut fm = String::from("---\n");
+    if let Some(src) = source {
+        let v = flat_value(src);
+        if !v.is_empty() {
+            fm.push_str(&format!("source: {v}\n"));
+        }
+    }
+    fm.push_str("status: pending\n");
+    if let Some(c) = clipped {
+        let v = flat_value(c);
+        if !v.is_empty() {
+            fm.push_str(&format!("clipped: {v}\n"));
+        }
+    }
+    let clean_tags: Vec<String> = tags
+        .iter()
+        .map(|t| flat_tag(t))
+        .filter(|t| !t.is_empty())
+        .collect();
+    if !clean_tags.is_empty() {
+        fm.push_str(&format!("tags: [{}]\n", clean_tags.join(", ")));
+    }
+    fm.push_str("---\n\n");
+    fm.push_str(content);
+    fm
+}
+
+/// Sanitize a proposed `name` into a safe file stem (no extension). Falls back
+/// to `source`, then a fixed default, when `name` sanitizes to nothing.
+fn safe_stem(name: &str, source: Option<&str>) -> String {
+    if let Some(s) = clean_stem(name) {
+        return s;
+    }
+    if let Some(src) = source {
+        if let Some(s) = clean_stem(src) {
+            return s;
+        }
+    }
+    "proposed-note".to_string()
+}
+
+/// Clean a raw string into a safe filename stem, or `None` if nothing usable
+/// remains. Reserved/hostile characters are replaced, control chars dropped, a
+/// trailing `.md` removed, leading/trailing dots stripped (so `.`/`..` collapse
+/// to empty), and length capped.
+fn clean_stem(raw: &str) -> Option<String> {
+    let mut out = String::new();
+    for c in raw.chars() {
+        match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => out.push('-'),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    let trimmed = out.trim();
+    let trimmed = trimmed.strip_suffix(".md").unwrap_or(trimmed);
+    let cleaned = trimmed.trim().trim_matches('.').trim();
+    let capped: String = cleaned.chars().take(120).collect();
+    let capped = capped.trim().trim_matches('.').trim().to_string();
+    if capped.is_empty() {
+        None
+    } else {
+        Some(capped)
+    }
+}
+
+/// Choose a non-clobbering `<stem>.md` (then `<stem>-2.md`, ...) inside `inbox`.
+fn unique_inbox_path(inbox: &std::path::Path, stem: &str) -> (std::path::PathBuf, String) {
+    let first = format!("{stem}.md");
+    if !inbox.join(&first).exists() {
+        return (inbox.join(&first), first);
+    }
+    for n in 2..100_000 {
+        let name = format!("{stem}-{n}.md");
+        if !inbox.join(&name).exists() {
+            return (inbox.join(&name), name);
+        }
+    }
+    // Practically unreachable fallback: a content-derived unique suffix.
+    let name = format!("{stem}-{}.md", blake3::hash(stem.as_bytes()).to_hex());
+    (inbox.join(&name), name)
+}
+
+/// Filesystem path of the idempotency marker for `key`, kept under a dot-folder
+/// inside `_inbox/` (itself unindexed) so it never leaks into the graph.
+fn idempotency_marker(inbox: &std::path::Path, key: &str) -> std::path::PathBuf {
+    let hash = blake3::hash(key.as_bytes()).to_hex().to_string();
+    inbox.join(".aingle").join("idempotency").join(hash)
+}
+
+/// Return the vault-relative path a prior call with `key` staged, but only if
+/// that note file still exists (a removed note lets a fresh proposal proceed).
+fn lookup_idempotent(root: &std::path::Path, inbox: &std::path::Path, key: &str) -> Option<String> {
+    let marker = idempotency_marker(inbox, key);
+    let rel = std::fs::read_to_string(&marker).ok()?;
+    let rel = rel.trim().to_string();
+    if rel.is_empty() {
+        return None;
+    }
+    if root.join(&rel).exists() {
+        Some(rel)
+    } else {
+        None
+    }
+}
+
+/// Best-effort record of `key -> rel` so a retry can be deduplicated.
+fn record_idempotent(inbox: &std::path::Path, key: &str, rel: &str) {
+    let marker = idempotency_marker(inbox, key);
+    if let Some(parent) = marker.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(marker, rel);
+}
+
 /// Snapshot the configured vault root, or a `BadRequest` if the host never set it.
 fn vault_root(state: &AppState) -> Result<std::path::PathBuf> {
     state.vault_root_snapshot().ok_or_else(|| {
@@ -389,9 +629,17 @@ fn diff_triples(rel: &str, old: &str, new: &str) -> (usize, usize) {
         (t.subject.clone(), t.predicate.clone(), obj)
     }
     let old_keys: std::collections::HashSet<(String, String, String)> =
-        aingle_ingest::extract(rel, old).triples.iter().map(key).collect();
+        aingle_ingest::extract(rel, old)
+            .triples
+            .iter()
+            .map(key)
+            .collect();
     let new_keys: std::collections::HashSet<(String, String, String)> =
-        aingle_ingest::extract(rel, new).triples.iter().map(key).collect();
+        aingle_ingest::extract(rel, new)
+            .triples
+            .iter()
+            .map(key)
+            .collect();
     let added = new_keys.difference(&old_keys).count();
     let removed = old_keys.difference(&new_keys).count();
     (added, removed)
@@ -410,10 +658,7 @@ mod tests {
             "# A\n\nbody\nnew line"
         );
         // A content that already ends with a newline does not get a blank line.
-        assert_eq!(
-            apply_edit("body\n", EditMode::Append, "x"),
-            "body\nx"
-        );
+        assert_eq!(apply_edit("body\n", EditMode::Append, "x"), "body\nx");
         // Empty content becomes just the text.
         assert_eq!(apply_edit("", EditMode::Append, "x"), "x");
     }
@@ -658,6 +903,215 @@ mod tests {
 
         // A second identical tag add is a no-op: content unchanged, so no write.
         let res = tag_add(&state, "note.md", "roadmap", false).await.unwrap();
-        assert!(!res.changed, "re-adding an existing tag must be a no-op: {res:?}");
+        assert!(
+            !res.changed,
+            "re-adding an existing tag must be a no-op: {res:?}"
+        );
+    }
+
+    // ---- Review-inbox staging (propose_note) -----------------------------
+
+    /// A ready state whose vault root is set to a fresh (empty) temp dir.
+    async fn inbox_state() -> (AppState, tempfile::TempDir) {
+        let state = enabled_state().await;
+        let dir = tempfile::tempdir().unwrap();
+        state.set_vault_root(dir.path().to_path_buf());
+        (state, dir)
+    }
+
+    #[tokio::test]
+    async fn propose_stages_note_into_inbox_with_frontmatter() {
+        let (state, dir) = inbox_state().await;
+        let res = propose_note(
+            &state,
+            "My Clipped Idea",
+            "Some body text from the web.",
+            Some("https://example.com/article"),
+            Some("2026-07-24T10:00:00Z"),
+            &["research".to_string(), "web".to_string()],
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(res.created, "a fresh proposal is created: {res:?}");
+        assert!(
+            res.rel_path.starts_with("_inbox/"),
+            "must stage in _inbox: {res:?}"
+        );
+        assert!(res.rel_path.ends_with(".md"), "must be a .md file: {res:?}");
+
+        let on_disk = std::fs::read_to_string(dir.path().join(&res.rel_path)).unwrap();
+        assert!(
+            on_disk.starts_with("---\n"),
+            "must wrap frontmatter: {on_disk}"
+        );
+        assert!(
+            on_disk.contains("source: https://example.com/article"),
+            "must record source: {on_disk}"
+        );
+        assert!(
+            on_disk.contains("status: pending"),
+            "must be pending: {on_disk}"
+        );
+        assert!(
+            on_disk.contains("clipped: 2026-07-24T10:00:00Z"),
+            "{on_disk}"
+        );
+        assert!(
+            on_disk.contains("tags: [research, web]"),
+            "must record tags: {on_disk}"
+        );
+        assert!(
+            on_disk.contains("Some body text from the web."),
+            "body kept: {on_disk}"
+        );
+    }
+
+    #[tokio::test]
+    async fn propose_sanitizes_traversing_name() {
+        let (state, dir) = inbox_state().await;
+        // A name with separators / traversal must not escape `_inbox/`.
+        let res = propose_note(
+            &state,
+            "../../etc/passwd",
+            "body",
+            Some("clipper"),
+            None,
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            res.rel_path.starts_with("_inbox/"),
+            "sanitized name must stay in _inbox: {res:?}"
+        );
+        // Exactly one path component under `_inbox/` (no nested dirs created).
+        let after = res.rel_path.strip_prefix("_inbox/").unwrap();
+        assert!(!after.contains('/'), "no separators survive: {res:?}");
+        assert!(
+            dir.path().join(&res.rel_path).exists(),
+            "file landed on disk"
+        );
+        // Nothing escaped to a sibling of the vault root.
+        assert!(!dir.path().parent().unwrap().join("passwd").exists());
+    }
+
+    #[tokio::test]
+    async fn propose_keeps_existing_frontmatter_intact() {
+        let (state, dir) = inbox_state().await;
+        let caller_built = "---\ntitle: Prebuilt\nstatus: pending\ntags: [a, b]\n---\n\nBody.\n";
+        let res = propose_note(
+            &state,
+            "prebuilt",
+            caller_built,
+            Some("ignored"),
+            None,
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        let on_disk = std::fs::read_to_string(dir.path().join(&res.rel_path)).unwrap();
+        assert_eq!(
+            on_disk, caller_built,
+            "existing frontmatter must be left intact"
+        );
+        // No injected second `source:`/frontmatter fence.
+        assert_eq!(
+            on_disk.matches("---").count(),
+            2,
+            "no extra fence: {on_disk}"
+        );
+    }
+
+    #[tokio::test]
+    async fn staged_note_is_not_ingested() {
+        let (state, dir) = inbox_state().await;
+        let before = action_count(&state).await;
+        let res = propose_note(
+            &state,
+            "draft",
+            "Body about widgets.",
+            Some("clipper"),
+            None,
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(res.rel_path.starts_with("_inbox/"));
+        // Staging never signs a DAG action.
+        assert_eq!(
+            before,
+            action_count(&state).await,
+            "staging must not sign the DAG"
+        );
+
+        // Even a full ingest of the vault root leaves the staged note unindexed
+        // (the walk skips top-level `_inbox/`).
+        crate::service::ingest::ingest_path(&state, dir.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        let sources = crate::service::ingest::list_sources(&state).await.unwrap();
+        assert!(
+            !sources
+                .iter()
+                .any(|s| s.path.replace('\\', "/").starts_with("_inbox/")),
+            "staged note must not be ingested: {sources:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn propose_idempotency_key_dedups() {
+        let (state, dir) = inbox_state().await;
+        let key = "clip-abc-123";
+        let first = propose_note(
+            &state,
+            "dup",
+            "same body",
+            Some("clipper"),
+            None,
+            &[],
+            Some(key),
+        )
+        .await
+        .unwrap();
+        assert!(first.created, "first call creates: {first:?}");
+
+        let second = propose_note(
+            &state,
+            "dup",
+            "same body",
+            Some("clipper"),
+            None,
+            &[],
+            Some(key),
+        )
+        .await
+        .unwrap();
+        assert!(
+            !second.created,
+            "second identical call must not create: {second:?}"
+        );
+        assert_eq!(first.rel_path, second.rel_path, "must return the same path");
+
+        // Only one staged note (plus the marker dot-folder) exists.
+        let md_count = std::fs::read_dir(dir.path().join("_inbox"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("md"))
+            .count();
+        assert_eq!(md_count, 1, "idempotent retry must not stage a duplicate");
+    }
+
+    #[tokio::test]
+    async fn propose_without_vault_root_errors() {
+        let state = enabled_state().await; // vault_root left unset
+        let err = propose_note(&state, "x", "body", None, None, &[], None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::BadRequest(_)), "got: {err:?}");
     }
 }
