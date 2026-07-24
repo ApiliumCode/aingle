@@ -46,6 +46,10 @@ pub struct ParsedTask {
     pub scheduled: Option<String>,
     /// Deadline (due) date, normalized `YYYY-MM-DD`.
     pub deadline: Option<String>,
+    /// Recurrence rule (`🔁 every <n> <unit>`), encoded compactly as
+    /// `<n><unit-letter>` — e.g. `3d`, `1w`, `1m`, `1y`. The reschedule logic
+    /// lives app-side; the engine only records the fact for query/MCP visibility.
+    pub recur: Option<String>,
 }
 
 // `- [ ] text` / `* [x] text` / `+ [/] text` / bare `- [ ]` at line end — capture
@@ -62,6 +66,10 @@ static DEADLINE_EMOJI: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\x{1F4C5}\s*(\d{4}-\d{2}-\d{2})").unwrap());
 static SCHEDULED_EMOJI: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\x{23F3}\s*(\d{4}-\d{2}-\d{2})").unwrap());
+// `🔁 every <n> <unit>` — `every` and the count are optional (default n = 1).
+static RECUR: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\x{1F501}\s*(?:every\s+)?(?:(\d+)\s+)?(day|week|month|year)s?").unwrap()
+});
 
 fn status_from_checkbox(c: char) -> TaskStatus {
     match c {
@@ -113,6 +121,17 @@ pub fn parse_task(line: &str) -> Option<ParsedTask> {
         .captures(&rest)
         .map(|c| c[1].to_string())
         .filter(|d| valid_date(d));
+    // Recurrence: encode `every <n> <unit>` as `<n><unit-letter>` (e.g. `3d`).
+    let recur = RECUR.captures(&rest).map(|c| {
+        let n: u32 = c.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(1).max(1);
+        let unit = match c[2].to_ascii_lowercase().as_str() {
+            "day" => 'd',
+            "week" => 'w',
+            "month" => 'm',
+            _ => 'y', // year
+        };
+        format!("{n}{unit}")
+    });
 
     // Strip the structured tokens, then collapse whitespace so the residual
     // text is the human-readable task title. Invalid dates are left in the text
@@ -127,6 +146,7 @@ pub fn parse_task(line: &str) -> Option<ParsedTask> {
     let stripped = PRIORITY.replace_all(&rest, "");
     let stripped = DEADLINE_EMOJI.replace_all(&stripped, strip_valid);
     let stripped = SCHEDULED_EMOJI.replace_all(&stripped, strip_valid);
+    let stripped = RECUR.replace_all(&stripped, "");
     let text = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
 
     Some(ParsedTask {
@@ -135,6 +155,7 @@ pub fn parse_task(line: &str) -> Option<ParsedTask> {
         priority,
         scheduled,
         deadline,
+        recur,
     })
 }
 
@@ -190,6 +211,28 @@ mod tests {
         assert_eq!(p.status, TaskStatus::Doing);
         assert_eq!(p.priority, Some('B'));
         assert_eq!(p.text, "Refactor engine");
+    }
+
+    #[test]
+    fn recurrence_is_extracted_and_stripped() {
+        // Default count, singular unit.
+        let p = t("- [ ] rent \u{1F4C5} 2026-08-01 \u{1F501} every month");
+        assert_eq!(p.recur.as_deref(), Some("1m"));
+        assert_eq!(p.deadline.as_deref(), Some("2026-08-01"));
+        assert_eq!(p.text, "rent"); // recur + date stripped
+
+        // Explicit count, plural unit.
+        let q = t("- [ ] standup \u{1F501} every 3 days");
+        assert_eq!(q.recur.as_deref(), Some("3d"));
+        assert_eq!(q.text, "standup");
+
+        // Week / year encodings; `every` optional.
+        assert_eq!(t("- [ ] x \u{1F501} every week").recur.as_deref(), Some("1w"));
+        assert_eq!(t("- [ ] x \u{1F501} 2 weeks").recur.as_deref(), Some("2w"));
+        assert_eq!(t("- [ ] x \u{1F501} every 5 years").recur.as_deref(), Some("5y"));
+
+        // No recurrence → None.
+        assert_eq!(t("- [ ] plain task").recur, None);
     }
 
     #[test]

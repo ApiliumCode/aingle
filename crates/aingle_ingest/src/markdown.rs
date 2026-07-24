@@ -144,6 +144,9 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
             if let Some(s) = &task.scheduled {
                 emit("scheduled", ObjectValue::Text(s.clone()));
             }
+            if let Some(r) = &task.recur {
+                emit("recur", ObjectValue::Text(r.clone()));
+            }
             if let Some(p) = task.priority {
                 let semantic = match p {
                     'A' => "high",

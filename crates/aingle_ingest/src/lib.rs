@@ -173,6 +173,24 @@ mod tests {
     }
 
     #[test]
+    fn recurring_task_emits_recur_triple() {
+        // A `🔁 every …` task records its recurrence as a `recur` fact on the
+        // same stable task node (encoded compactly, e.g. `1m`), so MCP/queries
+        // can see the repeat cadence. The reschedule itself is app-side.
+        let ex = extract("todos.md", "- [ ] rent \u{1F4C5} 2026-08-01 \u{1F501} every month\n");
+        let recur = ex
+            .triples
+            .iter()
+            .find(|t| t.predicate == "recur")
+            .expect("recur triple");
+        assert_eq!(recur.object, ObjectValue::Text("1m".into()));
+        assert!(recur.subject.starts_with("task:todos.md#"));
+        // Non-recurring task emits no recur triple.
+        let ex2 = extract("todos.md", "- [ ] plain task\n");
+        assert!(!ex2.triples.iter().any(|t| t.predicate == "recur"));
+    }
+
+    #[test]
     fn fenced_code_is_not_extracted() {
         // Tasks, links, tags and headings inside a ``` fence are code samples,
         // not vault facts — they must not pollute the graph.
