@@ -324,12 +324,18 @@ pub async fn ingest_path_with_progress(
         // prior facts and chunks for this source before writing the fresh ones, so
         // stale structural triples and Ineru chunks don't linger and leak into
         // grounded retrieval.
+        // Extract first, so task reconciliation can diff the note's new tasks
+        // against its existing ones before anything is purged or written.
+        let extraction = extract(&rel_path, &content);
+
         if existing_hash.is_some() {
             purge_source(state, &rel_path, namespace.clone()).await?;
+            // Task nodes live under `task:` subjects that the note-scoped purge
+            // above intentionally leaves alone; reconcile them by diff so a
+            // task's signed history stays minimal — only the triples that
+            // actually changed are retracted, and unchanged tasks are untouched.
+            reconcile_note_tasks(state, &rel_path, &extraction.triples, namespace.clone()).await?;
         }
-
-        // Extract triples and chunks from the file
-        let extraction = extract(&rel_path, &content);
 
         // Write structural triples
         for pt in &extraction.triples {
@@ -496,6 +502,76 @@ async fn purge_source(state: &AppState, rel_path: &str, namespace: Option<String
     Ok(())
 }
 
+/// Semantic identity of a task triple across re-ingests: subject + predicate +
+/// object text. An unchanged task triple keeps the same identity, so it is
+/// neither retracted nor re-signed.
+fn task_identity(subject: &str, predicate: &str, object: &str) -> String {
+    format!("{subject}\u{1}{predicate}\u{1}{object}")
+}
+
+/// Reconcile a note's `task:` nodes on re-ingest: retract only the task triples
+/// the current content no longer produces, and leave the rest in place. Because
+/// each retraction and insert is a signed DAG action, this keeps a task's
+/// verifiable history minimal — completing a task is one `status` retract + one
+/// insert, not a churn of every task in the note; a removed task is tombstoned.
+async fn reconcile_note_tasks(
+    state: &AppState,
+    rel_path: &str,
+    new_triples: &[aingle_ingest::ProvenancedTriple],
+    namespace: Option<String>,
+) -> Result<()> {
+    use crate::service::triple_util::{obj_string, strip_brackets};
+    use aingle_ingest::ObjectValue;
+
+    // Identity of every task triple the current content produces.
+    let new_keys: std::collections::HashSet<String> = new_triples
+        .iter()
+        .filter(|t| t.subject.starts_with("task:"))
+        .map(|t| {
+            let obj = match &t.object {
+                ObjectValue::Node(n) => n.as_str(),
+                ObjectValue::Text(s) => s.as_str(),
+            };
+            task_identity(&t.subject, &t.predicate, obj)
+        })
+        .collect();
+
+    // Existing task triples for this note (found via their `in_note` link) whose
+    // identity is no longer produced — these are the stale ones to retract.
+    let stale_ids: Vec<String> = {
+        let graph = state.graph.read().await;
+        let subjects: std::collections::HashSet<String> = graph
+            .find(TriplePattern::any().with_predicate(Predicate::named("in_note")))
+            .map_err(|e| Error::Internal(format!("graph find error: {e}")))?
+            .into_iter()
+            .filter(|t| obj_string(t).as_deref() == Some(rel_path))
+            .map(|t| strip_brackets(&t.subject.to_string()).to_string())
+            .filter(|s| s.starts_with("task:"))
+            .collect();
+
+        let mut stale = Vec::new();
+        for subj in &subjects {
+            for t in graph
+                .find(TriplePattern::any().with_subject(NodeId::named(subj)))
+                .map_err(|e| Error::Internal(format!("graph find error: {e}")))?
+            {
+                let predicate = strip_brackets(t.predicate.as_ref());
+                let object = obj_string(&t).unwrap_or_default();
+                if !new_keys.contains(&task_identity(subj, predicate, &object)) {
+                    stale.push(t.id().to_hex());
+                }
+            }
+        }
+        stale
+    };
+
+    for hex_id in stale_ids {
+        // Best-effort: a concurrently-removed triple is fine to skip.
+        let _ = delete_triple(state, &hex_id, namespace.clone(), None).await;
+    }
+    Ok(())
+}
+
 /// List all source files recorded in the signed registry (path + content hash).
 pub async fn list_sources(state: &AppState) -> Result<Vec<SourceRecord>> {
     let graph = state.graph.read().await;
@@ -636,6 +712,58 @@ mod tests {
         let mem = state.memory.read().await;
         let hits = mem.recall_text("sled storage").unwrap();
         assert!(!hits.is_empty());
+    }
+
+    #[tokio::test]
+    async fn task_reingest_is_diff_aware() {
+        use crate::service::tasks::list_tasks;
+        use crate::service::triple_util::{obj_string, strip_brackets};
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        let state = enabled_state().await;
+
+        // Two open tasks.
+        write(dir.path(), "todos.md", "# Todos\n\n- [ ] Task A\n- [ ] Task B\n");
+        ingest_path(&state, path, None).await.unwrap();
+        let rows = list_tasks(&state, None).await;
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.status == "todo"));
+
+        // Complete A, keep B — re-ingest the changed note.
+        write(dir.path(), "todos.md", "# Todos\n\n- [x] Task A\n- [ ] Task B\n");
+        ingest_path(&state, path, None).await.unwrap();
+        let rows = list_tasks(&state, None).await;
+        assert_eq!(rows.len(), 2, "still exactly two tasks — no orphans or duplicates");
+        assert_eq!(rows.iter().find(|r| r.text == "Task A").unwrap().status, "done");
+        assert_eq!(rows.iter().find(|r| r.text == "Task B").unwrap().status, "todo");
+
+        // The old `status=todo` triple for A must be gone (exactly one remains).
+        {
+            let g = state.graph.read().await;
+            let a_subj: String = g
+                .find(TriplePattern::any().with_predicate(Predicate::named("task_text")))
+                .unwrap()
+                .into_iter()
+                .find(|t| obj_string(t).as_deref() == Some("Task A"))
+                .map(|t| strip_brackets(&t.subject.to_string()).to_string())
+                .expect("Task A node");
+            let statuses = g
+                .find(
+                    TriplePattern::any()
+                        .with_subject(NodeId::named(&a_subj))
+                        .with_predicate(Predicate::named("status")),
+                )
+                .unwrap();
+            assert_eq!(statuses.len(), 1, "no stale status triple should remain for A");
+        }
+
+        // Remove A from the note — its task node is retracted, B survives.
+        write(dir.path(), "todos.md", "# Todos\n\n- [ ] Task B\n");
+        ingest_path(&state, path, None).await.unwrap();
+        let rows = list_tasks(&state, None).await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].text, "Task B");
     }
 
     #[tokio::test]
