@@ -112,7 +112,7 @@ pub struct AppState {
     #[cfg(feature = "dag")]
     pub dag_signing_key: Option<std::sync::Arc<aingle_graph::dag::DagSigningKey>>,
     /// Runtime MCP policy (folder scope + permission mode) consulted by the MCP
-    /// tool router. Shared behind an `Arc<RwLock<_>>` so Akashi can push policy
+    /// tool router. Shared behind an `Arc<RwLock<_>>` so the host can push policy
     /// updates at runtime while tool calls read a snapshot.
     #[cfg(feature = "mcp")]
     pub mcp_policy: std::sync::Arc<std::sync::RwLock<crate::mcp::policy::McpPolicy>>,
@@ -122,15 +122,16 @@ pub struct AppState {
     /// captured at router-build time. `None` means no static token is configured.
     #[cfg(feature = "mcp")]
     pub mcp_token: std::sync::Arc<std::sync::RwLock<Vec<String>>>,
-    /// Filesystem root of the vault working copy the MCP write tools edit.
+    /// Filesystem root of the workspace (vault) working copy — the confinement
+    /// anchor for every path-taking operation in the engine.
     ///
-    /// The engine otherwise never touches vault `.md` files — the app owns the
-    /// filesystem. The signed-note-edit tools (`aingle_edit_note`,
-    /// `aingle_tag_add`, `aingle_tag_remove`) need a root to resolve a
-    /// vault-relative note path against and to confine writes to; the app pushes
-    /// it at runtime via [`Self::set_vault_root`]. `None` means no root is
-    /// configured yet, so the write tools refuse to run.
-    #[cfg(feature = "mcp")]
+    /// Two things depend on it. The signed note-edit tools resolve a
+    /// workspace-relative note path against it and confine their writes to it;
+    /// and [`crate::service::ingest`] anchors every ingest to it, so a caller
+    /// cannot point the indexer at a location outside the configured workspace.
+    /// The host pushes it at runtime via [`Self::set_vault_root`]. `None` means
+    /// no root is configured yet: the write tools refuse to run, and an ingest
+    /// treats the path it was handed as its own anchor.
     pub vault_root: std::sync::Arc<std::sync::RwLock<Option<std::path::PathBuf>>>,
 }
 
@@ -192,7 +193,6 @@ impl AppState {
             )),
             #[cfg(feature = "mcp")]
             mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
-            #[cfg(feature = "mcp")]
             vault_root: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
@@ -252,7 +252,6 @@ impl AppState {
             )),
             #[cfg(feature = "mcp")]
             mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
-            #[cfg(feature = "mcp")]
             vault_root: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
@@ -312,7 +311,6 @@ impl AppState {
             )),
             #[cfg(feature = "mcp")]
             mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
-            #[cfg(feature = "mcp")]
             vault_root: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
@@ -489,7 +487,6 @@ impl AppState {
             )),
             #[cfg(feature = "mcp")]
             mcp_token: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
-            #[cfg(feature = "mcp")]
             vault_root: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
@@ -645,7 +642,7 @@ impl AppState {
 
     /// Replaces the runtime MCP policy consulted by the MCP tool router.
     ///
-    /// Akashi calls this to push folder-scope + permission-mode changes at
+    /// The host calls this to push folder-scope + permission-mode changes at
     /// runtime. A poisoned lock is treated as a no-op rather than a panic.
     #[cfg(feature = "mcp")]
     pub fn set_mcp_policy(&self, p: crate::mcp::policy::McpPolicy) {
@@ -666,13 +663,14 @@ impl AppState {
             .unwrap_or_default()
     }
 
-    /// Sets the vault working-copy root the MCP write tools resolve note paths
-    /// against and confine their writes to.
+    /// Sets the workspace working-copy root that the note-write tools resolve
+    /// paths against and that [`crate::service::ingest`] confines every ingest
+    /// to.
     ///
-    /// The app calls this at startup (and on vault switch) so the signed
-    /// note-edit tools know which directory they are allowed to write into. A
-    /// poisoned lock is treated as a no-op rather than a panic.
-    #[cfg(feature = "mcp")]
+    /// The host calls this at startup (and on workspace switch) so the signed
+    /// note-edit tools know which directory they are allowed to write into, and
+    /// so the indexer knows which subtree it is allowed to read. A poisoned lock
+    /// is treated as a no-op rather than a panic.
     pub fn set_vault_root(&self, root: std::path::PathBuf) {
         if let Ok(mut g) = self.vault_root.write() {
             *g = Some(root);
@@ -683,7 +681,6 @@ impl AppState {
     ///
     /// A poisoned lock yields `None` so a write tool fails safe (it refuses to
     /// touch the filesystem when it cannot establish its confinement root).
-    #[cfg(feature = "mcp")]
     pub fn vault_root_snapshot(&self) -> Option<std::path::PathBuf> {
         self.vault_root.read().ok().and_then(|g| g.clone())
     }

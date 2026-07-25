@@ -10,13 +10,66 @@ use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 
 use crate::state::AppState;
 
-/// Error result returned by mutation tools when the runtime MCP policy is
-/// read-only. Centralised so every mutation tool emits the same message.
-fn read_only_denied() -> CallToolResult {
-    CallToolResult::error(vec![Content::text(
-        "MCP is read-only: enable write access in Akashi to allow this.",
-    )])
-}
+/// The refusal returned when the runtime policy is read-only. Taken from the
+/// shared policy module so this surface and every other one refuse identically.
+use crate::mcp::policy::read_only_denied;
+
+/// This surface's tool classification, consumed by the single enforcement point
+/// in [`crate::mcp::policy::gate_tool_call`].
+///
+/// A tool missing from BOTH lists is denied by default (treated as mutating);
+/// `every_exposed_tool_is_classified` below turns that runtime denial into a
+/// build-time failure, so a tool cannot ship unclassified.
+pub const TOOL_ACCESS: crate::mcp::policy::ToolAccessTable =
+    crate::mcp::policy::ToolAccessTable::new(
+        &[
+            "aingle_agenda",
+            "aingle_agent_consistency",
+            "aingle_backlinks",
+            "aingle_cards",
+            "aingle_dag_action",
+            "aingle_dag_chain",
+            "aingle_dag_history",
+            "aingle_dag_stats",
+            "aingle_dag_tips",
+            "aingle_due_cards",
+            "aingle_get_proof",
+            "aingle_get_triple",
+            "aingle_graph_stats",
+            "aingle_ground",
+            "aingle_list_folders",
+            "aingle_list_predicates",
+            "aingle_list_subjects",
+            "aingle_list_tags",
+            "aingle_list_triples",
+            "aingle_note_context",
+            "aingle_path",
+            "aingle_ping",
+            "aingle_query_pattern",
+            "aingle_sources",
+            "aingle_sparql",
+            "aingle_tasks",
+            "aingle_validate",
+            "aingle_validate_skill",
+            "aingle_vault_map",
+            "aingle_verify_assertions_batch",
+            "aingle_verify_proof",
+        ],
+        &[
+            "aingle_batch_insert",
+            "aingle_create_folder",
+            "aingle_create_triple",
+            "aingle_dag_prune",
+            "aingle_delete_triple",
+            "aingle_edit_note",
+            "aingle_ingest",
+            "aingle_propose_note",
+            "aingle_sandbox_create",
+            "aingle_sandbox_delete",
+            "aingle_tag_add",
+            "aingle_tag_remove",
+        ],
+    );
 
 /// Drop every path-bearing entry of a vault map that the policy hides, so an
 /// excluded folder never leaks through the map/navigation surface.
@@ -168,7 +221,9 @@ impl AingleMcp {
         description = "Ingest a markdown vault or code repo: auto-extracts triples \
             (frontmatter, wikilinks, headings, tags), indexes text chunks for \
             semantic recall, and records signed provenance. Incremental: unchanged \
-            files are skipped."
+            files are skipped. Confined to the configured workspace root: a path \
+            outside it, or inside an excluded or hidden directory, is refused.",
+        annotations(read_only_hint = false)
     )]
     async fn aingle_ingest(
         &self,
@@ -1181,7 +1236,8 @@ impl AingleMcp {
 /// Parameters for the `aingle_ingest` tool.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 pub struct IngestParams {
-    /// Absolute or relative path to the vault/repo root to ingest.
+    /// Path to ingest. Confined to the configured workspace root: a relative
+    /// path is resolved against it, and a path outside it is refused.
     pub path: String,
 }
 
@@ -1312,8 +1368,36 @@ pub struct PathParams {
     pub max_hops: Option<usize>,
 }
 
+impl AingleMcp {
+    /// Apply the shared policy gate to a tool name. `Some(refusal)` means the
+    /// call must not be dispatched.
+    ///
+    /// One call site — [`ServerHandler::call_tool`] below — so a tool added to
+    /// this surface is covered whether or not anyone remembers to guard its
+    /// body, and an unclassified tool is refused rather than allowed.
+    pub(crate) fn gate(&self, tool: &str) -> Option<CallToolResult> {
+        crate::mcp::policy::gate_tool_call(&self.state.mcp_policy_snapshot(), &TOOL_ACCESS, tool)
+    }
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for AingleMcp {
+    /// Every tool call on this surface passes through here, so this is where the
+    /// policy is enforced. The `#[tool_handler]` macro only synthesises
+    /// `call_tool` when the impl does not already define one, so defining it
+    /// here replaces the unguarded dispatch rather than sitting beside it.
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if let Some(denied) = self.gate(&request.name) {
+            return Ok(denied);
+        }
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
@@ -1323,6 +1407,90 @@ impl ServerHandler for AingleMcp {
                 .to_string(),
         );
         info
+    }
+}
+
+#[cfg(test)]
+mod tool_access_tests {
+    use super::*;
+    use crate::mcp::policy::{McpPolicy, Permission, ToolAccess};
+
+    /// Every tool this surface actually exposes must be classified. An
+    /// unclassified tool is denied at runtime (deny by default), which is the
+    /// safe outcome but a silent one — this test makes it loud at build time.
+    #[test]
+    fn every_exposed_tool_is_classified() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let mcp = AingleMcp::new(state);
+        for t in mcp.tool_router.list_all() {
+            assert!(
+                TOOL_ACCESS.is_declared(&t.name),
+                "tool '{}' is exposed but not classified in TOOL_ACCESS",
+                t.name
+            );
+        }
+    }
+
+    /// The classification must agree with the `read_only_hint` each tool
+    /// advertises to clients: a tool that tells the model "I only read" but is
+    /// filed as mutating (or the reverse) is a lie in one direction or a hole in
+    /// the other.
+    #[test]
+    fn classification_matches_the_advertised_read_only_hint() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let mcp = AingleMcp::new(state);
+        for t in mcp.tool_router.list_all() {
+            let Some(hint) = t.annotations.as_ref().and_then(|a| a.read_only_hint) else {
+                continue; // no hint advertised; the table is the only authority
+            };
+            let expected = if hint {
+                ToolAccess::ReadOnly
+            } else {
+                ToolAccess::Mutating
+            };
+            assert_eq!(
+                TOOL_ACCESS.access(&t.name),
+                expected,
+                "tool '{}' advertises read_only_hint={hint} but is classified otherwise",
+                t.name
+            );
+        }
+    }
+
+    /// A read-only policy refuses every mutating tool, and refuses a tool nobody
+    /// classified rather than allowing it.
+    #[test]
+    fn read_only_policy_refuses_mutating_and_unknown_tools() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        state.set_mcp_policy(McpPolicy::default()); // read-only
+        let mcp = AingleMcp::new(state.clone());
+
+        for name in mcp
+            .tool_router
+            .list_all()
+            .iter()
+            .map(|t| t.name.to_string())
+        {
+            let denied = mcp.gate(&name).is_some();
+            assert_eq!(
+                denied,
+                TOOL_ACCESS.access(&name) == ToolAccess::Mutating,
+                "read-only gate disagrees with the classification of '{name}'"
+            );
+        }
+
+        // A tool that does not exist yet — the shape of tomorrow's addition.
+        assert!(
+            mcp.gate("aingle_delete_everything").is_some(),
+            "an unclassified tool must be refused under a read-only policy"
+        );
+
+        // Granting write access lifts the refusal for declared mutating tools…
+        state.set_mcp_policy(McpPolicy {
+            permission: Permission::ReadWrite,
+            ..Default::default()
+        });
+        assert!(mcp.gate("aingle_edit_note").is_none());
     }
 }
 
@@ -1954,8 +2122,9 @@ mod policy_enforcement_tests {
     }
 
     /// A create_triple issued through the MCP tool must tag the resulting DAG
-    /// action with `origin = mcp`, so Akashi can later attribute "what your AI
-    /// did". A non-MCP caller would leave the author at its node default.
+    /// action with `origin = mcp`, so a host can later attribute "what the
+    /// connected AI did". A non-MCP caller would leave the author at its node
+    /// default.
     #[cfg(feature = "dag")]
     #[tokio::test]
     async fn mcp_create_triple_tags_dag_origin_mcp() {

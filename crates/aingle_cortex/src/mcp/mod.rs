@@ -22,8 +22,8 @@ pub use server::AingleMcp;
 use crate::state::AppState;
 
 /// Origin/author tag stamped onto DAG actions produced through MCP mutation
-/// tools. Lets Akashi attribute "what your AI did" by filtering the DAG action
-/// history on this author identity (e.g. via `aingle_dag_chain`). Non-MCP
+/// tools. Lets a host attribute "what the connected AI did" by filtering the DAG
+/// action history on this author identity (e.g. via `aingle_dag_chain`). Non-MCP
 /// callers keep their own author.
 pub const MCP_ORIGIN: &str = "mcp";
 
