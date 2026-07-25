@@ -126,14 +126,51 @@ fn binding_hidden(pol: &crate::mcp::policy::McpPolicy, row: &serde_json::Value) 
     })
 }
 
-/// A DAG action DTO is hidden if its human-readable payload summary embeds a
-/// path under any excluded folder. Only single-triple insert/delete summaries
-/// inline note paths verbatim (batch/count summaries carry no path and the
-/// content hash is a digest, not a path), so a conservative substring scrub over
-/// the summary is a sound filter that never under-matches a real exclusion.
+/// A DAG action DTO is hidden if any path-bearing field embeds a path under an
+/// excluded folder.
+///
+/// Two fields can carry a path. The human-readable summary inlines note paths
+/// verbatim for single-triple insert/delete actions (batch/count summaries carry
+/// no path, and the content hash is a digest). The verification bundle carries
+/// the *signed* payload JSON, which names every subject touched — including ones
+/// a batch summary reduces to "N ops". Scrubbing the summary alone would let an
+/// excluded note's path out through the payload, so both are scanned.
+///
+/// The scrub is a conservative substring match: it can hide an action it did not
+/// have to, but it never under-matches a real exclusion.
 #[cfg(feature = "dag")]
 fn dag_dto_hidden(pol: &crate::mcp::policy::McpPolicy, d: &crate::rest::dag::DagActionDto) -> bool {
-    pol.text_references_excluded(&d.payload_summary)
+    if pol.text_references_excluded(&d.payload_summary) {
+        return true;
+    }
+    d.verification
+        .as_ref()
+        .is_some_and(|v| payload_json_references_excluded(pol, &v.canonical.payload_json))
+}
+
+/// Substring-scrub a *serialized JSON* payload for excluded folder paths.
+///
+/// JSON escapes a backslash as `\\`, so a Windows-style path inside the signed
+/// payload arrives with its separators doubled and a naive `\` → `/` rewrite
+/// yields `Personal//Finanzas`, which no longer contains the excluded prefix.
+/// Collapsing runs of separators first closes that escape hatch. The collapse is
+/// only for matching (it also flattens `scheme://`), never for output.
+#[cfg(feature = "dag")]
+fn payload_json_references_excluded(
+    pol: &crate::mcp::policy::McpPolicy,
+    payload_json: &str,
+) -> bool {
+    let mut normalized = String::with_capacity(payload_json.len());
+    let mut prev_sep = false;
+    for ch in payload_json.chars() {
+        let sep = ch == '/' || ch == '\\';
+        if sep && prev_sep {
+            continue;
+        }
+        normalized.push(if sep { '/' } else { ch });
+        prev_sep = sep;
+    }
+    pol.text_references_excluded(&normalized)
 }
 
 /// Parameters for the `aingle_dag_history` tool.
@@ -242,7 +279,12 @@ impl AingleMcp {
     /// Grounded retrieval: cited, provenance-backed context for a question.
     #[tool(
         description = "Answer-grounding for a question. Returns cited source chunks \
-            (path:lines) with a signed-provenance anchor and a groundedness signal. \
+            (path:lines) with a groundedness signal and, per chunk, a \
+            `provenance_anchor`: the hex hash of the DAG action that recorded that \
+            source. The anchor is a POINTER, not a proof — it means a signed action \
+            exists, as asserted by this server. To turn it into evidence, pass it to \
+            `aingle_dag_action` and run the verification procedure that tool returns. \
+            Do not describe a chunk as 'verified' unless you actually did that. \
             Answer ONLY from the returned context; if groundedness is not 'grounded', \
             say so and do not invent.",
         annotations(read_only_hint = true)
@@ -312,7 +354,9 @@ impl AingleMcp {
     /// Verified backlinks + outgoing links + unlinked mentions for a note.
     #[tool(
         description = "Verified backlinks, outgoing links, and unlinked mentions for a note. \
-            Each backlink includes the source's context line and a signed-provenance anchor \
+            Each backlink includes the source's context line and a `provenance_anchor` \
+            (a DAG action hash; a pointer, not a proof — verify it with \
+            `aingle_dag_action`) \
             when available. Use for accurate reverse navigation.",
         annotations(read_only_hint = true)
     )]
@@ -334,7 +378,9 @@ impl AingleMcp {
         description = "All task facts extracted from the vault (open and closed), optionally \
             filtered by status (todo|doing|done|canceled). Each task carries its text, \
             status, priority, scheduled/deadline dates, effective due date, and a \
-            signed-provenance anchor when available. Use to list or board a vault's tasks.",
+            `provenance_anchor` \
+            (a DAG action hash; a pointer, not a proof — verify it with \
+            `aingle_dag_action`) when available. Use to list or board a vault's tasks.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_tasks(
@@ -352,7 +398,9 @@ impl AingleMcp {
     #[tool(
         description = "Open, dated tasks bucketed against a reference day (`today`, ISO \
             YYYY-MM-DD) into overdue, today, and upcoming (within `horizon_days`, default 7). \
-            Each task carries its effective due date, priority, and signed-provenance anchor \
+            Each task carries its effective due date, priority, and `provenance_anchor` \
+            (a DAG action hash; a pointer, not a proof — verify it with \
+            `aingle_dag_action`) \
             when available. Use to plan or answer what is due.",
         annotations(read_only_hint = true)
     )]
@@ -378,7 +426,9 @@ impl AingleMcp {
         description = "All spaced-repetition card facts extracted from the vault. Each card \
             carries its front text, whether it is a cloze card, its scheduling state \
             (ease/interval/reps/due/last review/last grade when present), a status derived \
-            against `today` (new|due|scheduled), and a signed-provenance anchor when \
+            against `today` (new|due|scheduled), and a `provenance_anchor` \
+            (a DAG action hash; a pointer, not a proof — verify it with \
+            `aingle_dag_action`) when \
             available. `today` is an ISO YYYY-MM-DD reference day. Use to browse or board a \
             vault's flashcards.",
         annotations(read_only_hint = true)
@@ -399,7 +449,9 @@ impl AingleMcp {
         description = "Cards bucketed for a review session against a reference day (`today`, \
             ISO YYYY-MM-DD): `due` (due on/before today), `new` (never scheduled), and \
             `scheduled` (due after today). Each card carries its front text, cloze flag, \
-            scheduling state, and signed-provenance anchor when available. Use to drive or \
+            scheduling state, and `provenance_anchor` \
+            (a DAG action hash; a pointer, not a proof — verify it with \
+            `aingle_dag_action`) when available. Use to drive or \
             answer what is due for review now (study `due` + `new`).",
         annotations(read_only_hint = true)
     )]
@@ -424,7 +476,9 @@ impl AingleMcp {
     #[tool(
         description = "Verified context bundle for a note: notes that are semantically \
             related by meaning (not just by explicit links), each with the matching \
-            passage as evidence and a signed-provenance anchor when available. Use to \
+            passage as evidence and a `provenance_anchor` \
+            (a DAG action hash; a pointer, not a proof — verify it with \
+            `aingle_dag_action`) when available. Use to \
             answer grounded in a note's verified neighborhood without hallucinating.",
         annotations(read_only_hint = true)
     )]
@@ -449,7 +503,9 @@ impl AingleMcp {
     #[tool(
         description = "Shortest verified connection between two notes in the vault. \
             Returns the chain of typed hops (link or semantic), each with its \
-            similarity score and signed-provenance anchor when available, so every \
+            similarity score and `provenance_anchor` \
+            (a DAG action hash; a pointer, not a proof — verify it with \
+            `aingle_dag_action`) when available, so every \
             step of the connection can be cited. Use when the user asks how two \
             topics, notes, or decisions relate.",
         annotations(read_only_hint = true)
@@ -473,10 +529,12 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
-    /// List ingested sources and their signed content hashes.
+    /// List ingested sources and their recorded content hashes.
     #[tool(
-        description = "List ingested source files with their content hashes (the \
-            signed provenance registry).",
+        description = "List ingested source files with their blake3 content hashes as \
+            recorded at ingest time. A client holding the file can recompute the hash \
+            and compare it; the record itself is attested by the DAG action carrying \
+            that source's provenance, verifiable via `aingle_dag_action`.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_sources(&self) -> Result<CallToolResult, ErrorData> {
@@ -1071,7 +1129,13 @@ impl AingleMcp {
 impl AingleMcp {
     /// Inspect the signed DAG provenance history of a subject (who changed what, newest first).
     #[tool(
-        description = "Return the signed DAG provenance history of a subject (newest first).",
+        description = "Return the DAG provenance history of a subject (newest first). \
+            Each entry carries `hash` and `signature_status` (`signed` / \
+            `unsigned_by_design` / `unsigned`) but NOT the proof — the signed \
+            payload is omitted here to keep list responses small. `signed` and \
+            `signature_status` are claims by this server; to verify one, call \
+            `aingle_dag_action` with that entry's `hash` and follow the procedure \
+            it returns.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_dag_history(
@@ -1107,9 +1171,42 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
-    /// Fetch a single DAG action by its hex hash.
+    /// Fetch a single DAG action by its hex hash, with everything needed to
+    /// verify its signature independently of this server.
     #[tool(
-        description = "Fetch a single DAG action by its hex hash.",
+        description = "Fetch a single DAG action by its hex hash — the verifiable \
+            lookup. Use it to turn a `provenance_anchor` or history entry into \
+            evidence.\n\
+            \n\
+            `signature_status` is one of: `signed`; `unsigned_by_design` (the \
+            genesis action, deliberately unsigned so every node computes the same \
+            initial hash); or `unsigned` (no signature, no design reason). The \
+            legacy `signed` boolean is this server's own claim about its own data — \
+            never present it to the user as proof.\n\
+            \n\
+            For a signed action the result carries `verification` with the \
+            signature bytes, the public key, and `canonical`: the literal values \
+            that were hashed. Verify it yourself:\n\
+            1. Concatenate, with no separators: parent count as u64 little-endian; \
+            each `canonical.parents` entry as its 32 raw bytes; UTF-8 length of \
+            `canonical.author_json` as u64 LE; `author_json`; `canonical.seq` as \
+            u64 LE; `canonical.timestamp_rfc3339` as UTF-8 with NO length prefix; \
+            UTF-8 length of `canonical.payload_json` as u64 LE; `payload_json`.\n\
+            2. blake3-256 those bytes; the hex digest must equal `hash`. If not, \
+            stop — the parts do not describe this action.\n\
+            3. Ed25519-verify `verification.signature` over the 32 RAW digest bytes \
+            using `verification.public_key`. A null key means this node does not \
+            hold the author's key; say you could not verify.\n\
+            4. `canonical.payload_json` is the signed record. `payload_summary`, \
+            `payload_type` and `author` are display fields this server computed and \
+            are NOT signed — check your citation against `payload_json`.\n\
+            5. Pin `public_key` (also on `aingle_dag_stats` as \
+            `signing_public_key`) and compare it every time; a signature only \
+            proves the holder of THAT key signed those bytes.\n\
+            \n\
+            Then state what you did: which steps passed, and against which key. If \
+            you did not run the check, say the action is 'reported as signed', not \
+            'verified'.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_dag_action(
@@ -1133,7 +1230,9 @@ impl AingleMcp {
 
     /// Return an author's DAG action chain, newest first.
     #[tool(
-        description = "Return an author's DAG action chain (newest first), up to limit.",
+        description = "Return an author's DAG action chain (newest first), up to limit. \
+            Carries `signature_status` per action but not the proof; fetch an action \
+            with `aingle_dag_action` to verify its signature.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_dag_chain(
@@ -1152,7 +1251,10 @@ impl AingleMcp {
 
     /// Return DAG statistics: action count and tip count.
     #[tool(
-        description = "Return DAG statistics: action count and tip count.",
+        description = "Return DAG statistics: action count, tip count, and this \
+            node's Ed25519 `signing_public_key`. Pin that key on first use and \
+            compare it against the key served with each signed action — a signature \
+            only attests to the holder of that specific key.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_dag_stats(&self) -> Result<CallToolResult, ErrorData> {
@@ -2434,5 +2536,199 @@ mod policy_enforcement_tests {
             "tagged triple must be queryable after tag_add: {}",
             json_of(&q)
         );
+    }
+
+    // ========================================================================
+    // Independent verifiability over the MCP surface
+    // ========================================================================
+
+    /// Write one signed action into `state`'s DAG and return its hex hash.
+    #[cfg(feature = "dag")]
+    async fn put_signed(state: &AppState, payload: aingle_graph::dag::DagPayload) -> String {
+        let graph = state.graph.read().await;
+        let store = graph.dag_store().unwrap();
+        let parents = store.tips().unwrap();
+        let mut a = aingle_graph::dag::DagAction {
+            parents,
+            author: aingle_graph::NodeId::named("node:1"),
+            seq: 1,
+            timestamp: chrono::Utc::now(),
+            payload,
+            signature: None,
+        };
+        state.dag_signing_key.as_ref().unwrap().sign(&mut a);
+        store.put(&a).unwrap().to_hex()
+    }
+
+    #[cfg(feature = "dag")]
+    fn insert_of(subject: &str, object: &str) -> aingle_graph::dag::DagPayload {
+        aingle_graph::dag::DagPayload::TripleInsert {
+            triples: vec![aingle_graph::dag::TripleInsertPayload {
+                subject: subject.into(),
+                predicate: "note:title".into(),
+                object: serde_json::json!(object),
+                provenance: None,
+            }],
+        }
+    }
+
+    /// The acceptance criterion, exercised through the tool an MCP client
+    /// actually calls: from the tool's JSON alone — no server state, no
+    /// `aingle_graph` types — rebuild the signed bytes, recompute the hash, and
+    /// check the Ed25519 signature.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn dag_action_tool_output_alone_verifies_the_signature() {
+        let mut state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        state.dag_signing_key = Some(std::sync::Arc::new(
+            aingle_graph::dag::DagSigningKey::from_seed(&[3u8; 32]),
+        ));
+        let hash = put_signed(&state, insert_of("Public/open.md", "Roadmap")).await;
+        let mcp = AingleMcp::new(state);
+
+        let out = json_of(
+            &mcp.aingle_dag_action(Parameters(DagActionParams { hash: hash.clone() }))
+                .await
+                .expect("dag_action ok"),
+        );
+
+        // ------------------------------------------------------------------
+        // From here on: only `out`.
+        // ------------------------------------------------------------------
+        assert_eq!(out["signature_status"], "signed", "{out}");
+        let v = &out["verification"];
+        assert_eq!(v["spec"], "aingle-dag-action-v1", "{out}");
+        assert!(
+            !v["procedure"].as_array().expect("procedure").is_empty(),
+            "the bundle must tell the caller how to verify it"
+        );
+
+        let unhex = |s: &str, n: usize| -> Vec<u8> {
+            assert_eq!(s.len(), n * 2);
+            (0..n)
+                .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap())
+                .collect()
+        };
+
+        let c = &v["canonical"];
+        let mut pre: Vec<u8> = Vec::new();
+        let parents = c["parents"].as_array().unwrap();
+        pre.extend_from_slice(&(parents.len() as u64).to_le_bytes());
+        for p in parents {
+            pre.extend_from_slice(&unhex(p.as_str().unwrap(), 32));
+        }
+        let author = c["author_json"].as_str().unwrap().as_bytes();
+        pre.extend_from_slice(&(author.len() as u64).to_le_bytes());
+        pre.extend_from_slice(author);
+        pre.extend_from_slice(&c["seq"].as_u64().unwrap().to_le_bytes());
+        pre.extend_from_slice(c["timestamp_rfc3339"].as_str().unwrap().as_bytes());
+        let payload = c["payload_json"].as_str().unwrap().as_bytes();
+        pre.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        pre.extend_from_slice(payload);
+
+        let digest = blake3::hash(&pre);
+        assert_eq!(
+            digest.to_hex().to_string(),
+            out["hash"].as_str().unwrap(),
+            "the reconstructed preimage must hash to the advertised action hash"
+        );
+
+        let pk: [u8; 32] = unhex(v["public_key"].as_str().unwrap(), 32)
+            .try_into()
+            .unwrap();
+        let sig: [u8; 64] = unhex(v["signature"].as_str().unwrap(), 64)
+            .try_into()
+            .unwrap();
+        ed25519_dalek::Verifier::verify(
+            &ed25519_dalek::VerifyingKey::from_bytes(&pk).unwrap(),
+            digest.as_bytes(),
+            &ed25519_dalek::Signature::from_bytes(&sig),
+        )
+        .expect("the signature published over MCP must verify");
+
+        // The key offered here must be the same one the stats tool publishes for
+        // out-of-band pinning, or pinning would be meaningless.
+        let stats = json_of(&mcp.aingle_dag_stats().await.expect("stats ok"));
+        assert_eq!(
+            stats["signing_public_key"], v["public_key"],
+            "the pinnable node key must match the key served with the action"
+        );
+    }
+
+    /// Publishing the signed payload must not become a hole in the folder
+    /// exclusion. A batch action summarises as "N ops" — no path in the summary —
+    /// so a filter that only scrubs the summary would let an excluded note's path
+    /// through inside `verification.canonical.payload_json`.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn verification_payload_does_not_leak_excluded_paths() {
+        let mut state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        state.dag_signing_key = Some(std::sync::Arc::new(
+            aingle_graph::dag::DagSigningKey::from_seed(&[4u8; 32]),
+        ));
+        let hash = put_signed(
+            &state,
+            aingle_graph::dag::DagPayload::Batch {
+                ops: vec![
+                    insert_of("Public/open.md", "Roadmap"),
+                    insert_of("Personal/Finanzas/secret.md", "Presupuesto"),
+                ],
+            },
+        )
+        .await;
+        state.set_mcp_policy(McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        });
+        let mcp = AingleMcp::new(state);
+
+        let res = mcp
+            .aingle_dag_action(Parameters(DagActionParams { hash }))
+            .await;
+
+        let dump = match res {
+            Ok(ok) => format!("{ok:?}"),
+            Err(e) => format!("{e:?}"),
+        }
+        .replace("\\\\", "/")
+        .replace('\\', "/");
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "the signed payload must be scrubbed by the folder exclusion too: {dump}"
+        );
+    }
+
+    /// The scrub must survive JSON escaping. A Windows-style path serialized into
+    /// the signed payload arrives as `Personal\\Finanzas` (a doubled backslash),
+    /// which a plain `\` → `/` rewrite turns into `Personal//Finanzas` — no longer
+    /// a match for the excluded prefix.
+    #[cfg(feature = "dag")]
+    #[test]
+    fn payload_scrub_sees_through_json_escaped_separators() {
+        let pol = McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            ..Default::default()
+        };
+        assert!(super::payload_json_references_excluded(
+            &pol,
+            r#"{"subject":"Personal\\Finanzas\\secret.md"}"#
+        ));
+        assert!(super::payload_json_references_excluded(
+            &pol,
+            r#"{"subject":"Personal/Finanzas/secret.md"}"#
+        ));
+        assert!(!super::payload_json_references_excluded(
+            &pol,
+            r#"{"subject":"Public/open.md","object":"note://open"}"#
+        ));
     }
 }

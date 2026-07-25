@@ -183,6 +183,12 @@ impl DagAction {
     ///
     /// Hash = blake3(parents || author || seq || timestamp || payload).
     /// The `signature` field is intentionally excluded.
+    ///
+    /// The exact byte layout is the `aingle-dag-action-v1` scheme specified in
+    /// [`crate::dag::canonical`], and [`DagAction::canonical`] publishes the
+    /// literal inputs so a third party can rebuild this preimage byte-for-byte.
+    /// The two are pinned together by test, so changing the layout here without
+    /// changing the spec there fails the build.
     pub fn compute_hash(&self) -> DagActionHash {
         let mut hasher = blake3::Hasher::new();
 

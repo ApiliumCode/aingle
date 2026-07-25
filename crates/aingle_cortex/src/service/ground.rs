@@ -22,8 +22,14 @@ pub struct ContextChunk {
     pub source: String,
     pub lines: String,
     pub relevance: f32,
-    /// Hex hash of the signed DAG action that recorded this source — verifiable
-    /// via the DAG history/action API. `None` when the source has no signed action.
+    /// Hex hash of the DAG action that recorded this source.
+    ///
+    /// This is a **pointer, not a proof**: its presence only means this server
+    /// found a signed action for the source. To obtain evidence, fetch the action
+    /// (`GET /api/v1/dag/action/{hash}`, MCP `aingle_dag_action`) and run the
+    /// verification procedure it returns — that response carries the signature,
+    /// the public key and the exact signed bytes. `None` when the source has no
+    /// signed action.
     pub provenance_anchor: Option<String>,
     pub ingested_at: Option<String>,
 }
@@ -189,12 +195,14 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
 }
 
 /// Look up the latest signed DAG action affecting `source_path` and return its
-/// action hash (as provenance identifier) and timestamp, if any.
+/// action hash (the provenance anchor) and timestamp, if any.
 ///
-/// Adaptation note: `DagActionDto` has no `signature` field. Instead it has
-/// `hash: String` (action hash) and `signed: bool`. We return the action hash
-/// as the provenance identifier when the action is signed, or None otherwise.
-/// The timestamp field is `timestamp: String` which matches the plan exactly.
+/// The anchor is the action's hash rather than the signature itself: it is a
+/// handle a client resolves against the single-action lookup, which serves the
+/// signature, the public key and the canonical signed bytes. Inlining the proof
+/// into every retrieved chunk would repeat a whole signed payload per citation;
+/// inlining the raw signature without the canonical bytes would look like proof
+/// while being unverifiable, which is worse than a handle.
 async fn signed_provenance(
     state: &AppState,
     source_path: &str,
@@ -206,9 +214,10 @@ async fn signed_provenance(
         }
         if let Ok(actions) = crate::service::dag::history_by_subject(state, source_path, 1).await {
             if let Some(a) = actions.first() {
-                // DagActionDto has `hash: String` and `signed: bool` rather than a
-                // `signature` field, so we use the action hash as the provenance token
-                // when the action is signed.
+                // Only anchor to an action that actually carries a signature: an
+                // unsigned action (including the by-design genesis) attests to
+                // nothing, so surfacing its hash as an anchor would be a claim
+                // with no signature behind it.
                 let sig = if a.signed { Some(a.hash.clone()) } else { None };
                 return (sig, Some(a.timestamp.clone()));
             }

@@ -6,10 +6,21 @@
 //! ## Endpoints
 //!
 //! - `GET /api/v1/dag/tips` — Current DAG tip hashes and count
-//! - `GET /api/v1/dag/action/:hash` — Single DagAction by hash
+//! - `GET /api/v1/dag/action/:hash` — Single DagAction by hash, **with the
+//!   verification bundle** (signature, public key, canonical signed bytes)
 //! - `GET /api/v1/dag/history` — Mutations affecting a subject
 //! - `GET /api/v1/dag/chain` — Author's action chain
-//! - `GET /api/v1/dag/stats` — Action count, tip count, depth estimate
+//! - `GET /api/v1/dag/stats` — Action count, tip count, node signing public key
+//!
+//! ## Verifiable vs. asserted
+//!
+//! `GET /api/v1/dag/verify/:hash` has this server check a signature and report
+//! the verdict — convenient, but the verdict is still this server's word. The
+//! independent path is `GET /api/v1/dag/action/:hash`: it returns
+//! [`ActionVerificationDto`], from which a client rebuilds the signed bytes and
+//! checks the Ed25519 signature itself. Everything else this module returns
+//! about signing (`signed`, `signature_status`) is an assertion, and is
+//! documented as such on the fields.
 
 use axum::{
     extract::{Path, Query, State},
@@ -36,22 +47,136 @@ pub struct DagTipsResponse {
 pub struct DagActionDto {
     pub hash: String,
     pub parents: Vec<String>,
+    /// Human-readable rendering of the author (e.g. `<node:1>`). This is a
+    /// display form, **not** the bytes that were signed — those are in
+    /// `verification.canonical.author_json`.
     pub author: String,
     pub seq: u64,
     pub timestamp: String,
+    /// Derived label for the payload kind. Computed by this server for display;
+    /// it is not part of the signed record.
     pub payload_type: String,
+    /// Derived one-line summary of the payload. Computed by this server for
+    /// display; it is not part of the signed record. The signed record is
+    /// `verification.canonical.payload_json`.
     pub payload_summary: String,
+    /// Whether this action carries a signature.
+    ///
+    /// **This is an assertion by the server that serves the data, not proof.**
+    /// It is retained for existing clients and keeps its original meaning
+    /// (`true` ⇔ a signature is attached), but a client that needs proof must
+    /// verify it: read `verification` and follow `verification.procedure`.
+    /// Presenting `signed: true` to a user as "verified" is not warranted —
+    /// only a completed signature check is. Prefer `signature_status`, which
+    /// additionally distinguishes deliberately-unsigned actions.
     pub signed: bool,
+    /// Precise signature state. Three values, never to be collapsed:
+    ///
+    /// - `"signed"` — a signature is attached; `verification` carries everything
+    ///   needed to check it.
+    /// - `"unsigned_by_design"` — the genesis action, which is deliberately
+    ///   unsigned so that every node computes the same initial hash. Its absence
+    ///   of a signature is a design property, not a gap.
+    /// - `"unsigned"` — no signature and no design reason for that. Treat the
+    ///   action's content as unattested.
+    pub signature_status: String,
     /// Blake3 hex content hash of the source file, if present in the action's
     /// provenance. Extracted from the first provenanced triple in a
     /// `TripleInsert` (or the first `TripleInsert` inside a `Batch`).
     pub content_hash: Option<String>,
+    /// Everything required to verify this action's signature **without trusting
+    /// this server**: the signature bytes, the public key, and the literal
+    /// inputs that reproduce the signed bytes byte-for-byte.
+    ///
+    /// Present only for `signature_status == "signed"`, and only on the
+    /// single-action lookup (`GET /api/v1/dag/action/{hash}`, MCP
+    /// `aingle_dag_action`). List responses omit it because the signed payload
+    /// can be large; fetch an action by hash to obtain its proof.
+    pub verification: Option<ActionVerificationDto>,
+}
+
+/// The verification bundle for a signed DAG action.
+///
+/// The point of this struct is that a client can reach a verdict from it alone.
+/// It publishes the signature, the key, and — critically — the literal inputs to
+/// the hash, because the hash preimage is a byte concatenation that cannot be
+/// recovered from a re-encoded view of the action.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct ActionVerificationDto {
+    /// Identifier of the canonical hashing/signing scheme (`aingle-dag-action-v1`).
+    /// A client that does not implement this exact scheme must report "cannot
+    /// verify" rather than guess.
+    pub spec: String,
+    /// Digest used for the action hash (`blake3-256`).
+    pub hash_alg: String,
+    /// Signature scheme (`ed25519`).
+    pub signature_alg: String,
+    /// What the signature covers: `action_hash_bytes` — the 32 **raw** bytes of
+    /// the blake3 digest. Not the preimage, and not the hex string.
+    pub signed_message: String,
+    /// The signature, lowercase hex, 128 characters (64 bytes).
+    pub signature: String,
+    /// The Ed25519 public key, lowercase hex, 64 characters (32 bytes).
+    ///
+    /// `None` when this node does not hold a key that verifies this action —
+    /// typically an action authored by a different node and replicated here.
+    /// The signature is still published so a client holding the author's key can
+    /// verify it independently.
+    pub public_key: Option<String>,
+    /// Stable identifier for the key: the hex public key itself, so it is
+    /// self-describing and comparable across responses and restarts.
+    pub key_id: Option<String>,
+    /// Where `public_key` came from:
+    ///
+    /// - `"local_node_key"` — this node's own signing key, which was checked
+    ///   against this signature before being published.
+    /// - `"unknown_author"` — no key available here; verification requires the
+    ///   author's key obtained elsewhere.
+    pub public_key_source: String,
+    /// The literal values that were hashed. Concatenate them per `procedure` to
+    /// rebuild the signed bytes exactly.
+    pub canonical: CanonicalActionDto,
+    /// The verification procedure, spelled out step by step so a client (or an
+    /// assistant acting for one) can execute it and state what it did.
+    pub procedure: Vec<String>,
+}
+
+/// The exact inputs to a DAG action's hash, in publishable form.
+///
+/// Every field is the literal value that went into the digest. See
+/// `ActionVerificationDto::procedure` for the concatenation order.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct CanonicalActionDto {
+    /// Parent action hashes, lowercase hex, in the order they were hashed.
+    pub parents: Vec<String>,
+    /// The author field as JSON (e.g. `{"Named":"node:1"}`) — these bytes were
+    /// hashed, unlike the display form in `DagActionDto::author`.
+    pub author_json: String,
+    /// Per-author sequence number.
+    pub seq: u64,
+    /// The timestamp in the one textual rendering that was hashed (RFC 3339).
+    /// Equal to `DagActionDto::timestamp`.
+    pub timestamp_rfc3339: String,
+    /// The payload as JSON. **This is the signed record of what changed** — the
+    /// claim a signature actually attests to. Check your citation against this,
+    /// not against `payload_summary`.
+    pub payload_json: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct DagStatsResponse {
     pub action_count: usize,
     pub tip_count: usize,
+    /// This node's Ed25519 signing public key, lowercase hex.
+    ///
+    /// Published so a client can pin it out of band and compare it against the
+    /// key offered with each signed action. Pinning is what turns a signature
+    /// check into evidence about a *specific* signer: a server that substitutes
+    /// its own key can produce signatures that verify but attest to nothing.
+    /// `None` when this node has no signing key (it cannot sign).
+    pub signing_public_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -576,10 +701,69 @@ pub fn dag_router() -> Router<AppState> {
 // Helpers
 // ============================================================================
 
-/// Convert a raw [`DagAction`] to its serializable DTO form.
+/// Signature state string for `"signed"`.
+pub(crate) const SIG_SIGNED: &str = "signed";
+/// Signature state string for the deliberately-unsigned genesis action.
+pub(crate) const SIG_UNSIGNED_BY_DESIGN: &str = "unsigned_by_design";
+/// Signature state string for an action that simply has no signature.
+pub(crate) const SIG_UNSIGNED: &str = "unsigned";
+
+/// Lowercase-hex encode a byte slice.
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The step-by-step verification procedure published with every signed action.
 ///
-/// Extracts the payload type, a human-readable summary, and the content hash
-/// from the action's provenance (for `TripleInsert` and `Batch` payloads).
+/// Written for a reader who has nothing but the response: it names the exact
+/// byte layout, the order of operations, and — just as importantly — the checks
+/// that a successful signature does *not* cover.
+fn verification_procedure() -> Vec<String> {
+    [
+        "1. Build the signed bytes from `canonical`, concatenating with no separators \
+         and no padding, in this exact order: (a) the number of parents as a u64 \
+         little-endian; (b) each entry of `canonical.parents` decoded from hex to its \
+         32 raw bytes, in order; (c) the UTF-8 byte length of `canonical.author_json` \
+         as a u64 little-endian; (d) `canonical.author_json` as UTF-8; (e) \
+         `canonical.seq` as a u64 little-endian; (f) `canonical.timestamp_rfc3339` as \
+         UTF-8, with NO length prefix; (g) the UTF-8 byte length of \
+         `canonical.payload_json` as a u64 little-endian; (h) `canonical.payload_json` \
+         as UTF-8.",
+        "2. Compute blake3-256 over those bytes. The lowercase hex of the 32-byte \
+         digest MUST equal the action's `hash`. If it does not, the canonical parts \
+         do not describe the action being served: STOP, verification has failed.",
+        "3. Ed25519-verify `signature` (hex, 64 bytes) over the 32 RAW digest bytes \
+         from step 2 — not over the preimage, and not over the hex string — using \
+         `public_key` (hex, 32 bytes). If `public_key` is null, this node does not \
+         hold the author's key: you can still verify with the key obtained \
+         elsewhere, otherwise report that you could not verify.",
+        "4. Check the signed content against what you are about to assert. \
+         `canonical.payload_json` is the signed record; `payload_type`, \
+         `payload_summary` and `author` are display fields computed by the server \
+         and are NOT covered by the signature. `seq`, `timestamp` and `parents` must \
+         equal their `canonical` counterparts.",
+        "5. Pin `public_key` the first time you see it and compare it on every later \
+         response. A signature only proves that whoever holds THAT key signed those \
+         bytes; a server that substitutes a key of its own produces a signature that \
+         verifies and attests to nothing. The node's key is also published as \
+         `signing_public_key` on the DAG stats endpoint/tool for out-of-band pinning.",
+        "6. Report what you actually did. If steps 1-3 pass, you may say the action's \
+         content is signed by the pinned key. If any step could not be completed, say \
+         so — do not fall back to the `signed` boolean, which is only this server's \
+         own claim.",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// Convert a raw [`DagAction`] to its serializable DTO form, **without** the
+/// verification bundle.
+///
+/// Used by the list-shaped endpoints (history, chain, diff), where attaching the
+/// full signed payload of every action would multiply the response size. Those
+/// responses still carry `hash` and `signature_status`; a client that wants proof
+/// fetches the action by hash.
 pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionDto {
     let hash = action.compute_hash().to_hex();
     let parents: Vec<String> = action.parents.iter().map(|h| h.to_hex()).collect();
@@ -676,8 +860,73 @@ pub(crate) fn action_to_dto(action: &aingle_graph::dag::DagAction) -> DagActionD
         payload_type,
         payload_summary,
         signed: action.signature.is_some(),
+        signature_status: signature_status(action).to_string(),
         content_hash,
+        verification: None,
     }
+}
+
+/// Classify an action's signature state without collapsing the three cases.
+fn signature_status(action: &aingle_graph::dag::DagAction) -> &'static str {
+    if action.signature.is_some() {
+        SIG_SIGNED
+    } else if action.is_unsigned_by_design() {
+        SIG_UNSIGNED_BY_DESIGN
+    } else {
+        SIG_UNSIGNED
+    }
+}
+
+/// Convert a raw [`DagAction`] to its DTO form **with** the verification bundle
+/// when the action is signed.
+///
+/// `node_key` is this node's verifying key, if it has one. It is published with
+/// the action only after it is checked against the signature here, so the DTO
+/// never offers a key that cannot possibly verify the action it accompanies —
+/// an action replicated from another node reports `public_key: null` and
+/// `public_key_source: "unknown_author"` instead of a key that would fail and
+/// look like tampering.
+///
+/// The key check performed here is a convenience, not the client's evidence: the
+/// client must still run `verification.procedure` itself. That is the whole point
+/// of the bundle.
+pub(crate) fn action_to_dto_verifiable(
+    action: &aingle_graph::dag::DagAction,
+    node_key: Option<&aingle_graph::dag::DagVerifyingKey>,
+) -> DagActionDto {
+    let mut dto = action_to_dto(action);
+
+    let Some(sig) = action.signature.as_ref() else {
+        return dto;
+    };
+
+    let canonical = action.canonical();
+    let (public_key, public_key_source) = match node_key {
+        Some(k) if k.verify(action).unwrap_or(false) => {
+            (Some(k.to_hex()), "local_node_key".to_string())
+        }
+        _ => (None, "unknown_author".to_string()),
+    };
+
+    dto.verification = Some(ActionVerificationDto {
+        spec: aingle_graph::dag::CANONICAL_SPEC.to_string(),
+        hash_alg: aingle_graph::dag::HASH_ALG.to_string(),
+        signature_alg: aingle_graph::dag::SIGNATURE_ALG.to_string(),
+        signed_message: aingle_graph::dag::SIGNED_MESSAGE.to_string(),
+        signature: to_hex(sig),
+        key_id: public_key.clone(),
+        public_key,
+        public_key_source,
+        canonical: CanonicalActionDto {
+            parents: canonical.parents.iter().map(|h| h.to_hex()).collect(),
+            author_json: canonical.author_json,
+            seq: canonical.seq,
+            timestamp_rfc3339: canonical.timestamp_rfc3339,
+            payload_json: canonical.payload_json,
+        },
+        procedure: verification_procedure(),
+    });
+    dto
 }
 
 /// Parse a 64-character hex string into a 32-byte array.

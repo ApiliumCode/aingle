@@ -16,6 +16,7 @@
 
 pub mod action;
 pub mod backend;
+pub mod canonical;
 pub mod export;
 pub mod pruning;
 #[cfg(feature = "dag-sign")]
@@ -27,6 +28,9 @@ pub mod tips;
 
 pub use action::{
     DagAction, DagActionHash, DagPayload, MemoryOpKind, Provenance, TripleInsertPayload,
+};
+pub use canonical::{
+    CanonicalAction, CANONICAL_SPEC, HASH_ALG, SIGNATURE_ALG, SIGNED_MESSAGE,
 };
 #[cfg(feature = "sled-backend")]
 pub use backend::SledDagBackend;
