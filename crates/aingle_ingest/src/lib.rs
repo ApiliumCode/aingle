@@ -6,9 +6,11 @@
 mod cards;
 mod chunk;
 mod markdown;
+mod neutralize;
 mod tasks;
 
 pub use aingle_graph::dag::Provenance;
+pub use neutralize::neutralize_extracted_markdown;
 
 /// Object side of an extracted triple. Mapped to the graph value type by the caller.
 #[derive(Debug, Clone, PartialEq)]
