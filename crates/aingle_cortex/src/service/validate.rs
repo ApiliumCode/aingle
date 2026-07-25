@@ -5,11 +5,40 @@
 
 use crate::error::{Error, Result};
 use crate::middleware::is_in_namespace;
+use crate::rest::pol_evidence::{
+    pol_procedure, RuleSetFingerprint, TripleIdentity, HASH_ALG, VALIDATION_PROOF_SPEC,
+};
 use crate::rest::{
     TripleDto, TripleValidationResult, ValidateRequest, ValidateResponse, ValidationMessage,
+    ValidationProofDto,
 };
 use crate::state::{AppState, Event};
 use aingle_graph::{NodeId, Predicate, Triple, Value};
+
+/// How `proof_hash` is reproduced, spelled out for a client holding only the
+/// response.
+fn validation_proof_procedure() -> Vec<String> {
+    [
+        "1. For each entry of `proof.triples`, recompute the triple id as \
+         blake3-256(subject_bytes || predicate_bytes || object_bytes) — hex-decode each \
+         field first, then concatenate the raw bytes with no separators and no length \
+         prefixes. It MUST equal that entry's `triple_id`; otherwise the published \
+         parts do not describe the triples being reported.",
+        "2. Concatenate the entries of `proof.preimage_parts` — the ASCII lowercase-hex \
+         triple ids, in order, with no separator — and take blake3-256 of those ASCII \
+         bytes. The hex digest MUST equal `proof_hash`.",
+        "3. Read what this establishes: `proof_hash` commits to WHICH triples were \
+         submitted, in what order. It does not commit to the verdict, to the rule set, \
+         or to a timestamp, and it is not signed — so it identifies a validation \
+         request, it does not attest to its outcome. Nothing stops the same digest \
+         being produced for the same triples under different rules.",
+        "4. To say anything about the outcome, follow the `procedure` on the response \
+         itself and read `rule_set`.",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
 
 /// Validate triple(s) against the logic engine.
 ///
@@ -33,7 +62,10 @@ pub async fn validate_triples(
 
     let ns_filter = namespace;
 
+    let rule_set = RuleSetFingerprint::of(&logic);
+
     let mut results = Vec::new();
+    let mut identities = Vec::new();
     let mut all_valid = true;
 
     for input in req.triples {
@@ -88,6 +120,10 @@ pub async fn validate_triples(
             created_at: None,
         };
 
+        // The literal hash inputs of this triple, so the id above is checkable
+        // rather than another opaque server-computed string.
+        identities.push(TripleIdentity::of(&triple));
+
         results.push(TripleValidationResult {
             triple: triple_dto,
             valid,
@@ -98,16 +134,36 @@ pub async fn validate_triples(
     drop(logic);
 
     // Generate a simple proof hash if all valid.
-    let proof_hash = if all_valid {
+    let (proof_hash, proof) = if all_valid {
+        // The preimage is the concatenation of the ASCII triple-id hex strings,
+        // in order. Collected here rather than described in prose so the client
+        // hashes exactly what this loop hashes.
+        let preimage_parts: Vec<String> =
+            results.iter().filter_map(|r| r.triple.id.clone()).collect();
+
         let mut hasher = blake3::Hasher::new();
-        for result in &results {
-            if let Some(ref id) = result.triple.id {
-                hasher.update(id.as_bytes());
-            }
+        for part in &preimage_parts {
+            hasher.update(part.as_bytes());
         }
-        Some(hasher.finalize().to_hex().to_string())
+        let hash = hasher.finalize().to_hex().to_string();
+
+        let dto = ValidationProofDto {
+            spec: VALIDATION_PROOF_SPEC.to_string(),
+            hash_alg: HASH_ALG.to_string(),
+            covers: "the identities of the submitted triples, in submission order.".to_string(),
+            does_not_cover:
+                "the verdict. `valid` is not hashed, the rule set is not hashed, nothing \
+                 is signed and no timestamp is bound in — so this digest identifies WHICH \
+                 triples were validated, never that they are valid. A digest sitting next \
+                 to `valid: true` is not evidence for it."
+                    .to_string(),
+            preimage_parts,
+            triples: identities,
+            procedure: validation_proof_procedure(),
+        };
+        (Some(hash), Some(dto))
     } else {
-        None
+        (None, None)
     };
 
     // Broadcast validation event (same side-effect as the REST handler).
@@ -123,6 +179,9 @@ pub async fn validate_triples(
         valid: all_valid,
         results,
         proof_hash,
+        proof,
+        rule_set,
+        procedure: pol_procedure(),
     })
 }
 
@@ -176,5 +235,153 @@ mod tests {
         assert!(resp.valid);
         assert!(resp.results.is_empty());
         assert!(resp.proof_hash.is_some());
+    }
+
+    // ========================================================================
+    // Independent checkability
+    //
+    // `proof_hash` used to be an anchor with nothing behind it: a digest a
+    // client could neither reproduce nor interpret. Below the "from here on"
+    // marker these tests hold only the serialized response and a generic hash
+    // library — no aingle type, no server state.
+    // ========================================================================
+
+    fn unhex(v: &serde_json::Value) -> Vec<u8> {
+        let s = v
+            .as_str()
+            .unwrap_or_else(|| panic!("expected hex, got {v}"));
+        assert!(s.len() % 2 == 0, "hex must be byte-aligned: {s:?}");
+        (0..s.len() / 2)
+            .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("hex digit"))
+            .collect()
+    }
+
+    async fn validated(subjects: &[&str]) -> serde_json::Value {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let req = ValidateRequest {
+            triples: subjects
+                .iter()
+                .map(|s| ValidateTripleInput {
+                    subject: (*s).to_string(),
+                    predicate: "ex:knows".to_string(),
+                    object: ValueDto::Node {
+                        node: "ex:bob".to_string(),
+                    },
+                })
+                .collect(),
+            rule_set: None,
+        };
+        let resp = validate_triples(&state, req, None).await.expect("validate");
+        serde_json::to_value(&resp).expect("serialize")
+    }
+
+    #[tokio::test]
+    async fn validate_response_alone_lets_a_client_recompute_the_proof_hash() {
+        let json = validated(&["ex:alice", "ex:carol"]).await;
+
+        // ------------------------------------------------------------------
+        // From here on: ONLY `json` and a blake3 implementation.
+        // ------------------------------------------------------------------
+        let proof = &json["proof"];
+        assert!(
+            !proof.is_null(),
+            "a proof_hash a client cannot reproduce is an anchor, not a proof: {json}"
+        );
+        assert_eq!(proof["spec"], "aingle-validation-proof-v1");
+        assert_eq!(proof["hash_alg"], "blake3-256");
+        assert!(!proof["procedure"].as_array().expect("procedure").is_empty());
+
+        // 1. Each triple identity must be recomputable from the literal bytes
+        //    that were hashed — otherwise the ids are just more server output.
+        let triples = proof["triples"].as_array().expect("proof.triples");
+        assert_eq!(triples.len(), 2);
+        let mut concatenated = String::new();
+        for t in triples {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(&unhex(&t["subject_bytes"]));
+            hasher.update(&unhex(&t["predicate_bytes"]));
+            hasher.update(&unhex(&t["object_bytes"]));
+            assert_eq!(
+                hasher.finalize().to_hex().to_string(),
+                t["triple_id"].as_str().expect("triple_id"),
+                "the published bytes must hash to the published triple id"
+            );
+            concatenated.push_str(t["triple_id"].as_str().unwrap());
+        }
+
+        // 2. The published preimage must be exactly those ids, in order.
+        let parts: Vec<&str> = proof["preimage_parts"]
+            .as_array()
+            .expect("preimage_parts")
+            .iter()
+            .map(|p| p.as_str().expect("part"))
+            .collect();
+        assert_eq!(parts.concat(), concatenated);
+
+        // 3. blake3 over that concatenation must be the advertised proof_hash.
+        assert_eq!(
+            blake3::hash(concatenated.as_bytes()).to_hex().to_string(),
+            json["proof_hash"].as_str().expect("proof_hash"),
+            "the client's own digest must equal the one the server published"
+        );
+
+        // 4. The identity has to bind the content it claims to. The hashed
+        //    subject bytes must actually contain the subject being displayed.
+        let subject_bytes = unhex(&triples[0]["subject_bytes"]);
+        assert!(
+            String::from_utf8_lossy(&subject_bytes).contains("ex:alice"),
+            "the hashed bytes must embed the subject they are said to identify"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_changed_triple_id_breaks_the_recomputed_proof_hash() {
+        // Negative control: if the recomputation did not depend on the published
+        // parts, the test above would prove nothing.
+        let json = validated(&["ex:alice"]).await;
+        let mut parts: Vec<String> = json["proof"]["preimage_parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.as_str().unwrap().to_string())
+            .collect();
+        let flipped = if parts[0].starts_with('a') { "b" } else { "a" };
+        parts[0].replace_range(0..1, flipped);
+        assert_ne!(
+            blake3::hash(parts.concat().as_bytes()).to_hex().to_string(),
+            json["proof_hash"].as_str().unwrap(),
+            "a one-character edit to the preimage must change the hash"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_states_that_its_verdict_rests_on_an_empty_rule_set() {
+        // The verdict this node returns is "no loaded rule rejected the triple".
+        // A node with no rules loaded rejects nothing, so `valid: true` is
+        // vacuous — and saying so is the difference between an honest response
+        // and a misleading one.
+        let json = validated(&["ex:alice"]).await;
+
+        let rs = &json["rule_set"];
+        assert_eq!(rs["rule_count"], 0, "{json}");
+        assert_eq!(
+            rs["vacuous"], true,
+            "an empty rule set must be reported as vacuous, not as a clean pass: {json}"
+        );
+        let note = rs["note"].as_str().expect("note").to_lowercase();
+        assert!(
+            note.contains("no rules"),
+            "the note must say plainly that nothing was checked: {note}"
+        );
+
+        // And the proof must not be mistaken for a proof of validity.
+        let does_not = json["proof"]["does_not_cover"]
+            .as_str()
+            .expect("does_not_cover")
+            .to_lowercase();
+        assert!(
+            does_not.contains("verdict") || does_not.contains("valid"),
+            "the digest covers the inputs, not the verdict; say so: {does_not}"
+        );
     }
 }

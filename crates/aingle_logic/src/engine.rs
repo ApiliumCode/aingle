@@ -101,6 +101,17 @@ impl RuleEngine {
         self.add_rule(rule);
     }
 
+    /// The rule set this engine evaluates.
+    ///
+    /// Exposed so a caller can publish *what its verdict depended on* alongside
+    /// the verdict. A validation result is only meaningful relative to the rules
+    /// that produced it: with an empty rule set nothing is rejected, so "valid"
+    /// means "unexamined". A consumer cannot tell those apart from the boolean,
+    /// and hiding the rule set is what makes the boolean look stronger than it is.
+    pub fn rule_set(&self) -> &RuleSet {
+        &self.rules
+    }
+
     /// Retrieves the current `EngineStats` for this engine.
     ///
     /// The stats provide metrics on validations, inferences, rejections, etc.

@@ -15,12 +15,18 @@
 //! ## Verifiable vs. asserted
 //!
 //! `GET /api/v1/dag/verify/:hash` has this server check a signature and report
-//! the verdict — convenient, but the verdict is still this server's word. The
-//! independent path is `GET /api/v1/dag/action/:hash`: it returns
+//! the verdict — convenient, but the verdict is still this server's word, and
+//! now **strictly weaker** than the alternative rather than merely different.
+//! The independent path is `GET /api/v1/dag/action/:hash`: it returns
 //! [`ActionVerificationDto`], from which a client rebuilds the signed bytes and
 //! checks the Ed25519 signature itself. Everything else this module returns
 //! about signing (`signed`, `signature_status`) is an assertion, and is
 //! documented as such on the fields.
+//!
+//! The same split runs through the proof surface — see
+//! [`crate::proofs::replay`], where two ZK schemes are genuinely replayable and
+//! two can only be labelled honestly — and through the proof-of-logic surface,
+//! see [`crate::rest::pol_evidence`], where none are and the response says so.
 
 use axum::{
     extract::{Path, Query, State},
@@ -406,7 +412,21 @@ pub async fn get_dag_export(
     Ok(([(axum::http::header::CONTENT_TYPE, content_type)], body).into_response())
 }
 
-/// GET /api/v1/dag/verify/:hash?public_key=X — verify an action's Ed25519 signature
+/// GET /api/v1/dag/verify/:hash?public_key=X — **have this server check an
+/// action's Ed25519 signature and report its own verdict.**
+///
+/// Strictly weaker than `GET /api/v1/dag/action/{hash}`, and deliberately
+/// documented as such. This endpoint runs the check here and returns a boolean:
+/// the caller learns what this node concluded, not what is true, and cannot tell
+/// a genuine verification from a server that simply answered `true`. Supplying
+/// your own `public_key` narrows *which* key was used but not who did the
+/// checking — the same process still grades its own data.
+///
+/// The independent path returns [`ActionVerificationDto`]: the signature, the key
+/// and the exact canonical bytes, from which a client rebuilds the preimage and
+/// verifies the Ed25519 signature itself. Prefer it whenever the answer will be
+/// shown to anyone as evidence; use this one only for convenience checks whose
+/// result you are willing to describe as "the node reports".
 #[cfg(feature = "dag")]
 pub async fn get_dag_verify(
     State(state): State<AppState>,

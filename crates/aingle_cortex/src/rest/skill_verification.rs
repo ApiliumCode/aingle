@@ -41,13 +41,58 @@ pub struct AssertionDecl {
 }
 
 /// Response from manifest validation.
+///
+/// **`valid` is an assertion by this node, not proof.** It means "for every
+/// assertion that declared `require_proof`, at least one enabled PoL rule matched
+/// a probe triple on this node". That depends entirely on which rules this node
+/// has loaded — see `rule_set` — and says nothing about the skill itself.
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Debug)]
 pub struct ValidateManifestResponse {
-    /// Whether all assertions are valid.
+    /// Whether every checked assertion found a matching rule.
+    ///
+    /// **An assertion, not proof.** Note also that assertions with
+    /// `require_proof: false` are never checked at all, so `valid: true` for a
+    /// manifest of such assertions means nothing was examined. `checks` shows
+    /// which is which.
     pub valid: bool,
     /// List of validation errors.
     pub errors: Vec<String>,
+    /// What was checked, per declared assertion — including the ones that were
+    /// skipped, so silence cannot be read as a pass.
+    pub checks: Vec<ManifestCheck>,
+    /// The rule set the verdict depends on. When `vacuous`, every
+    /// `require_proof` assertion necessarily fails to find a rule.
+    pub rule_set: crate::rest::pol_evidence::RuleSetFingerprint,
+    /// Steps a caller should run and report on instead of relaying `valid`.
+    pub procedure: Vec<String>,
+    /// Why this verdict cannot be made independently checkable, stated plainly
+    /// rather than left for the caller to discover.
+    pub limitation: String,
+}
+
+/// What was done for one declared assertion in a manifest.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[derive(Serialize, Debug)]
+pub struct ManifestCheck {
+    /// The namespace-resolved predicate that was (or would have been) probed.
+    pub predicate: String,
+    /// The predicate exactly as the manifest declared it.
+    pub declared_predicate: String,
+    /// Whether the manifest asked for this assertion to be backed by proof.
+    pub require_proof: bool,
+    /// Whether this node evaluated anything for this assertion. `false` when
+    /// `require_proof` is `false` — nothing is probed then.
+    pub evaluated: bool,
+    /// Outcome: `"rule_matched"`, `"no_matching_rule"`, or `"not_checked"`.
+    pub outcome: String,
+    /// Ids of the enabled rules that matched the probe triple.
+    pub matched_rule_ids: Vec<String>,
+    /// Identity of the probe triple that was run through the rule engine, so a
+    /// caller can see the artificial subject/value the check actually used
+    /// rather than assume a real assertion was inspected. `None` when the
+    /// assertion was not evaluated.
+    pub probe: Option<crate::rest::pol_evidence::TripleIdentity>,
 }
 
 /// Request to create a sandbox namespace.

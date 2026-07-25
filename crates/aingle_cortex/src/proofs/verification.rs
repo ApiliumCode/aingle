@@ -121,6 +121,19 @@ fn reconstruct_zk_proof(proof: &StoredProof) -> Result<aingle_zk::ZkProof, Verif
     })
 }
 
+/// Parse a stored proof into an `aingle_zk::ZkProof`, accepting either the full
+/// envelope or the bare `proof_data` the REST/MCP submit path persists.
+///
+/// Shared with [`super::replay`] so the bundle a client is told to replay is
+/// derived from *the same parse* the verdict came from. Deriving them separately
+/// would let the published material describe a different proof than the one that
+/// was checked — the failure the DAG canonical form exists to prevent.
+pub(crate) fn parse_stored_proof(
+    proof: &StoredProof,
+) -> Result<aingle_zk::ZkProof, VerificationError> {
+    serde_json::from_slice(&proof.data).or_else(|_| reconstruct_zk_proof(proof))
+}
+
 /// Map Cortex `ProofType` → `aingle_zk::ProofType`.
 fn cortex_to_zk_proof_type(pt: &ProofType) -> aingle_zk::ProofType {
     match pt {
@@ -204,8 +217,7 @@ impl ProofVerifier {
         // envelope) when submitted via the REST API, since submit() only
         // persists request.proof_data. Try full envelope first, then
         // reconstruct from StoredProof.proof_type + raw proof data.
-        let zk_proof: aingle_zk::ZkProof =
-            serde_json::from_slice(&proof.data).or_else(|_| reconstruct_zk_proof(proof))?;
+        let zk_proof: aingle_zk::ZkProof = parse_stored_proof(proof)?;
 
         // Verify based on proof type
         let valid = match proof.proof_type {

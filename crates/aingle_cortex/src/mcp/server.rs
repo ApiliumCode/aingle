@@ -148,14 +148,19 @@ fn dag_dto_hidden(pol: &crate::mcp::policy::McpPolicy, d: &crate::rest::dag::Dag
         .is_some_and(|v| payload_json_references_excluded(pol, &v.canonical.payload_json))
 }
 
-/// Substring-scrub a *serialized JSON* payload for excluded folder paths.
+/// Substring-scrub a *serialized JSON* document for excluded folder paths.
 ///
-/// JSON escapes a backslash as `\\`, so a Windows-style path inside the signed
+/// JSON escapes a backslash as `\\`, so a Windows-style path inside a serialized
 /// payload arrives with its separators doubled and a naive `\` → `/` rewrite
 /// yields `Personal//Finanzas`, which no longer contains the excluded prefix.
 /// Collapsing runs of separators first closes that escape hatch. The collapse is
 /// only for matching (it also flattens `scheme://`), never for output.
-#[cfg(feature = "dag")]
+///
+/// Used for every field that publishes *material* rather than a summary: the
+/// signed DAG payload, and — since a proof's bytes and metadata are now served
+/// alongside its verdict — the stored proof JSON and its metadata. Whenever a
+/// surface starts publishing the thing itself instead of a description of it,
+/// this is the filter that has to follow.
 fn payload_json_references_excluded(
     pol: &crate::mcp::policy::McpPolicy,
     payload_json: &str,
@@ -171,6 +176,99 @@ fn payload_json_references_excluded(
         prev_sep = sep;
     }
     pol.text_references_excluded(&normalized)
+}
+
+/// A replay bundle is hidden if the proof material it publishes names a path
+/// under an excluded folder.
+///
+/// Public inputs are hex digests and curve points, so they cannot spell a path;
+/// `proof_json` is the caller-supplied proof document verbatim and very much can.
+/// A proof submitted *about* an excluded note carries that note's path in its
+/// body, and a "verify" response now serves that body — so the same scrub the
+/// signed DAG payload needed applies here, escaped separators included.
+fn replay_references_excluded(
+    pol: &crate::mcp::policy::McpPolicy,
+    replay: &crate::proofs::ProofReplay,
+) -> bool {
+    replay
+        .proof_json
+        .as_deref()
+        .is_some_and(|j| payload_json_references_excluded(pol, j))
+}
+
+/// A verify response is hidden if its replay bundle names an excluded path.
+fn verify_proof_hidden(
+    pol: &crate::mcp::policy::McpPolicy,
+    resp: &crate::rest::VerifyProofResponse,
+) -> bool {
+    resp.replay
+        .as_ref()
+        .is_some_and(|r| replay_references_excluded(pol, r))
+}
+
+/// A fetched proof is hidden if either its material or its metadata names an
+/// excluded path. Metadata is free-form (`submitter`, `tags`, `extra`), so it is
+/// scanned as serialized JSON rather than field by field — a new metadata field
+/// must not silently become a new way out.
+fn get_proof_hidden(
+    pol: &crate::mcp::policy::McpPolicy,
+    resp: &crate::rest::ProofResponse,
+) -> bool {
+    if resp
+        .replay
+        .as_ref()
+        .is_some_and(|r| replay_references_excluded(pol, r))
+    {
+        return true;
+    }
+    serde_json::to_string(&resp.metadata)
+        .map(|m| payload_json_references_excluded(pol, &m))
+        .unwrap_or(true)
+}
+
+/// An assertion verdict is hidden if the assertion it is about — or the triple
+/// the evidence now echoes back — resolves to an excluded note path.
+///
+/// The subject is a structured field, so `is_hidden` handles it; the evidence
+/// carries the stored triple's display strings as well, which is a second way
+/// out and is scanned as text.
+fn assertion_result_hidden(
+    pol: &crate::mcp::policy::McpPolicy,
+    r: &crate::rest::AssertionVerifyResult,
+) -> bool {
+    if pol.is_hidden(&r.subject) {
+        return true;
+    }
+    r.evidence
+        .triple
+        .as_ref()
+        .is_some_and(|t| pol.is_hidden(&t.subject) || pol.text_references_excluded(&t.subject))
+}
+
+/// Drop the consistency units the policy hides **and recompute the score from
+/// what remains**.
+///
+/// Filtering the list while leaving `total`/`verified`/`score` untouched would
+/// publish a fraction whose parts do not add up — which both leaks the existence
+/// of the hidden units and breaks the arithmetic the response invites the caller
+/// to check. Recomputing keeps the published numbers exactly the numbers the
+/// published list supports.
+fn consistency_retain_visible(
+    pol: &crate::mcp::policy::McpPolicy,
+    resp: &mut crate::rest::ConsistencyResponse,
+) {
+    resp.assertions.retain(|u| {
+        !pol.is_hidden(&u.subject)
+            && !pol.text_references_excluded(&u.subject)
+            && !u.triple.as_ref().is_some_and(|t| pol.is_hidden(&t.subject))
+    });
+    resp.total = resp.assertions.len();
+    resp.verified = resp.assertions.iter().filter(|u| u.verified).count();
+    resp.score = if resp.total > 0 {
+        resp.verified as f64 / resp.total as f64
+    } else {
+        0.0
+    };
 }
 
 /// Parameters for the `aingle_dag_history` tool.
@@ -962,12 +1060,43 @@ impl AingleMcp {
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
-    /// Verify a stored proof by ID; returns {valid: bool, ...}.
+    /// Verify a stored proof by ID, publishing the material to replay the check.
     ///
     /// Read-only. Invalid/malformed proofs return `valid:false` (NOT an error);
     /// only a missing proof yields an error.
     #[tool(
-        description = "Verify a cryptographic/ZK proof by ID. Returns valid:false for invalid proofs (not an error).",
+        description = "Ask this node to check a stored cryptographic/ZK proof, and get \
+            back what you need to check it yourself.\n\
+            \n\
+            `valid` is THIS SERVER'S ASSERTION about data this server stores — not \
+            proof, however much the tool name suggests otherwise. Do not relay it as \
+            'verified'.\n\
+            \n\
+            Read `replay.check` first; it names what was actually computed:\n\
+            - `schnorr_discrete_log` — a real verification. Replay: decode \
+            `public_parameters.generator_g` and `public_inputs.commitment` as \
+            compressed ristretto255 points G and P, and `challenge`/`response` as \
+            32-byte scalars c and s; compute R' = s*G - c*P; check \
+            sha256(compress(R') || commitment) == `challenge`. Scope: it proves \
+            knowledge of a discrete log and binds NO message, so it is not proof of \
+            any statement it was served next to.\n\
+            - `pedersen_commitment_equality` — a real verification. Rebuild H from \
+            `public_parameters.generator_h_derivation` and confirm it equals \
+            `generator_h`; compute D = C1 - C2 and R' = s*H - c*D; check \
+            sha256(compress(R') || compress(D)) == `challenge`.\n\
+            - `well_formedness_only` — NOT a verification. The node only checked that \
+            the commitment and salt are non-zero; opening the commitment needs the \
+            committed data, which the node does not hold. `valid:true` here means \
+            nothing about the committed value.\n\
+            - `root_consistency_only` — NOT a verification. The node only compared the \
+            proof's own root against the root it is filed under; membership needs the \
+            member datum, which the node does not hold.\n\
+            \n\
+            `replay.establishes` / `does_not_establish` state the scope in words, and \
+            `additional_input_required` names the input missing when the check cannot \
+            settle the claim. Follow `replay.procedure`, then report WHICH STEPS YOU \
+            RAN. If you did not run them, say 'the node reports this proof valid', not \
+            'verified'. Invalid proofs return valid:false, not an error.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_verify_proof(
@@ -975,17 +1104,34 @@ impl AingleMcp {
         params: Parameters<crate::rest::VerifyProofByIdRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
+        let proof_id = req.proof_id.clone();
         let resp = crate::service::proof::verify_proof(&self.state, req)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // The published proof bytes can name an excluded note; report the proof
+        // as absent rather than serve its material.
+        let pol = self.state.mcp_policy_snapshot();
+        if verify_proof_hidden(&pol, &resp) {
+            return Err(super::convert::to_mcp_error(crate::error::Error::NotFound(
+                format!("Proof {} not found", proof_id),
+            )));
+        }
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
-    /// Fetch a stored proof by ID; returns its metadata.
+    /// Fetch a stored proof by ID, with the material needed to check it.
     ///
     /// Read-only. A missing proof yields an error.
     #[tool(
-        description = "Fetch a stored cryptographic/ZK proof by ID. Errors if the proof does not exist.",
+        description = "Fetch a stored cryptographic/ZK proof by ID. Returns its record \
+            plus `replay`: the proof bytes, the public parameters, the public inputs \
+            and a step-by-step procedure for checking it yourself.\n\
+            \n\
+            `verified` is this server's cached verdict from a PAST call, not a check \
+            performed now, and it is `false` for a proof that was never checked. It is \
+            an assertion either way. Use `replay` — and read `replay.check`, which for \
+            `well_formedness_only` and `root_consistency_only` means no claim was \
+            verified at all. Errors if the proof does not exist.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_get_proof(
@@ -993,9 +1139,17 @@ impl AingleMcp {
         params: Parameters<crate::rest::GetProofRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
+        let proof_id = req.proof_id.clone();
         let resp = crate::service::proof::get_proof(&self.state, req)
             .await
             .map_err(super::convert::to_mcp_error)?;
+        // Proof metadata is caller-supplied and can name an excluded note.
+        let pol = self.state.mcp_policy_snapshot();
+        if get_proof_hidden(&pol, &resp) {
+            return Err(super::convert::to_mcp_error(crate::error::Error::NotFound(
+                format!("Proof {} not found", proof_id),
+            )));
+        }
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -1005,7 +1159,26 @@ impl AingleMcp {
     /// a manifest with unsatisfiable proof requirements yields `valid:false`
     /// with per-assertion error messages (not a tool error).
     #[tool(
-        description = "Validate a semantic skill manifest against PoL rules. Returns {valid, errors}; does not mutate.",
+        description = "Check a semantic skill manifest against this node's \
+            proof-of-logic rules. Returns {valid, errors, checks, rule_set, \
+            procedure, limitation}; does not mutate.\n\
+            \n\
+            `valid` is THIS NODE'S ASSERTION, and `limitation` says why it cannot be \
+            more: reproducing it needs the node's rule set, which is configuration and \
+            may include conditions that cannot be serialized at all. There is no \
+            replay bundle here and there cannot be one.\n\
+            \n\
+            Read `rule_set` first. If `rule_set.vacuous` is true, NO rules are enabled, \
+            so no probe can match and every `require_proof` assertion fails for a \
+            configuration reason rather than a manifest defect — say that, don't report \
+            the manifest as bad. Read `checks` second: entries with `evaluated: false` \
+            were never examined (the manifest asked for no proof on them), and each \
+            check ran against a synthetic probe triple, not the skill's real \
+            assertions. A matching rule means such a rule exists for that predicate; it \
+            does not mean anything was validated.\n\
+            \n\
+            Report which checks ran and under which `rule_set.digest`. Never say a \
+            skill is 'verified' on the strength of this tool.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_validate_skill(
@@ -1069,7 +1242,24 @@ impl AingleMcp {
     /// agent returns a well-formed default ({score:0.0, total:0, verified:0}),
     /// not an error.
     #[tool(
-        description = "Compute an agent's assertion consistency score (fraction of its assertions that pass PoL validation). Unknown agent => score 0.0.",
+        description = "Compute an agent's assertion consistency score: the fraction of \
+            its assertions that pass this node's proof-of-logic validation. Returns \
+            {score, total, verified, assertions, rule_set, procedure}.\n\
+            \n\
+            The score is arithmetic over verdicts this server produced, so it is an \
+            assertion too — and it is NOT a reputation or trust measurement. Check it \
+            rather than repeat it: `total` must equal the length of `assertions`, \
+            `verified` the number marked true, and `score` their quotient.\n\
+            \n\
+            If `rule_set.vacuous` is true, no rules are enabled, every assertion \
+            trivially passes, and the score degenerates to 1.0 for any agent with \
+            assertions — it measures nothing. If `total` is 0 the score is 0.0 meaning \
+            'nothing found', NOT '0% consistent'; unknown agents land here. Note also \
+            that `assertions` mixes two units: `subject` entries count as verified when \
+            ANY triple on that subject validates, `triple` entries are single \
+            assertions, and both count as 1.\n\
+            \n\
+            Report the fraction and the rule-set state you saw, not a bare percentage.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_agent_consistency(
@@ -1077,8 +1267,14 @@ impl AingleMcp {
         params: Parameters<crate::rest::AgentConsistencyRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp =
+        let mut resp =
             crate::service::reputation::agent_consistency(&self.state, &req.agent_id, None).await;
+        // The score used to be three numbers; it now enumerates the subjects
+        // behind them, which is a new way for an excluded note path to leave.
+        // Dropping hidden units keeps the published arithmetic self-consistent —
+        // recompute rather than serve a fraction whose parts do not add up.
+        let pol = self.state.mcp_policy_snapshot();
+        consistency_retain_visible(&pol, &mut resp);
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -1087,7 +1283,26 @@ impl AingleMcp {
     /// Read-only: verification never mutates. Missing/unknown assertions report
     /// `verified:false` per entry rather than erroring.
     #[tool(
-        description = "Batch-verify assertion proofs by (subject, predicate). Returns a per-assertion verified flag; unknown assertions => verified:false (not an error).",
+        description = "Check assertions by (subject, predicate) against this node's \
+            proof-of-logic rules. Returns per-assertion {verified, evidence} plus \
+            `rule_set` and `procedure`.\n\
+            \n\
+            `verified` is THIS NODE'S ASSERTION, not proof, and it is lossy: `false` \
+            covers both 'no such triple here' and 'a rule rejected it'. Read \
+            `evidence.outcome`, which separates them into `accepted`, `rejected` and \
+            `not_found` — a `not_found` means nothing was evaluated and is NOT evidence \
+            the assertion is false.\n\
+            \n\
+            Read `rule_set` before reporting anything: if `vacuous` is true, no rules \
+            are enabled, nothing can be rejected, and every existing triple comes back \
+            `verified: true` without being examined. `evidence.triple` publishes the \
+            literal bytes of the evaluated triple's id, so you can confirm the verdict \
+            is about the triple you meant (blake3-256 of subject_bytes || \
+            predicate_bytes || object_bytes must equal triple_id).\n\
+            \n\
+            This verdict cannot be replayed from the response — reproducing it needs \
+            the node's rule set. Report 'this node reports X under rule-set digest Y', \
+            not 'verified'.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_verify_assertions_batch(
@@ -1095,8 +1310,12 @@ impl AingleMcp {
         params: Parameters<crate::rest::BatchVerifyAssertionsRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let Parameters(req) = params;
-        let resp =
+        let mut resp =
             crate::service::reputation::batch_verify_assertions(&self.state, req, None).await;
+        // The evidence now echoes the stored triple, including its subject, so
+        // an excluded note can ride out on a verdict about it.
+        let pol = self.state.mcp_policy_snapshot();
+        resp.results.retain(|r| !assertion_result_hidden(&pol, r));
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
@@ -1106,7 +1325,28 @@ impl AingleMcp {
     /// validity + messages and an overall `valid` flag; an invalid triple yields
     /// `valid:false` (not a tool error).
     #[tool(
-        description = "Validate triple(s) against the PoL logic engine. Returns {valid, results, proof_hash}; invalid triples yield valid:false (not an error). Does not mutate.",
+        description = "Run triple(s) through this node's proof-of-logic rule engine. \
+            Returns {valid, results, proof_hash, proof, rule_set, procedure}; invalid \
+            triples yield valid:false (not an error). Does not mutate.\n\
+            \n\
+            `valid` is THIS NODE'S ASSERTION — 'no enabled rule rejected these triples'. \
+            Read `rule_set` first: if `vacuous` is true there are NO enabled rules, so \
+            nothing was examined and `valid: true` carries no information at all. Say \
+            that plainly instead of reporting the triples as validated. The verdict \
+            cannot be replayed from this response; reproducing it needs the node's rule \
+            set, which is configuration.\n\
+            \n\
+            `proof_hash` IS reproducible, and it is not what its name suggests. Check it: \
+            (1) for each `proof.triples` entry, hex-decode subject_bytes, \
+            predicate_bytes and object_bytes, concatenate the raw bytes with no \
+            separators, blake3-256 them, and confirm the result equals `triple_id`; \
+            (2) concatenate `proof.preimage_parts` (the ASCII triple-id hex strings, in \
+            order, no separator) and blake3-256 those ASCII bytes — it must equal \
+            `proof_hash`. What that digest commits to is WHICH triples were submitted. \
+            It does not cover the verdict, the rule set or a timestamp, and it is not \
+            signed, so it is never evidence that the triples are valid.\n\
+            \n\
+            Report which of these steps you ran.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_validate(
@@ -2049,8 +2289,14 @@ mod policy_enforcement_tests {
             .contains("{{cloze Paris}}"));
 
         let dump = payload.to_string().replace('\\', "/");
-        assert!(!dump.contains("Secret card"), "excluded card hidden: {dump}");
-        assert!(!dump.contains("Private"), "excluded path must not leak: {dump}");
+        assert!(
+            !dump.contains("Secret card"),
+            "excluded card hidden: {dump}"
+        );
+        assert!(
+            !dump.contains("Private"),
+            "excluded path must not leak: {dump}"
+        );
     }
 
     /// `aingle_due_cards` buckets cards for review against `today`: due / new /
@@ -2082,7 +2328,10 @@ mod policy_enforcement_tests {
             "future card"
         );
         let dump = payload.to_string().replace('\\', "/");
-        assert!(!dump.contains("Secret card"), "excluded card hidden: {dump}");
+        assert!(
+            !dump.contains("Secret card"),
+            "excluded card hidden: {dump}"
+        );
     }
 
     /// Under the default (ReadOnly) policy a mutation tool returns an error
@@ -2730,5 +2979,269 @@ mod policy_enforcement_tests {
             &pol,
             r#"{"subject":"Public/open.md","object":"note://open"}"#
         ));
+    }
+
+    // ========================================================================
+    // The exclusion hole that publishing proof material opens
+    //
+    // Before this work the proof tools returned a verdict and some counters, so
+    // there was nothing for an excluded path to ride out on. Publishing the
+    // proof bytes, the submitter and the tags changes that: a proof submitted
+    // *about* an excluded note now carries that note's path in the response.
+    // Same failure the DAG canonical payload had, same fix — scrub the material,
+    // not only the summary, and see through JSON escaping while doing it.
+    // ========================================================================
+
+    /// Flatten a serialized tool result the way a reader would: every separator
+    /// becomes `/`, and runs collapse. Without the collapse this helper would
+    /// miss a Windows path that JSON escaped into `Personal\\Finanzas`, and the
+    /// leak tests below would pass while leaking.
+    fn flattened(dump: &str) -> String {
+        let mut out = String::with_capacity(dump.len());
+        let mut prev_sep = false;
+        for ch in dump.chars() {
+            let sep = ch == '/' || ch == '\\';
+            if sep && prev_sep {
+                continue;
+            }
+            out.push(if sep { '/' } else { ch });
+            prev_sep = sep;
+        }
+        out
+    }
+
+    /// Submit a proof whose stored bytes name an excluded note, and return its id.
+    async fn submit_proof_naming(state: &AppState, path_in_proof: &str) -> String {
+        state
+            .proof_store
+            .submit(crate::proofs::SubmitProofRequest {
+                proof_type: crate::proofs::ProofType::HashOpening,
+                proof_data: serde_json::json!({
+                    "type": "HashOpening",
+                    "commitment": vec![1u8; 32],
+                    "salt": vec![2u8; 32],
+                    "about": path_in_proof,
+                }),
+                metadata: None,
+            })
+            .await
+            .expect("submit")
+    }
+
+    fn excluding_finanzas() -> McpPolicy {
+        McpPolicy {
+            excluded_folders: vec!["Personal/Finanzas".into()],
+            permission: Permission::ReadOnly,
+            require_grounding: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn verify_proof_does_not_carry_an_excluded_path_out_in_the_proof_bytes() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let id = submit_proof_naming(&state, "Personal/Finanzas/secret.md").await;
+        state.set_mcp_policy(excluding_finanzas());
+        let mcp = AingleMcp::new(state);
+
+        let out = mcp
+            .aingle_verify_proof(Parameters(crate::rest::VerifyProofByIdRequest {
+                proof_id: id.clone(),
+            }))
+            .await;
+
+        let dump = flattened(&match out {
+            Ok(r) => serde_json::to_string(&r.content).unwrap_or_default(),
+            Err(e) => format!("{e:?}"),
+        });
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "publishing the proof bytes must not smuggle an excluded note's path \
+             out through a 'verify' response: {dump}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_proof_does_not_carry_an_excluded_path_out_in_the_metadata() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let id = state
+            .proof_store
+            .submit(crate::proofs::SubmitProofRequest {
+                proof_type: crate::proofs::ProofType::HashOpening,
+                proof_data: serde_json::json!({
+                    "type": "HashOpening",
+                    "commitment": vec![3u8; 32],
+                    "salt": vec![4u8; 32],
+                }),
+                // The path rides out on metadata rather than on the proof bytes.
+                metadata: Some(crate::proofs::ProofMetadata {
+                    submitter: Some("Personal/Finanzas/secret.md".into()),
+                    tags: vec!["budget".into()],
+                    extra: Default::default(),
+                }),
+            })
+            .await
+            .expect("submit");
+        state.set_mcp_policy(excluding_finanzas());
+        let mcp = AingleMcp::new(state);
+
+        let out = mcp
+            .aingle_get_proof(Parameters(crate::rest::GetProofRequest { proof_id: id }))
+            .await;
+        let dump = flattened(&match out {
+            Ok(r) => serde_json::to_string(&r.content).unwrap_or_default(),
+            Err(e) => format!("{e:?}"),
+        });
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "proof metadata is published material too and must be scrubbed: {dump}"
+        );
+    }
+
+    /// The same escape hatch the signed-payload scrub had: a Windows-style path
+    /// inside the stored proof JSON arrives with doubled separators, which a naive
+    /// `\` → `/` rewrite turns into `Personal//Finanzas`.
+    #[tokio::test]
+    async fn proof_scrub_sees_through_json_escaped_separators() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let id = submit_proof_naming(&state, r"Personal\Finanzas\secret.md").await;
+        state.set_mcp_policy(excluding_finanzas());
+        let mcp = AingleMcp::new(state);
+
+        let out = mcp
+            .aingle_verify_proof(Parameters(crate::rest::VerifyProofByIdRequest {
+                proof_id: id,
+            }))
+            .await;
+        let dump = flattened(&match out {
+            Ok(r) => serde_json::to_string(&r.content).unwrap_or_default(),
+            Err(e) => format!("{e:?}"),
+        });
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "an escaped Windows path must not slip past the proof scrub: {dump}"
+        );
+    }
+
+    /// The PoL surfaces publish the evaluated triple now, not just a boolean, so
+    /// a verdict about an excluded note carries that note's path out.
+    #[tokio::test]
+    async fn assertion_verdicts_about_an_excluded_note_are_not_served() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let g = state.graph.write().await;
+            g.insert(aingle_graph::Triple::new(
+                aingle_graph::NodeId::named("Personal/Finanzas/secret.md"),
+                aingle_graph::Predicate::named("note:title"),
+                aingle_graph::Value::literal("Presupuesto"),
+            ))
+            .unwrap();
+            g.insert(aingle_graph::Triple::new(
+                aingle_graph::NodeId::named("Public/open.md"),
+                aingle_graph::Predicate::named("note:title"),
+                aingle_graph::Value::literal("Roadmap"),
+            ))
+            .unwrap();
+        }
+        state.set_mcp_policy(excluding_finanzas());
+        let mcp = AingleMcp::new(state);
+
+        let out = json_of(
+            &mcp.aingle_verify_assertions_batch(Parameters(
+                crate::rest::BatchVerifyAssertionsRequest {
+                    assertions: vec![
+                        crate::rest::AssertionRef {
+                            subject: "Personal/Finanzas/secret.md".into(),
+                            predicate: "note:title".into(),
+                        },
+                        crate::rest::AssertionRef {
+                            subject: "Public/open.md".into(),
+                            predicate: "note:title".into(),
+                        },
+                    ],
+                },
+            ))
+            .await
+            .expect("batch verify ok"),
+        );
+
+        let dump = flattened(&out.to_string());
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "a verdict about an excluded note must not be served: {dump}"
+        );
+        // But the unrelated assertion must still come back with its evidence.
+        assert_eq!(out["results"].as_array().unwrap().len(), 1, "{out}");
+        assert_eq!(out["results"][0]["evidence"]["found"], true, "{out}");
+    }
+
+    /// Hiding a scored unit must also correct the arithmetic; a fraction whose
+    /// parts do not add up both leaks and defeats the checking it invites.
+    #[tokio::test]
+    async fn consistency_recomputes_its_score_after_hiding_units() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let g = state.graph.write().await;
+            for subject in [
+                "mayros:agent:a1:Personal/Finanzas/secret.md",
+                "mayros:agent:a1:Public/open.md",
+            ] {
+                g.insert(aingle_graph::Triple::new(
+                    aingle_graph::NodeId::named(subject),
+                    aingle_graph::Predicate::named("ex:says"),
+                    aingle_graph::Value::literal("yes"),
+                ))
+                .unwrap();
+            }
+        }
+        state.set_mcp_policy(excluding_finanzas());
+        let mcp = AingleMcp::new(state);
+
+        let out = json_of(
+            &mcp.aingle_agent_consistency(Parameters(crate::rest::AgentConsistencyRequest {
+                agent_id: "a1".into(),
+            }))
+            .await
+            .expect("consistency ok"),
+        );
+
+        let dump = flattened(&out.to_string());
+        assert!(
+            !dump.contains("Personal/Finanzas"),
+            "an excluded subject must not appear in the score breakdown: {dump}"
+        );
+        let units = out["assertions"].as_array().expect("assertions");
+        assert_eq!(
+            out["total"].as_u64().unwrap() as usize,
+            units.len(),
+            "the denominator must match the list actually served: {out}"
+        );
+        let verified = units.iter().filter(|u| u["verified"] == true).count();
+        assert_eq!(
+            out["verified"].as_u64().unwrap() as usize,
+            verified,
+            "{out}"
+        );
+    }
+
+    /// The scrub must not become a blanket refusal: a proof that names nothing
+    /// excluded still has to come back, replay bundle and all.
+    #[tokio::test]
+    async fn an_unrelated_proof_still_verifies_with_its_replay_bundle() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let id = submit_proof_naming(&state, "Public/open.md").await;
+        state.set_mcp_policy(excluding_finanzas());
+        let mcp = AingleMcp::new(state);
+
+        let out = json_of(
+            &mcp.aingle_verify_proof(Parameters(crate::rest::VerifyProofByIdRequest {
+                proof_id: id,
+            }))
+            .await
+            .expect("an unrelated proof must still be served"),
+        );
+        assert_eq!(
+            out["replay"]["scheme"], "aingle-zk-hash-opening-v1",
+            "{out}"
+        );
     }
 }

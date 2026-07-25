@@ -8,12 +8,22 @@
 //! [`crate::rest::skill_verification`] delegate to these functions so the MCP
 //! tools and HTTP surface share a single implementation.
 
+use crate::rest::pol_evidence::{pol_procedure, RuleSetFingerprint, TripleIdentity};
 use crate::rest::{
-    CreateSandboxRequest, CreateSandboxResponse, DeleteSandboxResponse, ValidateManifestRequest,
-    ValidateManifestResponse,
+    CreateSandboxRequest, CreateSandboxResponse, DeleteSandboxResponse, ManifestCheck,
+    ValidateManifestRequest, ValidateManifestResponse,
 };
 use crate::state::AppState;
 use aingle_graph::{NodeId, Predicate, Triple, Value};
+
+/// Why a manifest verdict cannot be turned into something a client checks.
+const MANIFEST_LIMITATION: &str = "This verdict is not independently checkable and cannot be \
+     made so. It is the result of running probe triples through the PoL rule set loaded on \
+     THIS node; reproducing it requires those rules, which are node configuration and may \
+     include conditions backed by Rust closures that cannot be serialized at all. What is \
+     published instead is everything the verdict depended on — the rule set fingerprint and \
+     the exact probe triples — so a caller can see what was done and report it accurately, \
+     rather than a bare boolean it can only repeat.";
 
 /// Validate a semantic skill manifest against the PoL logic engine.
 ///
@@ -27,7 +37,9 @@ pub async fn validate_manifest(
     req: ValidateManifestRequest,
 ) -> ValidateManifestResponse {
     let logic = state.logic.read().await;
+    let rule_set = RuleSetFingerprint::of(&logic);
     let mut errors: Vec<String> = Vec::new();
+    let mut checks: Vec<ManifestCheck> = Vec::new();
 
     for assertion in &req.assertions {
         let ns_pred = if assertion.predicate.contains(':') {
@@ -43,17 +55,81 @@ pub async fn validate_manifest(
                 Value::literal("_test_value"),
             );
             let result = logic.validate(&test_triple);
+            let matched_rule_ids: Vec<String> =
+                result.matches.iter().map(|m| m.rule_id.clone()).collect();
             if result.matches.is_empty() {
                 errors.push(format!(
                     "Assertion predicate '{}' requires proof but no PoL rules found",
                     ns_pred
                 ));
             }
+            checks.push(ManifestCheck {
+                predicate: ns_pred,
+                declared_predicate: assertion.predicate.clone(),
+                require_proof: true,
+                evaluated: true,
+                outcome: if matched_rule_ids.is_empty() {
+                    "no_matching_rule".to_string()
+                } else {
+                    "rule_matched".to_string()
+                },
+                matched_rule_ids,
+                // The probe is an artificial triple, not one of the skill's own
+                // assertions. Publishing it stops "validated" from implying that
+                // real data was inspected.
+                probe: Some(TripleIdentity::of(&test_triple)),
+            });
+        } else {
+            // Nothing happens for these, and nothing happening must not look
+            // like a pass.
+            checks.push(ManifestCheck {
+                predicate: ns_pred,
+                declared_predicate: assertion.predicate.clone(),
+                require_proof: false,
+                evaluated: false,
+                outcome: "not_checked".to_string(),
+                matched_rule_ids: Vec::new(),
+                probe: None,
+            });
         }
     }
 
+    drop(logic);
+
     let valid = errors.is_empty();
-    ValidateManifestResponse { valid, errors }
+    ValidateManifestResponse {
+        valid,
+        errors,
+        checks,
+        rule_set,
+        procedure: manifest_procedure(),
+        limitation: MANIFEST_LIMITATION.to_string(),
+    }
+}
+
+/// What a caller should check and report for a manifest verdict.
+fn manifest_procedure() -> Vec<String> {
+    let mut steps = vec![
+        "1. Read `checks` before `valid`. An entry with `evaluated: false` was never \
+         examined — the manifest did not ask for proof on it — so it contributes \
+         nothing to `valid` in either direction."
+            .to_string(),
+        "2. Read `rule_set`. If `vacuous` is true, no rule can match any probe, so every \
+         `require_proof` assertion is reported as failing for a configuration reason, \
+         not a manifest defect."
+            .to_string(),
+        "3. Note that each check ran against a synthetic probe triple (published as \
+         `probe`), not against the skill's real assertions. A matching rule means such \
+         a rule EXISTS for that predicate; it does not mean any actual assertion was \
+         validated."
+            .to_string(),
+    ];
+    steps.extend(
+        pol_procedure()
+            .into_iter()
+            .map(|s| format!("(per check) {s}")),
+    );
+    steps
 }
 
 /// Create a temporary sandbox namespace and register it in the sandbox manager.
@@ -143,6 +219,59 @@ mod tests {
         assert!(!resp.valid);
         assert_eq!(resp.errors.len(), 1);
         assert!(resp.errors[0].contains("provesIdentity"));
+    }
+
+    /// `aingle_validate_skill` answers `valid` from the PoL rule set this node
+    /// has loaded. That dependency was invisible: a caller could not tell whether
+    /// `valid: true` meant "the rules accepted it" or "there are no rules". The
+    /// response has to publish the rule set its verdict rests on, and the probe
+    /// triples it actually ran.
+    #[tokio::test]
+    async fn validate_manifest_publishes_the_rule_set_its_verdict_depends_on() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let req = ValidateManifestRequest {
+            namespace: "skill".into(),
+            assertions: vec![
+                AssertionDecl {
+                    predicate: "provesIdentity".into(),
+                    require_proof: true,
+                },
+                AssertionDecl {
+                    predicate: "hasCapability".into(),
+                    require_proof: false,
+                },
+            ],
+        };
+        let json = serde_json::to_value(validate_manifest(&state, req).await).unwrap();
+
+        // ------------------------------------------------------------------
+        // From here on: ONLY `json`.
+        // ------------------------------------------------------------------
+        assert_eq!(json["rule_set"]["rule_count"], 0, "{json}");
+        assert_eq!(json["rule_set"]["vacuous"], true, "{json}");
+
+        let checks = json["checks"].as_array().expect("checks");
+        assert_eq!(checks.len(), 2);
+        // The proof-requiring assertion was probed; the other one never was, and
+        // the response must not let its silence read as a pass.
+        let probed = checks
+            .iter()
+            .find(|c| c["predicate"] == serde_json::json!("skill:provesIdentity"))
+            .expect("probed assertion");
+        assert_eq!(probed["evaluated"], true);
+        assert_eq!(probed["outcome"], "no_matching_rule");
+        let skipped = checks
+            .iter()
+            .find(|c| c["predicate"] == serde_json::json!("skill:hasCapability"))
+            .expect("skipped assertion");
+        assert_eq!(
+            skipped["evaluated"], false,
+            "an assertion that declares no proof requirement is not checked at all: {json}"
+        );
+        assert_eq!(skipped["outcome"], "not_checked");
+
+        assert!(!json["procedure"].as_array().expect("procedure").is_empty());
+        assert!(json["limitation"].as_str().expect("limitation").len() > 20);
     }
 
     #[tokio::test]
