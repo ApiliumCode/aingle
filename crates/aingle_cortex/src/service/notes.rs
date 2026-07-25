@@ -277,6 +277,14 @@ pub async fn tag_remove(
 pub async fn create_folder(state: &AppState, rel: &str) -> Result<String> {
     let root = vault_root(state)?;
     let rel_norm = rel.replace('\\', "/");
+    // The directory form of the shared exclusion predicate: creating `.private/`
+    // or a folder under the review staging area is refused for the same reason
+    // the indexer refuses to look there.
+    if crate::service::ingest::is_excluded_dir_rel(std::path::Path::new(&rel_norm)) {
+        return Err(Error::Forbidden(format!(
+            "folder '{rel_norm}' is inside an excluded directory"
+        )));
+    }
     let pol = state.mcp_policy_snapshot();
     if pol.is_hidden(&rel_norm) {
         return Err(Error::Forbidden(format!(
@@ -539,7 +547,23 @@ async fn apply_transform(
     let root = vault_root(state)?;
     let rel_norm = note_rel.replace('\\', "/");
 
-    // Folder-exclusion: never edit a note the active MCP policy hides.
+    // Folder-exclusion: never touch — or DESCRIBE — a note that is out of bounds.
+    //
+    // Both gates run before the file is opened, because `dry_run` is not a
+    // harmless no-op: it reports the note's before/after content hashes and its
+    // extracted structural diff, which is a description of the file. A preview
+    // that reveals what it is refusing to touch defeats the exclusion, so the
+    // preview path and the write path share exactly one gate.
+    //
+    // 1. The engine's own structural exclusion — the same predicate the indexer
+    //    applies, so these tools can never reach a subtree the indexer refuses
+    //    to look at (the review staging area, `.trash/`, any hidden directory).
+    if crate::service::ingest::is_excluded_rel(std::path::Path::new(&rel_norm)) {
+        return Err(Error::Forbidden(format!(
+            "note '{rel_norm}' is inside an excluded directory"
+        )));
+    }
+    // 2. The host-configured folder scope.
     let pol = state.mcp_policy_snapshot();
     if pol.is_hidden(&rel_norm) {
         return Err(Error::Forbidden(format!(
@@ -771,6 +795,71 @@ mod tests {
             .unwrap();
         state.set_vault_root(dir.path().to_path_buf());
         (state, dir)
+    }
+
+    /// A preview must never become a read oracle for content the engine refuses
+    /// to index. `dry_run` reports the note's before/after content hashes and
+    /// its extracted structural diff — that is a description of the file — so a
+    /// path inside an excluded or hidden directory has to be refused BEFORE the
+    /// file is read, exactly as a real run is. A preview that reveals what it is
+    /// declining to index defeats the exclusion.
+    #[tokio::test]
+    async fn dry_run_reveals_nothing_about_an_excluded_path() {
+        let (state, dir) = vault_state("# Note\n\nbody\n").await;
+        let secret = "# Pending\n\ntoken ghp_LEAKME for [[Nomina]].\n\n#confidential\n";
+
+        for (folder, rel) in [
+            ("_inbox", "_inbox/pending.md"),
+            (".private", ".private/keys.md"),
+            ("docs/.trash", "docs/.trash/deleted.md"),
+        ] {
+            std::fs::create_dir_all(dir.path().join(folder)).unwrap();
+            std::fs::write(dir.path().join(rel), secret).unwrap();
+
+            let err = edit_note(&state, rel, EditMode::Append, "probe", true)
+                .await
+                .expect_err("a preview of an excluded path must be refused");
+            assert!(
+                matches!(err, Error::Forbidden(_)),
+                "expected Forbidden for {rel}, got: {err:?}"
+            );
+
+            // The refusal itself must not describe the file: no content, no
+            // hashes, no structure — only that the path is out of bounds.
+            let msg = err.to_string();
+            for leak in ["ghp_LEAKME", "Nomina", "confidential", "Pending"] {
+                assert!(
+                    !msg.contains(leak),
+                    "refusal for {rel} leaked '{leak}': {msg}"
+                );
+            }
+        }
+    }
+
+    /// The same exclusion applies to a real (non-preview) run, and the file on
+    /// disk is left untouched.
+    #[tokio::test]
+    async fn a_real_edit_of_an_excluded_path_is_refused_too() {
+        let (state, dir) = vault_state("# Note\n\nbody\n").await;
+        std::fs::create_dir_all(dir.path().join("_inbox")).unwrap();
+        let staged = dir.path().join("_inbox/pending.md");
+        std::fs::write(&staged, "# Pending\n\nunreviewed\n").unwrap();
+
+        let err = edit_note(
+            &state,
+            "_inbox/pending.md",
+            EditMode::Append,
+            "probe",
+            false,
+        )
+        .await
+        .expect_err("an excluded path must be refused");
+        assert!(matches!(err, Error::Forbidden(_)), "got: {err:?}");
+        assert_eq!(
+            std::fs::read_to_string(&staged).unwrap(),
+            "# Pending\n\nunreviewed\n",
+            "a refused edit must not touch the file"
+        );
     }
 
     #[tokio::test]
