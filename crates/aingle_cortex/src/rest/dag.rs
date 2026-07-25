@@ -736,8 +736,8 @@ mod tests {
         };
         let action = test_action(DagPayload::TripleInsert {
             triples: vec![TripleInsertPayload {
-                subject: "akashi://note".into(),
-                predicate: "akashi:title".into(),
+                subject: "note://note".into(),
+                predicate: "note:title".into(),
                 object: serde_json::json!("Test Note"),
                 provenance: Some(provenance),
             }],
@@ -764,8 +764,8 @@ mod tests {
             ops: vec![
                 DagPayload::TripleInsert {
                     triples: vec![TripleInsertPayload {
-                        subject: "akashi://doc".into(),
-                        predicate: "akashi:body".into(),
+                        subject: "note://doc".into(),
+                        predicate: "note:body".into(),
                         object: serde_json::json!("content"),
                         provenance: Some(provenance),
                     }],

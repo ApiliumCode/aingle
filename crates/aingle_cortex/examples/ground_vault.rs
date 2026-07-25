@@ -1,8 +1,13 @@
-//! Dogfooding harness: ingest the Akashi dev-brain vault and run grounded
-//! retrieval over it, exactly through the service layer the MCP tools wrap
+//! Dogfooding harness: ingest a workspace of notes and run grounded retrieval
+//! over it, exactly through the service layer the MCP tools wrap
 //! (`service::ingest::ingest_path` + `service::ground::ground`).
 //!
-//! Run: `cargo run -p aingle_cortex --example ground_vault`
+//! Run: `cargo run -p aingle_cortex --example ground_vault -- <workspace-dir> [model-dir]`
+//!
+//! The workspace directory is required — point it at any folder of markdown
+//! notes. The questions below are deliberately generic and end with a negative
+//! control: a question the workspace cannot answer, which must come back
+//! ungrounded rather than invented.
 
 use aingle_cortex::service::ground::ground;
 use aingle_cortex::service::ingest::{ingest_path, list_sources};
@@ -10,9 +15,16 @@ use aingle_cortex::AppState;
 
 #[tokio::main]
 async fn main() {
-    let vault = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| r"C:\Users\apili\AkashiDev".to_string());
+    // Required: no default. A hardcoded fallback path only ever matches the
+    // machine it was written on, and silently ingests whatever happens to live
+    // there on every other one.
+    let Some(vault) = std::env::args().nth(1) else {
+        eprintln!(
+            "usage: cargo run -p aingle_cortex --example ground_vault -- \
+             <workspace-dir> [model-dir]"
+        );
+        std::process::exit(2);
+    };
 
     // Optional arg 2: a neural-embedder model dir. When given (and built with
     // --features neural-embeddings), grounding uses the real 384-dim model
@@ -43,10 +55,10 @@ async fn main() {
     println!("{}\n", serde_json::to_string_pretty(&sources).unwrap());
 
     let questions = [
-        "¿Cuál es la regla de control de releases de Akashi?",
-        "¿Qué es la Definición de Hecho?",
-        "¿Qué pieza del roadmap de facturación está en pausa y por qué?",
-        "¿Cuál es la capital de Francia?", // negative control: not in the vault
+        "What is this project's release process?",
+        "What is the definition of done?",
+        "Which part of the roadmap is on hold, and why?",
+        "What is the capital of France?", // negative control: not in the workspace
     ];
 
     for q in questions {

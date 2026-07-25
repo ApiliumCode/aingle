@@ -306,7 +306,7 @@ pub async fn note_context_cached(
             .expect("note_context cache poisoned");
         // Simple growth cap: if more than 256 entries are cached, clear entirely
         // before inserting. This bounds memory without per-entry LRU bookkeeping;
-        // a typical Akashi session edits far fewer than 256 (note, limit) pairs.
+        // a typical editing session touches far fewer than 256 (note, limit) pairs.
         if cache.len() > 256 {
             cache.clear();
         }
