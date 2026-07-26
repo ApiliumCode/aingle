@@ -175,6 +175,7 @@ pub mod mcp;
 pub mod middleware;
 #[cfg(feature = "p2p")]
 pub mod p2p;
+pub mod pol;
 pub mod proofs;
 pub mod rest;
 pub mod server;

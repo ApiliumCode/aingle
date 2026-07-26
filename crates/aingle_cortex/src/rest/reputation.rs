@@ -32,22 +32,33 @@ pub struct AgentConsistencyRequest {
 
 /// Agent consistency score response.
 ///
-/// The score is `verified / total` over PoL verdicts, so it inherits everything
-/// those verdicts are and are not — see [`crate::rest::pol_evidence`]. It is
-/// arithmetic over this node's assertions, not a reputation measurement, and it
-/// is meaningless when `rule_set.vacuous` is true (every assertion passes, so
-/// the score is 1.0 for anyone with assertions and 0.0 for anyone without).
+/// The score is `verified / evaluated` over PoL verdicts, so it inherits
+/// everything those verdicts are and are not — see
+/// [`crate::rest::pol_evidence`]. It is arithmetic over this node's assertions,
+/// not a reputation measurement.
+///
+/// Units no rule could examine are excluded from both sides of the fraction
+/// rather than counted as passes. When `rule_set.vacuous` is true that means
+/// **every** unit is excluded and `score` is `null`: a rule set that rejects
+/// nothing would otherwise hand every agent with assertions a perfect 1.0
+/// derived from no evaluation at all.
 #[derive(Serialize, Debug)]
 pub struct ConsistencyResponse {
-    /// Consistency score between 0.0 and 1.0: `verified / total`, or 0.0 when
-    /// `total` is 0.
+    /// Consistency score between 0.0 and 1.0: `verified / evaluated`.
+    ///
+    /// **`null` when `evaluated` is 0** — no assertion was examined, so there is
+    /// no score. That is not 0.0 (which would read as "0% consistent") and not
+    /// 1.0 (which would read as "everything passed"): it is the absence of a
+    /// measurement, and the response says so rather than pick a misleading
+    /// number.
     ///
     /// **Derived from assertions by this server, so it is an assertion too.**
-    /// 0.0 from an empty `assertions` list means "nothing found", which is not
-    /// the same as "0% consistent" — check `total` before reporting a score.
-    pub score: f64,
-    /// Total number of assertion units scored — the denominator.
+    pub score: Option<f64>,
+    /// Total number of assertion units found for this agent.
     pub total: usize,
+    /// How many of those units a rule actually examined — the denominator.
+    /// Less than `total` whenever the rule set could not evaluate a unit.
+    pub evaluated: usize,
     /// Number that passed PoL validation — the numerator.
     pub verified: usize,
     /// Every unit that went into the fraction, so the arithmetic is checkable
@@ -72,8 +83,12 @@ pub struct AgentAssertionOutcome {
     pub subject: String,
     /// Predicate, when the unit is a single triple.
     pub predicate: Option<String>,
-    /// Whether this unit counted towards `verified`.
-    pub verified: bool,
+    /// Whether this unit counted towards `verified`, or `null` when no rule
+    /// examined it — in which case it counts towards neither `verified` nor
+    /// `evaluated`.
+    pub verified: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated` for this unit.
+    pub outcome: String,
     /// Identity of the triple evaluated, when the unit is a single triple, so a
     /// client can confirm which triple the verdict is about.
     pub triple: Option<crate::rest::pol_evidence::TripleIdentity>,
@@ -104,12 +119,14 @@ pub struct AssertionVerifyResult {
     pub subject: String,
     /// Predicate of the assertion.
     pub predicate: String,
-    /// Whether the assertion passed PoL validation on this node.
+    /// Whether the assertion passed PoL validation on this node, or `null` when
+    /// a matching triple was found but no rule examined it.
     ///
     /// **An assertion by this server, not proof** — and a lossy one: `false`
     /// covers both "no such triple exists here" and "a rule rejected it", which
-    /// are completely different claims. `evidence.outcome` separates them.
-    pub verified: bool,
+    /// are completely different claims. `evidence.outcome` separates them, and
+    /// separates both from "found but never checked".
+    pub verified: Option<bool>,
     /// What the verdict was actually computed from.
     pub evidence: AssertionEvidence,
 }
@@ -127,6 +144,9 @@ pub struct AssertionEvidence {
     /// - `"not_found"` — no such triple here. Nothing was evaluated. This is not
     ///   evidence that the assertion is false, only that this node does not hold
     ///   it (it may also be filtered out of scope for this caller).
+    /// - `"not_evaluated"` — a triple was found, but no rule is enabled on this
+    ///   node, so nothing examined it. `verified` is `null`; reporting `true`
+    ///   here would claim a check that never ran.
     pub outcome: String,
     /// Identity of the evaluated triple, so a client can confirm the verdict is
     /// about the triple it meant. `None` when nothing was found.

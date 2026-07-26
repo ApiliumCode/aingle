@@ -115,7 +115,9 @@ pub use commitment::{BlindedValue, CommitmentOpening, HashCommitment, PedersenCo
 pub use error::{Result, ZkError};
 pub use merkle::{MerkleProof, MerkleTree, SparseMerkleTree};
 pub use proof::{
-    EqualityProof, ProofBuilder, ProofData, ProofType, ProofVerifier, SchnorrProof, ZkProof,
+    equality_v2_challenge_preimage, knowledge_v2_challenge_preimage, EqualityProof, ProofBuilder,
+    ProofData, ProofType, ProofVerifier, SchnorrProof, ZkProof, EQUALITY_V2_DOMAIN,
+    EQUALITY_V2_PREIMAGE_LAYOUT, KNOWLEDGE_V2_DOMAIN, KNOWLEDGE_V2_PREIMAGE_LAYOUT,
 };
 
 #[cfg(feature = "bulletproofs")]

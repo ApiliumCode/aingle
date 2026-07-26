@@ -33,7 +33,19 @@
 use serde::Serialize;
 
 use aingle_graph::Triple;
-use aingle_logic::RuleEngine;
+use aingle_logic::{Action, Condition, Rule, RuleEngine};
+
+/// Outcome string for a triple that was evaluated and not rejected.
+pub const OUTCOME_VALID: &str = "valid";
+/// Outcome string for a triple an enabled rule rejected.
+pub const OUTCOME_INVALID: &str = "invalid";
+/// Outcome string for a triple **no rule could examine**.
+///
+/// This is the third state that `valid: bool` cannot express. With no enabled
+/// rule, nothing can reject, so "no rule rejected this" is trivially true of
+/// everything — reporting that as a pass claims a check that never ran. Every
+/// PoL surface answers with this string, and a `null` boolean, instead.
+pub const OUTCOME_NOT_EVALUATED: &str = "not_evaluated";
 
 /// Identifier of the triple-identity hashing scheme described below.
 pub const TRIPLE_ID_SPEC: &str = "aingle-triple-id-v1";
@@ -98,6 +110,86 @@ impl TripleIdentity {
     }
 }
 
+/// One enabled rule, described well enough for an operator to know what it does.
+///
+/// A rule-set digest tells you *that* the configuration changed; this tells you
+/// what is actually running. Without it "which rules ran" is answerable only by
+/// reading the node's source.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct RuleSummary {
+    /// The rule's id, as it appears in a rejection message.
+    pub id: String,
+    /// Id prefixed by kind, e.g. `int:no_self_reference`.
+    pub qualified_id: String,
+    /// Human-readable name.
+    pub name: String,
+    /// What the rule enforces, in prose.
+    pub description: String,
+    /// Rule kind: `Integrity`, `Authority`, `Temporal`, `Inference`, `Constraint`.
+    pub kind: String,
+    /// Evaluation order key; higher runs first.
+    pub priority: i32,
+    /// What the rule does when it matches: `accept`, `reject: <reason>`,
+    /// `warn: <message>`, `infer`, or `chain to <rule>`.
+    pub effect: String,
+    /// Predicates this rule is scoped to by an explicit predicate condition.
+    /// Empty means the rule is evaluated against every triple.
+    pub predicates: Vec<String>,
+    /// Conditions backed by a Rust closure.
+    ///
+    /// These cannot be serialized, which is precisely why a PoL verdict is not
+    /// reproducible from a response: a client cannot obtain them. Counting them
+    /// makes that limit visible per rule instead of only in the prose.
+    pub opaque_conditions: usize,
+}
+
+impl RuleSummary {
+    /// Summarize a rule for publication.
+    fn of(rule: &Rule) -> Self {
+        let effect = match &rule.action {
+            Action::Accept => "accept".to_string(),
+            Action::Reject(reason) => format!("reject: {reason}"),
+            Action::Warn(message) => format!("warn: {message}"),
+            Action::Infer(pattern) => format!("infer: ?s {} ?o", pattern.predicate),
+            Action::ChainTo(next) => format!("chain to {next}"),
+        };
+        let predicates = rule
+            .conditions
+            .iter()
+            .filter_map(|c| match c {
+                Condition::PredicateEquals(p) => Some(p.clone()),
+                _ => None,
+            })
+            .collect();
+        let opaque_conditions = rule
+            .conditions
+            .iter()
+            .filter(|c| matches!(c, Condition::Custom(_)))
+            .count();
+
+        Self {
+            id: rule.id.clone(),
+            qualified_id: rule.qualified_id(),
+            name: if rule.name.is_empty() {
+                rule.id.clone()
+            } else {
+                rule.name.clone()
+            },
+            description: if rule.description.is_empty() {
+                effect.clone()
+            } else {
+                rule.description.clone()
+            },
+            kind: format!("{:?}", rule.kind),
+            priority: rule.priority,
+            effect,
+            predicates,
+            opaque_conditions,
+        }
+    }
+}
+
 /// What a PoL verdict was evaluated against.
 ///
 /// Published with every PoL verdict so a consumer can see the thing the verdict
@@ -107,15 +199,29 @@ impl TripleIdentity {
 pub struct RuleSetFingerprint {
     /// Name of the loaded rule set.
     pub name: String,
+    /// What the rule set is for, as the rule set describes itself.
+    pub description: String,
     /// Total rules loaded, enabled or not.
     pub rule_count: usize,
     /// Rules that are enabled and therefore evaluated.
     pub enabled_rule_count: usize,
     /// Ids of the enabled rules, in evaluation order (priority descending).
     pub enabled_rule_ids: Vec<String>,
-    /// `blake3-256` over `id\n` for each enabled rule, in the same order.
-    /// Published so a client can pin the configuration and notice when the rules
-    /// behind a verdict change between two responses.
+    /// Every enabled rule, described. This is the inspectable form of
+    /// `enabled_rule_ids`: an operator reads it to see what actually ran.
+    pub rules: Vec<RuleSummary>,
+    /// How many enabled rules are scoped to a specific predicate.
+    ///
+    /// A surface that asks "is there a rule for predicate X" (skill manifests)
+    /// can only ever answer yes when this is non-zero, so a zero here means a
+    /// negative answer is a configuration fact rather than a defect in the thing
+    /// being checked.
+    pub predicate_scoped_rule_count: usize,
+    /// `blake3-256` over `qualified_id\npriority\neffect\n` for each enabled
+    /// rule, in evaluation order. Published so a client can pin the
+    /// configuration and notice when the rules behind a verdict change between
+    /// two responses — including a rule whose id stayed the same while its
+    /// effect was flipped from reject to accept.
     pub digest: String,
     /// Digest algorithm (`blake3-256`).
     pub digest_alg: String,
@@ -136,24 +242,37 @@ impl RuleSetFingerprint {
         let set = engine.rule_set();
         let enabled = set.enabled_sorted();
         let enabled_rule_ids: Vec<String> = enabled.iter().map(|r| r.id.clone()).collect();
+        let rules: Vec<RuleSummary> = enabled.iter().copied().map(RuleSummary::of).collect();
 
+        // The digest covers each rule's identity, its position in the evaluation
+        // order and what it does. Hashing ids alone would let a rule keep its
+        // name while its action was changed from reject to accept, and two
+        // responses would compare as "same rules" while meaning opposite things.
         let mut hasher = blake3::Hasher::new();
-        for id in &enabled_rule_ids {
-            hasher.update(id.as_bytes());
+        for rule in &rules {
+            hasher.update(rule.qualified_id.as_bytes());
+            hasher.update(b"\n");
+            hasher.update(rule.priority.to_string().as_bytes());
+            hasher.update(b"\n");
+            hasher.update(rule.effect.as_bytes());
             hasher.update(b"\n");
         }
 
+        let predicate_scoped_rule_count = rules.iter().filter(|r| !r.predicates.is_empty()).count();
+
         let vacuous = enabled.is_empty();
         let note = if vacuous {
-            "No rules are enabled on this node, so no rule can reject anything: a \
-             `valid`/`verified` of true here means the triple was NOT examined, not \
-             that it passed a check. Do not report it as validated."
+            "No rules are enabled on this node, so no rule can reject anything and \
+             nothing was examined. Verdicts on this response are reported as \
+             `not_evaluated` with a null boolean rather than as a pass — a pass would \
+             claim a check that never ran. Do not report anything here as validated."
                 .to_string()
         } else {
             format!(
                 "The verdict is 'none of the {} enabled rules rejected this triple'. \
-                 It is this node's evaluation against this node's configuration, not \
-                 a cryptographic proof; a node with different rules can reach a \
+                 `rules` lists exactly which ones ran and what each does. It is this \
+                 node's evaluation against this node's configuration, not a \
+                 cryptographic proof; a node with different rules can reach a \
                  different verdict on the same triple.",
                 enabled.len()
             )
@@ -161,13 +280,34 @@ impl RuleSetFingerprint {
 
         Self {
             name: set.name.clone(),
+            description: set.description.clone(),
             rule_count: set.len(),
             enabled_rule_count: enabled.len(),
             enabled_rule_ids,
+            rules,
+            predicate_scoped_rule_count,
             digest: hasher.finalize().to_hex().to_string(),
             digest_alg: HASH_ALG.to_string(),
             vacuous,
             note,
+        }
+    }
+
+    /// Turn a rule-engine result into a verdict that cannot be read as a pass
+    /// when nothing was evaluated.
+    ///
+    /// Returns `(valid, outcome)`. `valid` is `None` — serialized as JSON `null`
+    /// — exactly when the rule set is vacuous, so the ubiquitous client-side
+    /// `if (response.valid)` is falsy and the accompanying `outcome` says why.
+    /// This is the correctness floor: an unexamined triple must never answer
+    /// `true`, whatever else the response carries.
+    pub fn verdict(&self, engine_accepted: bool) -> (Option<bool>, &'static str) {
+        if self.vacuous {
+            (None, OUTCOME_NOT_EVALUATED)
+        } else if engine_accepted {
+            (Some(true), OUTCOME_VALID)
+        } else {
+            (Some(false), OUTCOME_INVALID)
         }
     }
 }
@@ -184,11 +324,15 @@ pub fn pol_procedure() -> Vec<String> {
          with no separators and no length prefixes — and check it equals `triple_id`. \
          The encoded bytes embed the subject and predicate strings, so you can also \
          confirm they are the ones you were shown.",
-        "2. Read `rule_set`. If `vacuous` is true, STOP: no rule was enabled, nothing \
-         was examined, and the verdict is empty. Report that, not 'valid'.",
-        "3. If rules are enabled, note `rule_set.digest` and compare it across \
-         responses. A verdict is only comparable to another verdict evaluated under \
-         the same rules.",
+        "2. Read `outcome`. `not_evaluated` means no rule was enabled, nothing was \
+         examined, and the accompanying boolean is null — report 'not evaluated', \
+         never 'valid'. `rule_set.vacuous` says the same thing about the \
+         configuration that produced it.",
+        "3. If rules are enabled, read `rule_set.rules` to see which ones ran and what \
+         each does, and note `rule_set.digest`. A verdict is only comparable to \
+         another verdict evaluated under the same digest — the digest covers each \
+         rule's id, priority and effect, so a rule silently flipped from reject to \
+         accept changes it.",
         "4. Understand the ceiling: this verdict is this node's evaluation against its \
          own loaded configuration. It is NOT a cryptographic proof and you cannot \
          reproduce it from this response — rules may carry conditions (including Rust \
@@ -237,7 +381,74 @@ mod tests {
         let fp = RuleSetFingerprint::of(&RuleEngine::new());
         assert!(fp.vacuous);
         assert_eq!(fp.enabled_rule_count, 0);
+        assert!(fp.rules.is_empty());
         assert!(fp.note.to_lowercase().contains("no rules"));
+    }
+
+    #[test]
+    fn an_empty_rule_set_can_never_produce_a_passing_verdict() {
+        // The correctness floor. Whatever the engine says — and with no rules it
+        // always says "accepted" — the published verdict must not be `true`.
+        let fp = RuleSetFingerprint::of(&RuleEngine::new());
+        for engine_accepted in [true, false] {
+            let (valid, outcome) = fp.verdict(engine_accepted);
+            assert_eq!(valid, None, "an unexamined triple has no boolean verdict");
+            assert_eq!(outcome, OUTCOME_NOT_EVALUATED);
+        }
+    }
+
+    #[test]
+    fn a_loaded_rule_set_yields_ordinary_pass_fail_verdicts() {
+        let fp = RuleSetFingerprint::of(&aingle_logic::RuleEngine::with_rules(
+            crate::pol::core_rule_set(),
+        ));
+        assert!(!fp.vacuous);
+        assert_eq!(fp.verdict(true), (Some(true), OUTCOME_VALID));
+        assert_eq!(fp.verdict(false), (Some(false), OUTCOME_INVALID));
+    }
+
+    #[test]
+    fn the_fingerprint_describes_each_rule_that_ran() {
+        let fp = RuleSetFingerprint::of(&aingle_logic::RuleEngine::with_rules(
+            crate::pol::core_rule_set(),
+        ));
+        assert_eq!(fp.rules.len(), fp.enabled_rule_count);
+        assert_eq!(fp.name, crate::pol::CORE_RULE_SET_NAME);
+        assert!(!fp.description.is_empty());
+
+        let self_ref = fp
+            .rules
+            .iter()
+            .find(|r| r.id == "no_self_reference")
+            .expect("the core set must carry the self-reference rule");
+        assert_eq!(self_ref.qualified_id, "int:no_self_reference");
+        assert!(self_ref.effect.starts_with("reject: "));
+        // The rule is a Rust closure, and saying so is why the verdict is not
+        // reproducible from the response.
+        assert_eq!(self_ref.opaque_conditions, 1);
+    }
+
+    #[test]
+    fn the_digest_changes_when_a_rule_keeps_its_id_but_changes_its_effect() {
+        let mut accepting = RuleEngine::new();
+        accepting.add_rule(
+            aingle_logic::Rule::integrity("r1")
+                .when_predicate("ex:knows")
+                .accept()
+                .build(),
+        );
+        let mut rejecting = RuleEngine::new();
+        rejecting.add_rule(
+            aingle_logic::Rule::integrity("r1")
+                .when_predicate("ex:knows")
+                .reject("no")
+                .build(),
+        );
+        assert_ne!(
+            RuleSetFingerprint::of(&accepting).digest,
+            RuleSetFingerprint::of(&rejecting).digest,
+            "two rule sets that reach opposite verdicts must not share a digest"
+        );
     }
 
     #[test]
@@ -252,6 +463,8 @@ mod tests {
         let fp = RuleSetFingerprint::of(&engine);
         assert!(!fp.vacuous);
         assert_eq!(fp.enabled_rule_ids, vec!["r1".to_string()]);
+        assert_eq!(fp.predicate_scoped_rule_count, 1);
+        assert_eq!(fp.rules[0].predicates, vec!["ex:knows".to_string()]);
 
         // The digest must actually depend on the rules.
         let mut engine2 = RuleEngine::new();

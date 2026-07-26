@@ -49,13 +49,18 @@ pub struct AssertionDecl {
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Debug)]
 pub struct ValidateManifestResponse {
-    /// Whether every checked assertion found a matching rule.
+    /// Whether every checked assertion found a matching rule, or `null` when no
+    /// assertion was checked at all.
     ///
-    /// **An assertion, not proof.** Note also that assertions with
-    /// `require_proof: false` are never checked at all, so `valid: true` for a
-    /// manifest of such assertions means nothing was examined. `checks` shows
-    /// which is which.
-    pub valid: bool,
+    /// **An assertion, not proof.** Assertions with `require_proof: false` are
+    /// never checked, and no assertion can be checked on a node with no
+    /// predicate-scoped rules — so a manifest can come back with nothing
+    /// examined. That answers `null` / `not_evaluated` rather than `true`, which
+    /// would report an unexamined manifest as passing. `checks` shows which
+    /// entries were which.
+    pub valid: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated` for the manifest as a whole.
+    pub outcome: String,
     /// List of validation errors.
     pub errors: Vec<String>,
     /// What was checked, per declared assertion — including the ones that were
@@ -82,9 +87,12 @@ pub struct ManifestCheck {
     /// Whether the manifest asked for this assertion to be backed by proof.
     pub require_proof: bool,
     /// Whether this node evaluated anything for this assertion. `false` when
-    /// `require_proof` is `false` — nothing is probed then.
+    /// `require_proof` is `false` (nothing is probed then), and also when this
+    /// node has no rule capable of matching a predicate at all.
     pub evaluated: bool,
-    /// Outcome: `"rule_matched"`, `"no_matching_rule"`, or `"not_checked"`.
+    /// Outcome: `"rule_matched"`, `"no_matching_rule"`, `"not_evaluated"` (this
+    /// node has no predicate-scoped rule to check against), or `"not_checked"`
+    /// (the manifest asked for no proof).
     pub outcome: String,
     /// Ids of the enabled rules that matched the probe triple.
     pub matched_rule_ids: Vec<String>,

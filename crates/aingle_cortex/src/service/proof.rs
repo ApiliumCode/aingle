@@ -269,6 +269,88 @@ mod tests {
         })
     }
 
+    /// The v2 knowledge challenge preimage, built the way a client must build
+    /// it. Written out here rather than imported so these tests exercise the
+    /// published layout instead of the server's own helper.
+    fn knowledge_v2_preimage(r: &[u8], p: &[u8], statement: &[u8]) -> Vec<u8> {
+        let mut preimage = Vec::new();
+        preimage.extend_from_slice(b"aingle-zk-knowledge-v2");
+        preimage.push(0x00);
+        preimage.extend_from_slice(r);
+        preimage.extend_from_slice(p);
+        preimage.extend_from_slice(&(statement.len() as u64).to_le_bytes());
+        preimage.extend_from_slice(statement);
+        preimage
+    }
+
+    /// The v2 equality challenge preimage.
+    fn equality_v2_preimage(r: &[u8], diff: &[u8], statement: &[u8]) -> Vec<u8> {
+        let mut preimage = Vec::new();
+        preimage.extend_from_slice(b"aingle-zk-equality-v2");
+        preimage.push(0x00);
+        preimage.extend_from_slice(r);
+        preimage.extend_from_slice(diff);
+        preimage.extend_from_slice(&(statement.len() as u64).to_le_bytes());
+        preimage.extend_from_slice(statement);
+        preimage
+    }
+
+    /// A statement-binding knowledge proof over `statement`.
+    fn knowledge_bound_proof_data(statement: &[u8]) -> serde_json::Value {
+        let x = Scalar::from_bytes_mod_order([7u8; 32]);
+        let g = RISTRETTO_BASEPOINT_POINT;
+        let p = g * x;
+        let k = Scalar::from_bytes_mod_order([9u8; 32]);
+        let r = g * k;
+
+        let preimage =
+            knowledge_v2_preimage(r.compress().as_bytes(), p.compress().as_bytes(), statement);
+        let challenge: [u8; 32] = Sha256::digest(&preimage).into();
+        let s = k + Scalar::from_bytes_mod_order(challenge) * x;
+
+        serde_json::json!({
+            "type": "KnowledgeBound",
+            "commitment": p.compress().to_bytes(),
+            "challenge": challenge,
+            "response": s.to_bytes(),
+            "statement": statement,
+        })
+    }
+
+    /// A statement-binding equality proof over `statement`.
+    fn equality_bound_proof_data(statement: &[u8]) -> serde_json::Value {
+        let g = RISTRETTO_BASEPOINT_POINT;
+        let h = generator_h();
+        let v = Scalar::from(42u64);
+        let r1 = Scalar::from_bytes_mod_order([3u8; 32]);
+        let r2 = Scalar::from_bytes_mod_order([5u8; 32]);
+        let c1 = g * v + h * r1;
+        let c2 = g * v + h * r2;
+        let diff = c1 - c2;
+
+        let k = Scalar::from_bytes_mod_order([11u8; 32]);
+        let r = h * k;
+        let preimage = equality_v2_preimage(
+            r.compress().as_bytes(),
+            diff.compress().as_bytes(),
+            statement,
+        );
+        let challenge: [u8; 32] = Sha256::digest(&preimage).into();
+        let response = k + Scalar::from_bytes_mod_order(challenge) * (r1 - r2);
+
+        let mut proof_bytes = Vec::new();
+        proof_bytes.extend_from_slice(&challenge);
+        proof_bytes.extend_from_slice(&response.to_bytes());
+
+        serde_json::json!({
+            "type": "EqualityBound",
+            "commitment1": c1.compress().to_bytes(),
+            "commitment2": c2.compress().to_bytes(),
+            "proof": proof_bytes,
+            "statement": statement,
+        })
+    }
+
     async fn submit_and_verify(
         proof_type: ProofType,
         proof_data: serde_json::Value,
@@ -467,6 +549,165 @@ mod tests {
         assert!(
             json["replay"].is_null(),
             "there is nothing to replay when the proof cannot even be parsed: {json}"
+        );
+    }
+
+    // ========================================================================
+    // Statement binding
+    //
+    // A proof that verifies is only proof *of* something if the something is
+    // hashed into the challenge. The v1 schemes hash the commitment alone, so a
+    // valid proof can be lifted and presented next to any claim at all. These
+    // tests are the whole point of the v2 schemes: transplant the proof onto a
+    // different statement and the verification must fail.
+    // ========================================================================
+
+    const STATEMENT_A: &[u8] = b"ex:note-1 was authored by ex:alice";
+    const STATEMENT_B: &[u8] = b"ex:note-2 was authored by ex:mallory";
+
+    #[tokio::test]
+    async fn a_knowledge_proof_bound_to_one_statement_does_not_verify_for_another() {
+        let json = submit_and_verify(
+            ProofType::Knowledge,
+            knowledge_bound_proof_data(STATEMENT_A),
+        )
+        .await;
+        assert_eq!(
+            json["valid"], true,
+            "a correctly formed statement-bound proof must verify: {json}"
+        );
+        assert_eq!(json["replay"]["scheme"], "aingle-zk-knowledge-v2");
+        assert_eq!(json["replay"]["statement_binding"]["bound"], true, "{json}");
+
+        // The transplant: identical commitment/challenge/response, different
+        // statement. This is exactly the attack the v1 scheme permits.
+        let mut transplanted = knowledge_bound_proof_data(STATEMENT_A);
+        transplanted["statement"] = serde_json::json!(STATEMENT_B);
+        let json = submit_and_verify(ProofType::Knowledge, transplanted).await;
+        assert_eq!(
+            json["valid"], false,
+            "a proof bound to statement A must NOT verify when presented for \
+             statement B — otherwise it proves nothing about either: {json}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_equality_proof_bound_to_one_statement_does_not_verify_for_another() {
+        let json =
+            submit_and_verify(ProofType::Equality, equality_bound_proof_data(STATEMENT_A)).await;
+        assert_eq!(json["valid"], true, "{json}");
+        assert_eq!(json["replay"]["scheme"], "aingle-zk-equality-v2");
+        assert_eq!(json["replay"]["statement_binding"]["bound"], true, "{json}");
+
+        let mut transplanted = equality_bound_proof_data(STATEMENT_A);
+        transplanted["statement"] = serde_json::json!(STATEMENT_B);
+        let json = submit_and_verify(ProofType::Equality, transplanted).await;
+        assert_eq!(
+            json["valid"], false,
+            "an equality proof bound to statement A must not verify for B: {json}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_v1_schemes_stay_verifiable_and_are_marked_as_binding_no_statement() {
+        // Proofs already stored were generated under the old challenge. Breaking
+        // them would be a worse defect than the one being fixed — but a client
+        // must be able to see, from the response alone, which guarantee it has.
+        let json = submit_and_verify(ProofType::Knowledge, knowledge_proof_data()).await;
+        assert_eq!(
+            json["valid"], true,
+            "old proofs must keep verifying: {json}"
+        );
+        let binding = &json["replay"]["statement_binding"];
+        assert_eq!(json["replay"]["scheme"], "aingle-zk-knowledge-v1");
+        assert_eq!(
+            binding["bound"], false,
+            "the v1 challenge covers no statement; say so: {json}"
+        );
+        assert!(
+            binding["note"]
+                .as_str()
+                .expect("note")
+                .to_lowercase()
+                .contains("statement"),
+            "the note must name what is missing: {binding}"
+        );
+        assert!(
+            binding["statement_hex"].is_null(),
+            "there is no bound statement to publish for v1: {binding}"
+        );
+
+        let json = submit_and_verify(ProofType::Equality, equality_proof_data()).await;
+        assert_eq!(json["valid"], true, "{json}");
+        assert_eq!(json["replay"]["scheme"], "aingle-zk-equality-v1");
+        assert_eq!(
+            json["replay"]["statement_binding"]["bound"], false,
+            "{json}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_replay_bundle_publishes_the_exact_bytes_fed_to_the_challenge_hash() {
+        // Re-serializing the statement on the client produces different bytes
+        // and verifies nothing. The bundle must publish the literal preimage.
+        let json = submit_and_verify(
+            ProofType::Knowledge,
+            knowledge_bound_proof_data(STATEMENT_A),
+        )
+        .await;
+
+        // ------------------------------------------------------------------
+        // From here on: ONLY `json`, plus generic crypto libraries.
+        // ------------------------------------------------------------------
+        let r = &json["replay"];
+        let binding = &r["statement_binding"];
+
+        let preimage = {
+            let s = binding["challenge_preimage_hex"]
+                .as_str()
+                .expect("challenge_preimage_hex");
+            (0..s.len() / 2)
+                .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("hex"))
+                .collect::<Vec<u8>>()
+        };
+
+        // 1. The published bytes must hash to the published challenge.
+        let challenge = unhex(&r["public_inputs"]["challenge"], 32);
+        let digest: [u8; 32] = Sha256::digest(&preimage).into();
+        assert_eq!(
+            digest.to_vec(),
+            challenge,
+            "the published preimage must be the bytes that were actually hashed"
+        );
+
+        // 2. Those bytes must embed the statement the client was shown, so the
+        //    binding is checkable rather than asserted.
+        let statement = {
+            let s = binding["statement_hex"].as_str().expect("statement_hex");
+            (0..s.len() / 2)
+                .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("hex"))
+                .collect::<Vec<u8>>()
+        };
+        assert_eq!(statement, STATEMENT_A);
+        assert!(
+            preimage
+                .windows(statement.len())
+                .any(|w| w == statement.as_slice()),
+            "the challenge preimage must contain the statement it claims to bind"
+        );
+
+        // 3. And the replay must still close: R' = s*G - c*P, and the segment of
+        //    the preimage where R sits must be that R'.
+        let g = point(&unhex(&r["public_parameters"]["generator_g"], 32));
+        let p_bytes = unhex(&r["public_inputs"]["commitment"], 32);
+        let response = unhex(&r["public_inputs"]["response"], 32);
+        let r_prime = g * scalar32(&response) - point(&p_bytes) * scalar32(&challenge);
+        assert!(
+            preimage
+                .windows(32)
+                .any(|w| w == r_prime.compress().as_bytes()),
+            "the preimage must contain the R the client recomputes, or it is not \
+             the preimage of this proof"
         );
     }
 }

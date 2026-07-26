@@ -57,22 +57,40 @@ pub async fn validate_manifest(
             let result = logic.validate(&test_triple);
             let matched_rule_ids: Vec<String> =
                 result.matches.iter().map(|m| m.rule_id.clone()).collect();
-            if result.matches.is_empty() {
-                errors.push(format!(
-                    "Assertion predicate '{}' requires proof but no PoL rules found",
-                    ns_pred
-                ));
+            // Nothing can match a probe when nothing is enabled, and nothing can
+            // match a *predicate* when no enabled rule is scoped to one. Both are
+            // facts about this node's configuration, not about the manifest, and
+            // reporting them as manifest errors is how a configuration gap gets
+            // blamed on the thing being checked.
+            let unevaluable = rule_set.vacuous || rule_set.predicate_scoped_rule_count == 0;
+            let outcome = if !matched_rule_ids.is_empty() {
+                "rule_matched"
+            } else if unevaluable {
+                "not_evaluated"
+            } else {
+                "no_matching_rule"
+            };
+            if matched_rule_ids.is_empty() {
+                errors.push(if unevaluable {
+                    format!(
+                        "Assertion predicate '{}' requires proof, but this node has no \
+                         predicate-scoped PoL rule to check it against — a configuration \
+                         gap on this node, not a defect in the manifest.",
+                        ns_pred
+                    )
+                } else {
+                    format!(
+                        "Assertion predicate '{}' requires proof but no PoL rules found",
+                        ns_pred
+                    )
+                });
             }
             checks.push(ManifestCheck {
                 predicate: ns_pred,
                 declared_predicate: assertion.predicate.clone(),
                 require_proof: true,
-                evaluated: true,
-                outcome: if matched_rule_ids.is_empty() {
-                    "no_matching_rule".to_string()
-                } else {
-                    "rule_matched".to_string()
-                },
+                evaluated: !unevaluable,
+                outcome: outcome.to_string(),
                 matched_rule_ids,
                 // The probe is an artificial triple, not one of the skill's own
                 // assertions. Publishing it stops "validated" from implying that
@@ -96,9 +114,25 @@ pub async fn validate_manifest(
 
     drop(logic);
 
-    let valid = errors.is_empty();
+    // A manifest whose every check was skipped or unevaluable was not examined,
+    // and `valid: true` from an empty `errors` list would say otherwise.
+    let (valid, outcome) = if checks.iter().any(|c| c.evaluated) {
+        let ok = errors.is_empty();
+        (
+            Some(ok),
+            if ok {
+                crate::rest::pol_evidence::OUTCOME_VALID
+            } else {
+                crate::rest::pol_evidence::OUTCOME_INVALID
+            },
+        )
+    } else {
+        (None, crate::rest::pol_evidence::OUTCOME_NOT_EVALUATED)
+    };
+
     ValidateManifestResponse {
         valid,
+        outcome: outcome.to_string(),
         errors,
         checks,
         rule_set,
@@ -110,13 +144,16 @@ pub async fn validate_manifest(
 /// What a caller should check and report for a manifest verdict.
 fn manifest_procedure() -> Vec<String> {
     let mut steps = vec![
-        "1. Read `checks` before `valid`. An entry with `evaluated: false` was never \
-         examined — the manifest did not ask for proof on it — so it contributes \
-         nothing to `valid` in either direction."
+        "1. Read `outcome` and `checks` before `valid`. An entry with \
+         `evaluated: false` was never examined — either the manifest did not ask for \
+         proof on it, or this node has no rule that could check it — so it contributes \
+         nothing to `valid` in either direction. When NO check was evaluated, `valid` \
+         is null and `outcome` is `not_evaluated`."
             .to_string(),
-        "2. Read `rule_set`. If `vacuous` is true, no rule can match any probe, so every \
-         `require_proof` assertion is reported as failing for a configuration reason, \
-         not a manifest defect."
+        "2. Read `rule_set`. If `vacuous` is true, or `predicate_scoped_rule_count` is \
+         0, no rule can match any probe, so every `require_proof` assertion is reported \
+         as `not_evaluated` for a configuration reason on this node — not a manifest \
+         defect. Say that, and do not report the manifest as bad."
             .to_string(),
         "3. Note that each check ran against a synthetic probe triple (published as \
          `probe`), not against the skill's real assertions. A matching rule means such \
@@ -190,7 +227,9 @@ mod tests {
     async fn validate_manifest_no_proof_required_is_valid() {
         let state = AppState::with_db_path(":memory:", None).unwrap();
         // A minimal manifest: one assertion that does not require proof, so the
-        // logic engine is never consulted and validation passes.
+        // logic engine is never consulted. Nothing was examined, so the answer
+        // is `not_evaluated` — `valid: true` would report an unexamined manifest
+        // as having passed.
         let req = ValidateManifestRequest {
             namespace: "skill".into(),
             assertions: vec![AssertionDecl {
@@ -199,15 +238,18 @@ mod tests {
             }],
         };
         let resp = validate_manifest(&state, req).await;
-        assert!(resp.valid);
+        assert_eq!(resp.valid, None);
+        assert_eq!(resp.outcome, "not_evaluated");
         assert!(resp.errors.is_empty());
     }
 
     #[tokio::test]
-    async fn validate_manifest_proof_required_without_rules_is_invalid() {
+    async fn validate_manifest_proof_required_without_a_predicate_rule_is_not_evaluated() {
         let state = AppState::with_db_path(":memory:", None).unwrap();
-        // require_proof=true with an empty logic engine => no PoL rules match,
-        // so the assertion is flagged as invalid.
+        // The default rule set checks well-formedness, not specific predicates,
+        // so no rule can match this probe. That is a gap in THIS NODE'S
+        // configuration; blaming the manifest for it would be the same category
+        // of dishonesty as calling an unexamined triple valid.
         let req = ValidateManifestRequest {
             namespace: "skill".into(),
             assertions: vec![AssertionDecl {
@@ -216,9 +258,59 @@ mod tests {
             }],
         };
         let resp = validate_manifest(&state, req).await;
-        assert!(!resp.valid);
+        assert_eq!(resp.valid, None);
+        assert_eq!(resp.outcome, "not_evaluated");
         assert_eq!(resp.errors.len(), 1);
         assert!(resp.errors[0].contains("provesIdentity"));
+        assert!(
+            resp.errors[0].contains("configuration"),
+            "the error must name whose gap this is: {}",
+            resp.errors[0]
+        );
+        assert_eq!(resp.checks[0].outcome, "not_evaluated");
+        assert!(!resp.checks[0].evaluated);
+    }
+
+    #[tokio::test]
+    async fn a_predicate_scoped_rule_set_actually_evaluates_a_manifest() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut logic = state.logic.write().await;
+            logic.add_rule(
+                aingle_logic::Rule::authority("proves_identity")
+                    .name("Identity assertions are checked")
+                    .when_predicate("skill:provesIdentity")
+                    .accept()
+                    .build(),
+            );
+        }
+        let req = ValidateManifestRequest {
+            namespace: "skill".into(),
+            assertions: vec![
+                AssertionDecl {
+                    predicate: "provesIdentity".into(),
+                    require_proof: true,
+                },
+                AssertionDecl {
+                    predicate: "hasNoRule".into(),
+                    require_proof: true,
+                },
+            ],
+        };
+        let resp = validate_manifest(&state, req).await;
+
+        // The predicate with a rule was genuinely checked...
+        assert!(resp.checks[0].evaluated);
+        assert_eq!(resp.checks[0].outcome, "rule_matched");
+        assert_eq!(
+            resp.checks[0].matched_rule_ids,
+            vec!["proves_identity".to_string()]
+        );
+        // ...and the one without it is a real manifest finding now that this
+        // node demonstrably can check predicates.
+        assert_eq!(resp.checks[1].outcome, "no_matching_rule");
+        assert_eq!(resp.valid, Some(false));
+        assert_eq!(resp.outcome, "invalid");
     }
 
     /// `aingle_validate_skill` answers `valid` from the PoL rule set this node
@@ -247,19 +339,30 @@ mod tests {
         // ------------------------------------------------------------------
         // From here on: ONLY `json`.
         // ------------------------------------------------------------------
-        assert_eq!(json["rule_set"]["rule_count"], 0, "{json}");
-        assert_eq!(json["rule_set"]["vacuous"], true, "{json}");
+        assert!(
+            json["rule_set"]["rule_count"].as_u64().expect("count") > 0,
+            "{json}"
+        );
+        assert_eq!(json["rule_set"]["vacuous"], false, "{json}");
+        assert!(
+            !json["rule_set"]["rules"]
+                .as_array()
+                .expect("rules")
+                .is_empty(),
+            "the rules behind the verdict must be enumerated, not just counted: {json}"
+        );
 
         let checks = json["checks"].as_array().expect("checks");
         assert_eq!(checks.len(), 2);
-        // The proof-requiring assertion was probed; the other one never was, and
-        // the response must not let its silence read as a pass.
+        // Neither assertion was examined — one asked for no proof, and the
+        // default rule set has no predicate-scoped rule to probe with. The
+        // response must not let either silence read as a pass.
         let probed = checks
             .iter()
             .find(|c| c["predicate"] == serde_json::json!("skill:provesIdentity"))
             .expect("probed assertion");
-        assert_eq!(probed["evaluated"], true);
-        assert_eq!(probed["outcome"], "no_matching_rule");
+        assert_eq!(probed["evaluated"], false);
+        assert_eq!(probed["outcome"], "not_evaluated");
         let skipped = checks
             .iter()
             .find(|c| c["predicate"] == serde_json::json!("skill:hasCapability"))

@@ -7,11 +7,18 @@
 //! operations are read-only: they inspect the graph + logic engine and never
 //! mutate state. Like the REST handlers, neither returns a hard error for empty
 //! or unknown input — an unknown agent yields a well-formed default response
-//! (score 0.0), and a batch of non-existent assertions yields `verified:false`
-//! per entry.
+//! (a `null` score: nothing was found, so there is nothing to score), and a
+//! batch of non-existent assertions yields `verified:false` per entry.
+//!
+//! Neither surface reports a verdict the rule engine did not reach. When no rule
+//! could examine a unit, `verified` is `null` and the unit is excluded from the
+//! score entirely — counting an unexamined assertion as a pass is how an empty
+//! rule set turns into a perfect reputation.
 
 use crate::middleware::is_in_namespace;
-use crate::rest::pol_evidence::{pol_procedure, RuleSetFingerprint, TripleIdentity};
+use crate::rest::pol_evidence::{
+    pol_procedure, RuleSetFingerprint, TripleIdentity, OUTCOME_NOT_EVALUATED,
+};
 use crate::rest::{
     AgentAssertionOutcome, AssertionEvidence, AssertionVerifyResult, BatchVerifyAssertionsRequest,
     BatchVerifyAssertionsResponse, ConsistencyResponse,
@@ -27,6 +34,21 @@ const OUTCOME_REJECTED: &str = "rejected";
 /// distinct from `rejected`: "we do not hold this" and "a rule refused this" are
 /// different claims, and `verified: false` collapses them.
 const OUTCOME_NOT_FOUND: &str = "not_found";
+
+/// Recompute a consistency score over the units that were actually evaluated.
+///
+/// Units the rule engine could not examine are excluded from **both** the
+/// numerator and the denominator: averaging them in as passes is how an empty
+/// rule set produces a perfect score out of nothing. With nothing evaluated the
+/// score is `None` — not 1.0, and not 0.0, both of which are claims.
+pub(crate) fn consistency_score(units: &[crate::rest::AgentAssertionOutcome]) -> Option<f64> {
+    let evaluated = units.iter().filter(|u| u.verified.is_some()).count();
+    if evaluated == 0 {
+        return None;
+    }
+    let verified = units.iter().filter(|u| u.verified == Some(true)).count();
+    Some(verified as f64 / evaluated as f64)
+}
 
 /// Compute an agent's assertion consistency score.
 ///
@@ -92,7 +114,8 @@ pub async fn agent_consistency(
     let mut units: Vec<AgentAssertionOutcome> = Vec::new();
 
     for subject_triples in &owned_subject_triples {
-        let any_valid = subject_triples.iter().any(|t| logic.validate(t).is_valid);
+        let any_accepted = subject_triples.iter().any(|t| logic.validate(t).is_valid);
+        let (verified, outcome) = rule_set.verdict(any_accepted);
         units.push(AgentAssertionOutcome {
             unit: "subject".to_string(),
             subject: subject_triples
@@ -100,18 +123,21 @@ pub async fn agent_consistency(
                 .map(|t| t.subject.to_string())
                 .unwrap_or_default(),
             predicate: None,
-            verified: any_valid,
+            verified,
+            outcome: outcome.to_string(),
             triple: None,
         });
     }
 
     for triples in &prefixed_triples {
         for t in triples {
+            let (verified, outcome) = rule_set.verdict(logic.validate(t).is_valid);
             units.push(AgentAssertionOutcome {
                 unit: "triple".to_string(),
                 subject: t.subject.to_string(),
                 predicate: Some(t.predicate.as_str().to_string()),
-                verified: logic.validate(t).is_valid,
+                verified,
+                outcome: outcome.to_string(),
                 triple: Some(TripleIdentity::of(t)),
             });
         }
@@ -120,17 +146,14 @@ pub async fn agent_consistency(
     drop(logic);
 
     let total = units.len();
-    let verified = units.iter().filter(|u| u.verified).count();
-
-    let score = if total > 0 {
-        verified as f64 / total as f64
-    } else {
-        0.0
-    };
+    let evaluated = units.iter().filter(|u| u.verified.is_some()).count();
+    let verified = units.iter().filter(|u| u.verified == Some(true)).count();
+    let score = consistency_score(&units);
 
     ConsistencyResponse {
         score,
         total,
+        evaluated,
         verified,
         assertions: units,
         rule_set,
@@ -142,8 +165,13 @@ pub async fn agent_consistency(
 fn consistency_procedure() -> Vec<String> {
     let mut steps = vec![
         "1. Check the arithmetic: `total` must equal the length of `assertions`, \
-         `verified` must equal the number of entries with `verified: true`, and `score` \
-         must be their quotient. A score you cannot decompose is not a measurement."
+         `evaluated` the number whose `verified` is not null, `verified` the number \
+         with `verified: true`, and `score` must be verified/evaluated. A score you \
+         cannot decompose is not a measurement."
+            .to_string(),
+        "1b. Entries with `outcome: \"not_evaluated\"` were not examined by any rule \
+         and are excluded from BOTH sides of the fraction. If `evaluated` is 0, \
+         `score` is null: there is no score, which is not the same as a score of 0."
             .to_string(),
         "2. Note the units. Entries with `unit: \"subject\"` count as verified when ANY \
          triple on that subject validates; entries with `unit: \"triple\"` are single \
@@ -151,7 +179,7 @@ fn consistency_procedure() -> Vec<String> {
          evidence — do not present it as a uniform percentage."
             .to_string(),
         "3. `total: 0` means no assertions were found for this agent, and the resulting \
-         0.0 means 'nothing to score', NOT '0% consistent'. Say which."
+         null score means 'nothing to score', NOT '0% consistent'. Say which."
             .to_string(),
     ];
     // The per-verdict ceiling is identical to every other PoL surface, so it is
@@ -223,16 +251,20 @@ pub async fn batch_verify_assertions(
                         .iter()
                         .map(|r| format!("{}: {}", r.rule_id, r.reason))
                         .collect();
-                    let verified = validation.is_valid;
+                    // The triple was found; whether it was *examined* depends on
+                    // there being a rule to examine it with.
+                    let (verified, verdict) = rule_set.verdict(validation.is_valid);
+                    let outcome = match verified {
+                        None => OUTCOME_NOT_EVALUATED,
+                        Some(true) => OUTCOME_ACCEPTED,
+                        Some(false) => OUTCOME_REJECTED,
+                    };
+                    debug_assert_eq!(verified.is_none(), verdict == OUTCOME_NOT_EVALUATED);
                     (
                         verified,
                         AssertionEvidence {
                             found: true,
-                            outcome: if verified {
-                                OUTCOME_ACCEPTED.to_string()
-                            } else {
-                                OUTCOME_REJECTED.to_string()
-                            },
+                            outcome: outcome.to_string(),
                             triple: Some(TripleIdentity::of(t)),
                             matched_rule_ids,
                             rejected_by,
@@ -243,7 +275,7 @@ pub async fn batch_verify_assertions(
                 // stopping there would let "we do not hold this assertion" read
                 // as "this assertion was checked and failed".
                 None => (
-                    false,
+                    Some(false),
                     AssertionEvidence {
                         found: false,
                         outcome: OUTCOME_NOT_FOUND.to_string(),
@@ -277,13 +309,16 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn consistency_of_unknown_agent_is_zero() {
+    async fn consistency_of_unknown_agent_has_no_score() {
         let state = AppState::with_db_path(":memory:", None).unwrap();
 
         let resp = agent_consistency(&state, "nobody", None).await;
         assert_eq!(resp.total, 0);
+        assert_eq!(resp.evaluated, 0);
         assert_eq!(resp.verified, 0);
-        assert_eq!(resp.score, 0.0);
+        // Nothing was found, so there is nothing to score. 0.0 would read as
+        // "0% consistent", which is a claim about an agent we know nothing about.
+        assert_eq!(resp.score, None);
     }
 
     #[tokio::test]
@@ -313,7 +348,8 @@ mod tests {
         assert_eq!(resp.results.len(), 1);
         assert_eq!(resp.results[0].subject, "ex:thing");
         assert_eq!(resp.results[0].predicate, "ex:claims");
-        assert!(!resp.results[0].verified);
+        assert_eq!(resp.results[0].verified, Some(false));
+        assert_eq!(resp.results[0].evidence.outcome, "not_found");
     }
 
     // ========================================================================
@@ -370,6 +406,7 @@ mod tests {
         // identified so the client can confirm it is the triple it meant.
         let found = &results[0];
         assert_eq!(found["verified"], true, "{json}");
+        assert_eq!(found["evidence"]["outcome"], "accepted", "{json}");
         let ev = &found["evidence"];
         assert_eq!(ev["found"], true);
         let t = &ev["triple"];
@@ -394,9 +431,17 @@ mod tests {
         );
         assert_eq!(missing["evidence"]["outcome"], "not_found");
 
-        // And the verdicts must name the rule set they depend on.
-        assert_eq!(json["rule_set"]["rule_count"], 0, "{json}");
-        assert_eq!(json["rule_set"]["vacuous"], true);
+        // And the verdicts must name the rule set they depend on — enumerated,
+        // so an operator can see which rules produced them.
+        assert!(
+            json["rule_set"]["rule_count"].as_u64().expect("count") > 0,
+            "{json}"
+        );
+        assert_eq!(json["rule_set"]["vacuous"], false);
+        assert!(!json["rule_set"]["rules"]
+            .as_array()
+            .expect("rules")
+            .is_empty());
         assert!(!json["procedure"].as_array().expect("procedure").is_empty());
     }
 
@@ -412,20 +457,81 @@ mod tests {
         assert_eq!(
             units.len() as u64,
             json["total"].as_u64().expect("total"),
-            "the denominator must be enumerated, not merely counted: {json}"
+            "every unit must be enumerated, not merely counted: {json}"
         );
+        // The denominator is the units that were EVALUATED, not every unit found.
+        let evaluated = units.iter().filter(|u| !u["verified"].is_null()).count() as u64;
+        assert_eq!(evaluated, json["evaluated"].as_u64().expect("evaluated"));
         let recomputed = units
             .iter()
             .filter(|u| u["verified"] == serde_json::json!(true))
             .count() as u64;
         assert_eq!(recomputed, json["verified"].as_u64().expect("verified"));
-        let expected = recomputed as f64 / json["total"].as_u64().unwrap() as f64;
+        let expected = recomputed as f64 / evaluated as f64;
         assert!(
             (json["score"].as_f64().expect("score") - expected).abs() < 1e-9,
             "the score must be the arithmetic the response shows: {json}"
         );
-        assert_eq!(json["rule_set"]["vacuous"], true, "{json}");
+        assert_eq!(json["rule_set"]["vacuous"], false, "{json}");
         assert!(!json["procedure"].as_array().expect("procedure").is_empty());
+    }
+
+    // ========================================================================
+    // A score must not average verdicts that were never reached
+    //
+    // `agent_consistency` is a fraction over PoL verdicts. With no rules
+    // enabled, no assertion is examined — counting each as a pass produces a
+    // perfect score derived from nothing, which is the most confident form the
+    // original defect can take.
+    // ========================================================================
+
+    #[tokio::test]
+    async fn an_unevaluated_assertion_is_not_averaged_as_if_it_had_passed() {
+        let state = state_with_assertion("mayros:agent:a1:claim1", "ex:says").await;
+        *state.logic.write().await = aingle_logic::RuleEngine::new();
+
+        let json = serde_json::to_value(agent_consistency(&state, "a1", None).await).unwrap();
+
+        assert_eq!(json["rule_set"]["vacuous"], true, "precondition: {json}");
+        assert!(
+            json["total"].as_u64().expect("total") > 0,
+            "precondition: the agent has assertions: {json}"
+        );
+        assert_eq!(
+            json["evaluated"], 0,
+            "no assertion was examined, so the denominator of any score is 0: {json}"
+        );
+        assert!(
+            json["score"].is_null(),
+            "a score over zero evaluated verdicts is not 1.0 and not 0.0 — it does \
+             not exist: {json}"
+        );
+        let unit = &json["assertions"][0];
+        assert_ne!(unit["verified"], serde_json::json!(true), "{json}");
+        assert_eq!(unit["outcome"], "not_evaluated", "{json}");
+    }
+
+    #[tokio::test]
+    async fn an_unevaluated_batch_verdict_is_not_reported_as_verified() {
+        let state = state_with_assertion("ex:thing", "ex:claims").await;
+        *state.logic.write().await = aingle_logic::RuleEngine::new();
+
+        let req = BatchVerifyAssertionsRequest {
+            assertions: vec![AssertionRef {
+                subject: "ex:thing".into(),
+                predicate: "ex:claims".into(),
+            }],
+        };
+        let json = serde_json::to_value(batch_verify_assertions(&state, req, None).await).unwrap();
+
+        let result = &json["results"][0];
+        assert_eq!(result["evidence"]["found"], true, "precondition: {json}");
+        assert_ne!(
+            result["verified"],
+            serde_json::json!(true),
+            "the triple exists but nothing examined it: {json}"
+        );
+        assert_eq!(result["evidence"]["outcome"], "not_evaluated", "{json}");
     }
 
     #[tokio::test]

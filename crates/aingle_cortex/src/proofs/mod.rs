@@ -59,7 +59,7 @@ pub mod store;
 pub mod verification;
 
 pub use backend::ProofBackend;
-pub use replay::{replay_for, ProofReplay};
+pub use replay::{replay_for, ProofReplay, StatementBinding};
 pub use store::{ProofId, ProofMetadata, ProofStore, ProofType, StoredProof, SubmitProofRequest};
 pub use verification::{ProofVerifier, VerificationError, VerificationResult};
 

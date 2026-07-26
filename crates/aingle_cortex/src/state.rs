@@ -48,6 +48,11 @@ pub struct AppState {
     /// A thread-safe reference to the graph database.
     pub graph: Arc<RwLock<GraphDB>>,
     /// A thread-safe reference to the logic and validation engine.
+    ///
+    /// Loaded from [`crate::pol::configured_engine`], so a node starts with a
+    /// real rule set rather than an empty one. An empty engine is still
+    /// reachable (an operator can set `AINGLE_POL_RULES=none`), and every PoL
+    /// surface reports `not_evaluated` when that happens instead of `valid`.
     pub logic: Arc<RwLock<RuleEngine>>,
     /// The Ineru dual-memory system (STM + LTM with consolidation).
     pub memory: Arc<RwLock<IneruMemory>>,
@@ -140,7 +145,7 @@ impl AppState {
     /// This is useful for testing or development environments.
     pub fn new() -> crate::error::Result<Self> {
         let graph = GraphDB::memory()?;
-        let logic = RuleEngine::new();
+        let logic = crate::pol::configured_engine();
         let memory = IneruMemory::agent_mode();
 
         #[cfg(feature = "auth")]
@@ -199,7 +204,7 @@ impl AppState {
 
     /// Creates a new `AppState` with a pre-configured `GraphDB` instance.
     pub fn with_graph(graph: GraphDB) -> Self {
-        let logic = RuleEngine::new();
+        let logic = crate::pol::configured_engine();
         let memory = IneruMemory::agent_mode();
 
         #[cfg(feature = "auth")]
@@ -259,7 +264,7 @@ impl AppState {
     /// Creates a new `AppState` with a file-backed audit log.
     pub fn with_audit_path(path: std::path::PathBuf) -> crate::error::Result<Self> {
         let graph = GraphDB::memory()?;
-        let logic = RuleEngine::new();
+        let logic = crate::pol::configured_engine();
         let memory = IneruMemory::agent_mode();
 
         #[cfg(feature = "auth")]
@@ -349,7 +354,7 @@ impl AppState {
             GraphDB::sled(db_path)?
         };
 
-        let logic = RuleEngine::new();
+        let logic = crate::pol::configured_engine();
 
         // Embedder-change migration + snapshot load (persistent only).
         //
@@ -810,9 +815,14 @@ pub enum Event {
     /// Sent when a triple is deleted from the graph.
     TripleDeleted { hash: String },
     /// Sent after a validation operation is completed.
+    ///
+    /// `valid` is `None` when the node has no PoL rules enabled: nothing was
+    /// examined, so there is no pass to report. `outcome` (`valid` / `invalid` /
+    /// `not_evaluated`) is the field a subscriber should switch on.
     ValidationCompleted {
         hash: String,
-        valid: bool,
+        valid: Option<bool>,
+        outcome: String,
         proof_hash: Option<String>,
     },
     /// Sent to a client immediately after it connects.

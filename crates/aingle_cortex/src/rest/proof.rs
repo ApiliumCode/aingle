@@ -59,10 +59,20 @@ pub struct ValidateTripleInput {
 pub struct ValidateResponse {
     /// Overall validity, as evaluated by this node against its own rule set.
     ///
+    /// **`null` when nothing was evaluated.** With no enabled rule, no rule can
+    /// reject, so "no rule rejected these triples" is trivially true of
+    /// everything; answering `true` there would claim a check that never ran.
+    /// The boolean is therefore three-valued — `true`, `false`, or absent — and
+    /// `outcome` names which. A client testing truthiness gets `false` for the
+    /// unevaluated case, which is the safe reading.
+    ///
     /// **An assertion, not proof.** A client that needs certainty must obtain
     /// the rule set and re-run it; a client that cannot must report "this node
     /// reports valid", never "validated".
-    pub valid: bool,
+    pub valid: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated` — the verdict in a form that has no
+    /// misleading default. Read this before `valid`.
+    pub outcome: String,
     /// Individual validation results
     pub results: Vec<TripleValidationResult>,
     /// Digest committing to the validated triples' identities.
@@ -113,8 +123,11 @@ pub struct ValidationProofDto {
 pub struct TripleValidationResult {
     /// Triple that was validated
     pub triple: TripleDto,
-    /// Whether this triple is valid
-    pub valid: bool,
+    /// Whether this triple is valid, or `null` when no rule examined it.
+    /// See [`ValidateResponse::valid`].
+    pub valid: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated`.
+    pub outcome: String,
     /// Validation messages
     pub messages: Vec<ValidationMessage>,
 }

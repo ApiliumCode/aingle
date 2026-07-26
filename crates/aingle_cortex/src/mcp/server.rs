@@ -186,14 +186,28 @@ fn payload_json_references_excluded(
 /// A proof submitted *about* an excluded note carries that note's path in its
 /// body, and a "verify" response now serves that body — so the same scrub the
 /// signed DAG payload needed applies here, escaped separators included.
+///
+/// The statement-binding schemes add a second route: the bound statement is a
+/// caller-supplied byte string that the bundle renders as text in
+/// `statement_utf8`. A statement naming an excluded note would walk straight out
+/// through a field the hex-only reasoning above does not cover, so it is scanned
+/// too.
 fn replay_references_excluded(
     pol: &crate::mcp::policy::McpPolicy,
     replay: &crate::proofs::ProofReplay,
 ) -> bool {
-    replay
+    if replay
         .proof_json
         .as_deref()
         .is_some_and(|j| payload_json_references_excluded(pol, j))
+    {
+        return true;
+    }
+    replay
+        .statement_binding
+        .statement_utf8
+        .as_deref()
+        .is_some_and(|s| pol.is_hidden(s) || payload_json_references_excluded(pol, s))
 }
 
 /// A verify response is hidden if its replay bundle names an excluded path.
@@ -263,12 +277,19 @@ fn consistency_retain_visible(
             && !u.triple.as_ref().is_some_and(|t| pol.is_hidden(&t.subject))
     });
     resp.total = resp.assertions.len();
-    resp.verified = resp.assertions.iter().filter(|u| u.verified).count();
-    resp.score = if resp.total > 0 {
-        resp.verified as f64 / resp.total as f64
-    } else {
-        0.0
-    };
+    resp.evaluated = resp
+        .assertions
+        .iter()
+        .filter(|u| u.verified.is_some())
+        .count();
+    resp.verified = resp
+        .assertions
+        .iter()
+        .filter(|u| u.verified == Some(true))
+        .count();
+    // Recomputed through the same helper the service uses, so a unit that was
+    // never evaluated stays out of the fraction here too.
+    resp.score = crate::service::reputation::consistency_score(&resp.assertions);
 }
 
 /// Parameters for the `aingle_dag_history` tool.
@@ -1072,15 +1093,30 @@ impl AingleMcp {
             proof, however much the tool name suggests otherwise. Do not relay it as \
             'verified'.\n\
             \n\
-            Read `replay.check` first; it names what was actually computed:\n\
-            - `schnorr_discrete_log` — a real verification. Replay: decode \
-            `public_parameters.generator_g` and `public_inputs.commitment` as \
-            compressed ristretto255 points G and P, and `challenge`/`response` as \
-            32-byte scalars c and s; compute R' = s*G - c*P; check \
-            sha256(compress(R') || commitment) == `challenge`. Scope: it proves \
-            knowledge of a discrete log and binds NO message, so it is not proof of \
-            any statement it was served next to.\n\
-            - `pedersen_commitment_equality` — a real verification. Rebuild H from \
+            Read `replay.statement_binding.bound` SECOND, right after `valid`. When it \
+            is false the challenge covers NO statement, so the same proof bytes verify \
+            beside ANY assertion: a passing check tells you someone produced a valid \
+            proof of that shape, never that it backs the claim it was served with. Say \
+            that explicitly. When it is true, hex-decode \
+            `replay.statement_binding.challenge_preimage_hex` — the EXACT bytes that \
+            were hashed, never rebuild them yourself — sha256 them, confirm the result \
+            equals `public_inputs.challenge`, and confirm the preimage contains \
+            `statement_hex` and the R you recomputed. Then compare that statement with \
+            the claim you were actually shown; if they differ, the proof is about \
+            something else.\n\
+            \n\
+            Read `replay.check`; it names what was actually computed:\n\
+            - `schnorr_discrete_log_statement_bound` (`aingle-zk-knowledge-v2`) — a real \
+            verification, bound to a statement.\n\
+            - `pedersen_commitment_equality_statement_bound` (`aingle-zk-equality-v2`) — \
+            a real verification, bound to a statement.\n\
+            - `schnorr_discrete_log` (`aingle-zk-knowledge-v1`) — a real verification but \
+            NOT statement-binding. Replay: decode `public_parameters.generator_g` and \
+            `public_inputs.commitment` as compressed ristretto255 points G and P, and \
+            `challenge`/`response` as 32-byte scalars c and s; compute R' = s*G - c*P; \
+            check sha256(compress(R') || commitment) == `challenge`.\n\
+            - `pedersen_commitment_equality` (`aingle-zk-equality-v1`) — a real \
+            verification, NOT statement-binding. Rebuild H from \
             `public_parameters.generator_h_derivation` and confirm it equals \
             `generator_h`; compute D = C1 - C2 and R' = s*H - c*D; check \
             sha256(compress(R') || compress(D)) == `challenge`.\n\
@@ -1095,8 +1131,9 @@ impl AingleMcp {
             `replay.establishes` / `does_not_establish` state the scope in words, and \
             `additional_input_required` names the input missing when the check cannot \
             settle the claim. Follow `replay.procedure`, then report WHICH STEPS YOU \
-            RAN. If you did not run them, say 'the node reports this proof valid', not \
-            'verified'. Invalid proofs return valid:false, not an error.",
+            RAN and whether the proof was statement-bound. If you did not run them, say \
+            'the node reports this proof valid', not 'verified'. Invalid proofs return \
+            valid:false, not an error.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_verify_proof(
@@ -1131,7 +1168,10 @@ impl AingleMcp {
             performed now, and it is `false` for a proof that was never checked. It is \
             an assertion either way. Use `replay` — and read `replay.check`, which for \
             `well_formedness_only` and `root_consistency_only` means no claim was \
-            verified at all. Errors if the proof does not exist.",
+            verified at all. Read `replay.statement_binding.bound` too: when false, the \
+            proof binds no statement and verifies beside any claim whatsoever, so it is \
+            not evidence for the one it is filed with. Errors if the proof does not \
+            exist.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_get_proof(
@@ -1160,7 +1200,7 @@ impl AingleMcp {
     /// with per-assertion error messages (not a tool error).
     #[tool(
         description = "Check a semantic skill manifest against this node's \
-            proof-of-logic rules. Returns {valid, errors, checks, rule_set, \
+            proof-of-logic rules. Returns {valid, outcome, errors, checks, rule_set, \
             procedure, limitation}; does not mutate.\n\
             \n\
             `valid` is THIS NODE'S ASSERTION, and `limitation` says why it cannot be \
@@ -1168,14 +1208,15 @@ impl AingleMcp {
             may include conditions that cannot be serialized at all. There is no \
             replay bundle here and there cannot be one.\n\
             \n\
-            Read `rule_set` first. If `rule_set.vacuous` is true, NO rules are enabled, \
-            so no probe can match and every `require_proof` assertion fails for a \
-            configuration reason rather than a manifest defect — say that, don't report \
-            the manifest as bad. Read `checks` second: entries with `evaluated: false` \
-            were never examined (the manifest asked for no proof on them), and each \
-            check ran against a synthetic probe triple, not the skill's real \
-            assertions. A matching rule means such a rule exists for that predicate; it \
-            does not mean anything was validated.\n\
+            Read `outcome` first. `not_evaluated` (with `valid: null`) means NOTHING in \
+            the manifest was examined — either no assertion asked for proof, or this \
+            node has no rule that could check one (`rule_set.vacuous` is true, or \
+            `rule_set.predicate_scoped_rule_count` is 0). That is a configuration gap on \
+            THIS NODE, not a manifest defect: say so, and do not report the manifest as \
+            bad. Read `checks` second: entries with `evaluated: false` were never \
+            examined, and each evaluated check ran against a synthetic probe triple, not \
+            the skill's real assertions. A matching rule means such a rule exists for \
+            that predicate; it does not mean anything was validated.\n\
             \n\
             Report which checks ran and under which `rule_set.digest`. Never say a \
             skill is 'verified' on the strength of this tool.",
@@ -1244,22 +1285,25 @@ impl AingleMcp {
     #[tool(
         description = "Compute an agent's assertion consistency score: the fraction of \
             its assertions that pass this node's proof-of-logic validation. Returns \
-            {score, total, verified, assertions, rule_set, procedure}.\n\
+            {score, total, evaluated, verified, assertions, rule_set, procedure}.\n\
             \n\
             The score is arithmetic over verdicts this server produced, so it is an \
             assertion too — and it is NOT a reputation or trust measurement. Check it \
             rather than repeat it: `total` must equal the length of `assertions`, \
-            `verified` the number marked true, and `score` their quotient.\n\
+            `evaluated` the number whose `verified` is not null, `verified` the number \
+            marked true, and `score` = verified/evaluated.\n\
             \n\
-            If `rule_set.vacuous` is true, no rules are enabled, every assertion \
-            trivially passes, and the score degenerates to 1.0 for any agent with \
-            assertions — it measures nothing. If `total` is 0 the score is 0.0 meaning \
-            'nothing found', NOT '0% consistent'; unknown agents land here. Note also \
-            that `assertions` mixes two units: `subject` entries count as verified when \
-            ANY triple on that subject validates, `triple` entries are single \
-            assertions, and both count as 1.\n\
+            `score` is NULL when `evaluated` is 0 — either no assertions were found, or \
+            no rule examined them (`rule_set.vacuous`). A null score means there is no \
+            measurement; it is neither 0% nor 100%, and reporting either would invent a \
+            result. Units with `outcome: not_evaluated` are excluded from both sides of \
+            the fraction rather than counted as passes. Note also that `assertions` \
+            mixes two units: `subject` entries count as verified when ANY triple on that \
+            subject validates, `triple` entries are single assertions, and both count \
+            as 1.\n\
             \n\
-            Report the fraction and the rule-set state you saw, not a bare percentage.",
+            Report the fraction, how many units were evaluated, and the rule-set state \
+            you saw — not a bare percentage.",
         annotations(read_only_hint = true)
     )]
     async fn aingle_agent_consistency(
@@ -1287,15 +1331,18 @@ impl AingleMcp {
             proof-of-logic rules. Returns per-assertion {verified, evidence} plus \
             `rule_set` and `procedure`.\n\
             \n\
-            `verified` is THIS NODE'S ASSERTION, not proof, and it is lossy: `false` \
-            covers both 'no such triple here' and 'a rule rejected it'. Read \
-            `evidence.outcome`, which separates them into `accepted`, `rejected` and \
-            `not_found` — a `not_found` means nothing was evaluated and is NOT evidence \
-            the assertion is false.\n\
+            `verified` is THIS NODE'S ASSERTION, not proof, and the boolean alone is \
+            lossy: `false` covers both 'no such triple here' and 'a rule rejected it'. \
+            Read `evidence.outcome`, which separates every case into `accepted`, \
+            `rejected`, `not_found` and `not_evaluated`. `not_found` means this node \
+            does not hold the assertion and is NOT evidence it is false. \
+            `not_evaluated` means the triple exists but no rule is enabled to examine \
+            it — `verified` is null there, and calling it verified would claim a check \
+            that never ran.\n\
             \n\
-            Read `rule_set` before reporting anything: if `vacuous` is true, no rules \
-            are enabled, nothing can be rejected, and every existing triple comes back \
-            `verified: true` without being examined. `evidence.triple` publishes the \
+            Read `rule_set` before reporting anything: `vacuous: true` means no rules \
+            are enabled and every found triple comes back `not_evaluated`; `rules` \
+            enumerates what ran otherwise. `evidence.triple` publishes the \
             literal bytes of the evaluated triple's id, so you can confirm the verdict \
             is about the triple you meant (blake3-256 of subject_bytes || \
             predicate_bytes || object_bytes must equal triple_id).\n\
@@ -1326,15 +1373,21 @@ impl AingleMcp {
     /// `valid:false` (not a tool error).
     #[tool(
         description = "Run triple(s) through this node's proof-of-logic rule engine. \
-            Returns {valid, results, proof_hash, proof, rule_set, procedure}; invalid \
-            triples yield valid:false (not an error). Does not mutate.\n\
+            Returns {valid, outcome, results, proof_hash, proof, rule_set, procedure}; \
+            invalid triples yield valid:false (not an error). Does not mutate.\n\
             \n\
-            `valid` is THIS NODE'S ASSERTION — 'no enabled rule rejected these triples'. \
-            Read `rule_set` first: if `vacuous` is true there are NO enabled rules, so \
-            nothing was examined and `valid: true` carries no information at all. Say \
-            that plainly instead of reporting the triples as validated. The verdict \
-            cannot be replayed from this response; reproducing it needs the node's rule \
-            set, which is configuration.\n\
+            Read `outcome` BEFORE `valid`. It is one of `valid`, `invalid`, or \
+            `not_evaluated`. `not_evaluated` means this node has NO enabled rules, so \
+            nothing examined the triples and `valid` is null — report 'not evaluated', \
+            never 'valid'. (`rule_set.vacuous` says the same about the configuration.) \
+            Each entry of `results` carries its own `outcome` on the same three values.\n\
+            \n\
+            `valid` is otherwise THIS NODE'S ASSERTION — 'no enabled rule rejected these \
+            triples'. `rule_set.rules` enumerates the rules that ran, with the effect of \
+            each, so you can say what was actually checked instead of citing a count. \
+            The verdict cannot be replayed from this response; reproducing it needs the \
+            node's rule set, which is configuration and may include Rust closures \
+            (`rule_set.rules[].opaque_conditions` counts them).\n\
             \n\
             `proof_hash` IS reproducible, and it is not what its name suggests. Check it: \
             (1) for each `proof.triples` entry, hex-decode subject_bytes, \

@@ -287,8 +287,12 @@ impl MutationRoot {
     ) -> Result<TripleValidationResult> {
         let state = ctx.data::<AppState>()?;
         let logic = state.logic.read().await;
+        // The same fingerprint the REST/MCP surfaces publish. It is used here
+        // only for its verdict rule: with no enabled rules nothing was examined,
+        // so this resolver must not answer `valid: true` either.
+        let rule_set = crate::rest::pol_evidence::RuleSetFingerprint::of(&logic);
 
-        let mut all_valid = true;
+        let mut all_accepted = true;
         let mut messages = Vec::new();
 
         for input in &triples {
@@ -302,7 +306,7 @@ impl MutationRoot {
             let validation = logic.validate(&triple);
 
             if !validation.is_valid() {
-                all_valid = false;
+                all_accepted = false;
             }
 
             for rejection in &validation.rejections {
@@ -321,8 +325,8 @@ impl MutationRoot {
             }
         }
 
-        // Generate proof hash if valid
-        let proof_hash = if all_valid && !triples.is_empty() {
+        // Generate proof hash if nothing was rejected
+        let proof_hash = if all_accepted && !triples.is_empty() {
             let mut hasher = blake3::Hasher::new();
             for input in &triples {
                 hasher.update(input.subject.as_bytes());
@@ -333,8 +337,11 @@ impl MutationRoot {
             None
         };
 
+        let (valid, outcome) = rule_set.verdict(all_accepted);
+
         Ok(TripleValidationResult {
-            valid: all_valid,
+            valid,
+            outcome: outcome.to_string(),
             messages,
             proof_hash,
         })

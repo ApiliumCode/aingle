@@ -119,7 +119,8 @@ mod tests {
             &state,
             aingle_cortex::state::Event::ValidationCompleted {
                 hash: "validated_hash".to_string(),
-                valid: true,
+                valid: Some(true),
+                outcome: "valid".to_string(),
                 proof_hash: Some("proof_123".to_string()),
             },
         );
@@ -133,10 +134,12 @@ mod tests {
             aingle_cortex::state::Event::ValidationCompleted {
                 hash,
                 valid,
+                outcome,
                 proof_hash,
             } => {
                 assert_eq!(hash, "validated_hash");
-                assert!(valid);
+                assert_eq!(valid, Some(true));
+                assert_eq!(outcome, "valid");
                 assert_eq!(proof_hash, Some("proof_123".to_string()));
             }
             _ => panic!("Expected ValidationCompleted event"),
@@ -226,7 +229,8 @@ mod tests {
             &state,
             aingle_cortex::state::Event::ValidationCompleted {
                 hash: "hash3".to_string(),
-                valid: true,
+                valid: Some(true),
+                outcome: "valid".to_string(),
                 proof_hash: None,
             },
         );
