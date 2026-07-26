@@ -64,7 +64,7 @@ uuid = { version = "1", features = ["v4", "serde"], optional = true }
 
 # Ed25519 signing (optional, for dag-sign)
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
-rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"], optional = true }
+rand = { version = "0.10", default-features = false, features = ["std", "thread_rng"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

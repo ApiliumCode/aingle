@@ -32,7 +32,7 @@ blake3 = "1.8"
 sha2 = "0.10"
 
 # Randomness (for contract address nonce)
-rand = "0.9"
+rand = "0.10"
 
 # Error handling
 thiserror = "2.0"
