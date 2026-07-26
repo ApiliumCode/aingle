@@ -170,6 +170,79 @@ impl EqualityProof {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Statement binding (v2 schemes)
+//
+// The v1 `Knowledge` and `Equality` variants below hash only the commitment
+// into their Fiat-Shamir challenge. Nothing else is covered, so a proof that
+// verifies is not a proof *of* anything: lift it out of one response and serve
+// it beside a different claim and it still verifies. The v2 variants close that
+// by hashing a caller-supplied statement into the challenge, with a domain
+// separation tag and an explicit length prefix so no two (R, P, statement)
+// triples can share a preimage.
+//
+// The preimage builders are public and are the SINGLE definition used by the
+// prover, the verifier and anything that publishes the bytes to a client. A
+// second, "equivalent" implementation is how a client ends up hashing something
+// subtly different and verifying nothing.
+// ---------------------------------------------------------------------------
+
+/// Domain-separation tag for the statement-binding knowledge scheme.
+pub const KNOWLEDGE_V2_DOMAIN: &[u8] = b"aingle-zk-knowledge-v2";
+
+/// Domain-separation tag for the statement-binding equality scheme.
+pub const EQUALITY_V2_DOMAIN: &[u8] = b"aingle-zk-equality-v2";
+
+/// The byte layout of [`knowledge_v2_challenge_preimage`], for publication.
+pub const KNOWLEDGE_V2_PREIMAGE_LAYOUT: &str =
+    "\"aingle-zk-knowledge-v2\" || 0x00 || compress(R) || commitment || \
+     u64_le(statement_len) || statement";
+
+/// The byte layout of [`equality_v2_challenge_preimage`], for publication.
+pub const EQUALITY_V2_PREIMAGE_LAYOUT: &str =
+    "\"aingle-zk-equality-v2\" || 0x00 || compress(R) || \
+     compress(commitment1 - commitment2) || u64_le(statement_len) || statement";
+
+/// Build the exact bytes hashed to produce a `KnowledgeBound` challenge.
+///
+/// `r_compressed` is the compressed nonce point R (recomputed as `s*G - c*P` on
+/// the verifying side), `commitment` the compressed public point P, `statement`
+/// the claim the proof is about.
+pub fn knowledge_v2_challenge_preimage(
+    r_compressed: &[u8; 32],
+    commitment: &[u8; 32],
+    statement: &[u8],
+) -> Vec<u8> {
+    let mut preimage =
+        Vec::with_capacity(KNOWLEDGE_V2_DOMAIN.len() + 1 + 32 + 32 + 8 + statement.len());
+    preimage.extend_from_slice(KNOWLEDGE_V2_DOMAIN);
+    preimage.push(0x00);
+    preimage.extend_from_slice(r_compressed);
+    preimage.extend_from_slice(commitment);
+    preimage.extend_from_slice(&(statement.len() as u64).to_le_bytes());
+    preimage.extend_from_slice(statement);
+    preimage
+}
+
+/// Build the exact bytes hashed to produce an `EqualityBound` challenge.
+///
+/// `diff_compressed` is the compressed `C1 - C2`.
+pub fn equality_v2_challenge_preimage(
+    r_compressed: &[u8; 32],
+    diff_compressed: &[u8; 32],
+    statement: &[u8],
+) -> Vec<u8> {
+    let mut preimage =
+        Vec::with_capacity(EQUALITY_V2_DOMAIN.len() + 1 + 32 + 32 + 8 + statement.len());
+    preimage.extend_from_slice(EQUALITY_V2_DOMAIN);
+    preimage.push(0x00);
+    preimage.extend_from_slice(r_compressed);
+    preimage.extend_from_slice(diff_compressed);
+    preimage.extend_from_slice(&(statement.len() as u64).to_le_bytes());
+    preimage.extend_from_slice(statement);
+    preimage
+}
+
 /// Types of zero-knowledge proofs
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ProofType {
@@ -221,6 +294,110 @@ pub enum ProofData {
         commitment: [u8; 32],
         salt: [u8; 32],
     },
+    /// Statement-binding Schnorr knowledge proof.
+    ///
+    /// Same sigma protocol as [`ProofData::Knowledge`], but the challenge is
+    /// `sha256` over [`knowledge_v2_challenge_preimage`], which covers
+    /// `statement`. The proof therefore verifies for that statement and no
+    /// other: it cannot be lifted and presented beside a different claim.
+    KnowledgeBound {
+        commitment: [u8; 32],
+        challenge: [u8; 32],
+        response: [u8; 32],
+        /// The statement this proof is *about*, bound into the challenge.
+        statement: Vec<u8>,
+    },
+    /// Statement-binding equality proof between two Pedersen commitments.
+    ///
+    /// Same sigma protocol as [`ProofData::Equality`], with the challenge taken
+    /// over [`equality_v2_challenge_preimage`] so `statement` is bound in.
+    EqualityBound {
+        commitment1: [u8; 32],
+        commitment2: [u8; 32],
+        /// `challenge || response`, 64 bytes.
+        proof: Vec<u8>,
+        /// The statement this proof is *about*, bound into the challenge.
+        statement: Vec<u8>,
+    },
+}
+
+impl ProofData {
+    /// Produce a statement-binding knowledge proof of `secret`.
+    ///
+    /// The resulting proof establishes knowledge of `x` with `P = x*G` **for
+    /// `statement`**; presenting it for any other statement fails verification.
+    pub fn prove_knowledge_bound(secret: &Scalar, statement: &[u8]) -> Self {
+        let g = RISTRETTO_BASEPOINT_POINT;
+        let p = g * secret;
+        let k = Scalar::random(&mut OsRng);
+        let r = g * k;
+
+        let challenge_bytes: [u8; 32] = Sha256::digest(knowledge_v2_challenge_preimage(
+            &r.compress().to_bytes(),
+            &p.compress().to_bytes(),
+            statement,
+        ))
+        .into();
+        let s = k + Scalar::from_bytes_mod_order(challenge_bytes) * secret;
+
+        ProofData::KnowledgeBound {
+            commitment: p.compress().to_bytes(),
+            challenge: challenge_bytes,
+            response: s.to_bytes(),
+            statement: statement.to_vec(),
+        }
+    }
+
+    /// Produce a statement-binding equality proof for two commitments to the
+    /// same value under blindings `blinding1` / `blinding2`.
+    pub fn prove_equality_bound(
+        blinding1: &Scalar,
+        blinding2: &Scalar,
+        commitment1: &RistrettoPoint,
+        commitment2: &RistrettoPoint,
+        statement: &[u8],
+    ) -> Self {
+        let h = generator_h();
+        let diff = commitment1 - commitment2;
+        let r_diff = blinding1 - blinding2;
+
+        let k = Scalar::random(&mut OsRng);
+        let r = h * k;
+
+        let challenge_bytes: [u8; 32] = Sha256::digest(equality_v2_challenge_preimage(
+            &r.compress().to_bytes(),
+            &diff.compress().to_bytes(),
+            statement,
+        ))
+        .into();
+        let response = k + Scalar::from_bytes_mod_order(challenge_bytes) * r_diff;
+
+        let mut proof = Vec::with_capacity(64);
+        proof.extend_from_slice(&challenge_bytes);
+        proof.extend_from_slice(&response.to_bytes());
+
+        ProofData::EqualityBound {
+            commitment1: commitment1.compress().to_bytes(),
+            commitment2: commitment2.compress().to_bytes(),
+            proof,
+            statement: statement.to_vec(),
+        }
+    }
+
+    /// The statement bound into this proof's challenge, if the scheme binds one.
+    ///
+    /// `None` means the challenge covers no statement — a verifying proof of
+    /// this shape says nothing about any claim it was served alongside.
+    pub fn bound_statement(&self) -> Option<&[u8]> {
+        match self {
+            ProofData::KnowledgeBound { statement, .. }
+            | ProofData::EqualityBound { statement, .. } => Some(statement),
+            ProofData::Knowledge { .. }
+            | ProofData::Equality { .. }
+            | ProofData::Membership { .. }
+            | ProofData::HashOpening { .. } => None,
+        }
+    }
 }
 
 impl ZkProof {
@@ -344,6 +521,35 @@ impl ProofVerifier {
                 };
                 equality_proof.verify()
             }
+            ProofData::KnowledgeBound {
+                commitment,
+                challenge,
+                response,
+                statement,
+            } => Self::verify_knowledge_bound_proof(commitment, challenge, response, statement),
+            ProofData::EqualityBound {
+                commitment1,
+                commitment2,
+                proof,
+                statement,
+            } => {
+                if proof.len() < 64 {
+                    return Err(ZkError::InvalidProof("Proof data too short".into()));
+                }
+                let challenge: [u8; 32] = proof[0..32]
+                    .try_into()
+                    .map_err(|_| ZkError::InvalidProof("Invalid challenge".into()))?;
+                let response: [u8; 32] = proof[32..64]
+                    .try_into()
+                    .map_err(|_| ZkError::InvalidProof("Invalid response".into()))?;
+                Self::verify_equality_bound_proof(
+                    commitment1,
+                    commitment2,
+                    &challenge,
+                    &response,
+                    statement,
+                )
+            }
         }
     }
 
@@ -400,6 +606,76 @@ impl ProofVerifier {
         hasher.update(r_prime.compress().as_bytes());
         hasher.update(commitment);
         let computed_challenge: [u8; 32] = hasher.finalize().into();
+
+        Ok(&computed_challenge == challenge)
+    }
+
+    /// Verify a statement-binding knowledge proof.
+    ///
+    /// Identical to [`Self::verify_knowledge_proof`] except that the recomputed
+    /// challenge is taken over [`knowledge_v2_challenge_preimage`], so the
+    /// check fails the moment `statement` differs from the one the prover used.
+    fn verify_knowledge_bound_proof(
+        commitment: &[u8; 32],
+        challenge: &[u8; 32],
+        response: &[u8; 32],
+        statement: &[u8],
+    ) -> Result<bool> {
+        let g = RISTRETTO_BASEPOINT_POINT;
+
+        let public_point = CompressedRistretto::from_slice(commitment)
+            .map_err(|_| ZkError::InvalidProof("Invalid commitment point".into()))?
+            .decompress()
+            .ok_or_else(|| ZkError::InvalidProof("Cannot decompress commitment".into()))?;
+
+        let c = Scalar::from_bytes_mod_order(*challenge);
+        let s = Scalar::from_bytes_mod_order(*response);
+
+        // R' = s*G - c*P
+        let r_prime = g * s - public_point * c;
+
+        let computed_challenge: [u8; 32] = Sha256::digest(knowledge_v2_challenge_preimage(
+            &r_prime.compress().to_bytes(),
+            commitment,
+            statement,
+        ))
+        .into();
+
+        Ok(&computed_challenge == challenge)
+    }
+
+    /// Verify a statement-binding equality proof.
+    fn verify_equality_bound_proof(
+        commitment1: &[u8; 32],
+        commitment2: &[u8; 32],
+        challenge: &[u8; 32],
+        response: &[u8; 32],
+        statement: &[u8],
+    ) -> Result<bool> {
+        let h = generator_h();
+
+        let c1 = CompressedRistretto::from_slice(commitment1)
+            .map_err(|_| ZkError::InvalidProof("Invalid C1".into()))?
+            .decompress()
+            .ok_or_else(|| ZkError::InvalidProof("Cannot decompress C1".into()))?;
+        let c2 = CompressedRistretto::from_slice(commitment2)
+            .map_err(|_| ZkError::InvalidProof("Invalid C2".into()))?
+            .decompress()
+            .ok_or_else(|| ZkError::InvalidProof("Cannot decompress C2".into()))?;
+
+        let diff = c1 - c2;
+        let c = Scalar::from_bytes_mod_order(*challenge);
+        let s = Scalar::from_bytes_mod_order(*response);
+
+        // R' = s*H - c*(C1 - C2)
+        let r_prime = h * s - diff * c;
+
+        let computed_challenge: [u8; 32] = Sha256::digest(equality_v2_challenge_preimage(
+            &r_prime.compress().to_bytes(),
+            &diff.compress().to_bytes(),
+            statement,
+        ))
+        .into();
 
         Ok(&computed_challenge == challenge)
     }
@@ -685,6 +961,110 @@ mod tests {
         // Verify through the ProofVerifier
         let result = ProofVerifier::verify(&zk_proof).unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn statement_bound_knowledge_proof_verifies_only_for_its_own_statement() {
+        let secret = Scalar::random(&mut OsRng);
+        let data = ProofData::prove_knowledge_bound(&secret, b"ex:note-1 authored by ex:alice");
+        let proof = ZkProof::new(ProofType::KnowledgeProof, data.clone());
+        assert!(ProofVerifier::verify(&proof).unwrap());
+
+        // Transplant onto a different claim: the sigma-protocol values are
+        // untouched, only the statement changes. This is the attack the v1
+        // scheme permits and the whole reason v2 exists.
+        let ProofData::KnowledgeBound {
+            commitment,
+            challenge,
+            response,
+            ..
+        } = data
+        else {
+            panic!("prove_knowledge_bound must build a KnowledgeBound");
+        };
+        let transplanted = ZkProof::new(
+            ProofType::KnowledgeProof,
+            ProofData::KnowledgeBound {
+                commitment,
+                challenge,
+                response,
+                statement: b"ex:note-2 authored by ex:mallory".to_vec(),
+            },
+        );
+        assert!(
+            !ProofVerifier::verify(&transplanted).unwrap(),
+            "a proof bound to one statement must not verify for another"
+        );
+    }
+
+    #[test]
+    fn statement_bound_equality_proof_verifies_only_for_its_own_statement() {
+        let r1 = Scalar::random(&mut OsRng);
+        let r2 = Scalar::random(&mut OsRng);
+        let g = RISTRETTO_BASEPOINT_POINT;
+        let h = generator_h();
+        let v = Scalar::from(42u64);
+        let c1 = g * v + h * r1;
+        let c2 = g * v + h * r2;
+
+        let data = ProofData::prove_equality_bound(&r1, &r2, &c1, &c2, b"same balance");
+        assert!(
+            ProofVerifier::verify(&ZkProof::new(ProofType::EqualityProof, data.clone())).unwrap()
+        );
+
+        let ProofData::EqualityBound {
+            commitment1,
+            commitment2,
+            proof,
+            ..
+        } = data
+        else {
+            panic!("prove_equality_bound must build an EqualityBound");
+        };
+        let transplanted = ZkProof::new(
+            ProofType::EqualityProof,
+            ProofData::EqualityBound {
+                commitment1,
+                commitment2,
+                proof,
+                statement: b"different balance".to_vec(),
+            },
+        );
+        assert!(!ProofVerifier::verify(&transplanted).unwrap());
+    }
+
+    #[test]
+    fn the_v2_preimage_is_domain_separated_and_length_prefixed() {
+        // Without the length prefix, ("ab", "c") and ("a", "bc") would collide
+        // once the statement is concatenated with anything that follows it.
+        let r = [1u8; 32];
+        let p = [2u8; 32];
+        assert_ne!(
+            knowledge_v2_challenge_preimage(&r, &p, b"ab"),
+            knowledge_v2_challenge_preimage(&r, &p, b"a"),
+        );
+        // And the two v2 schemes must never share a preimage.
+        assert_ne!(
+            knowledge_v2_challenge_preimage(&r, &p, b"x"),
+            equality_v2_challenge_preimage(&r, &p, b"x"),
+        );
+        assert!(knowledge_v2_challenge_preimage(&r, &p, b"").starts_with(KNOWLEDGE_V2_DOMAIN));
+    }
+
+    #[test]
+    fn only_the_v2_variants_report_a_bound_statement() {
+        let secret = Scalar::random(&mut OsRng);
+        assert_eq!(
+            ProofData::prove_knowledge_bound(&secret, b"claim").bound_statement(),
+            Some(&b"claim"[..])
+        );
+        assert!(ProofData::Knowledge {
+            commitment: [0u8; 32],
+            challenge: [0u8; 32],
+            response: [0u8; 32],
+        }
+        .bound_statement()
+        .is_none());
     }
 
     #[test]

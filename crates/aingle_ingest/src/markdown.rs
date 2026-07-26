@@ -65,8 +65,24 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
     }
 
     // --- Body: headings, wikilinks, inline tags (with real line numbers).
+    // Fenced code (``` / ~~~) is skipped so code samples don't become vault
+    // facts; `task_occ` disambiguates repeated task text within the note.
+    let mut in_fence = false;
+    let mut task_occ: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    let mut card_occ: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for (i, line) in lines.iter().enumerate().skip(body_start) {
         let line_no = (i + 1) as u32;
+
+        // A fence marker line toggles fenced state; the marker and everything
+        // inside the fence are not scanned for structural facts.
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
 
         if let Some(c) = HEADING.captures(line) {
             out.push(ProvenancedTriple {
@@ -94,6 +110,112 @@ pub fn extract_triples(path: &str, content: &str, hash: &str) -> Vec<Provenanced
                 object: ObjectValue::Text(c[1].to_string()),
                 provenance: prov(path, hash, line_no),
             });
+        }
+
+        // A task line additionally emits a `task:` node whose identity is the
+        // hash of its text plus its occurrence index within the note — stable
+        // across status changes (so completing a task is a `status` edit on the
+        // same node, one signed DAG action, not a new node) yet distinct for two
+        // task lines with identical text. The line's wikilinks/tags above still
+        // attach to the note itself.
+        if let Some(task) = crate::tasks::parse_task(line) {
+            let occ = {
+                let entry = task_occ.entry(task.text.clone()).or_insert(0);
+                let v = *entry;
+                *entry += 1;
+                v
+            };
+            let hex = blake3::hash(format!("{}\u{0}{occ}", task.text).as_bytes()).to_hex();
+            let subject = format!("task:{path}#{}", &hex[..12]);
+            let mut emit = |predicate: &str, object: ObjectValue| {
+                out.push(ProvenancedTriple {
+                    subject: subject.clone(),
+                    predicate: predicate.into(),
+                    object,
+                    provenance: prov(path, hash, line_no),
+                });
+            };
+            emit("is_a", ObjectValue::Text("task".into()));
+            emit("status", ObjectValue::Text(task.status.as_str().into()));
+            emit("task_text", ObjectValue::Text(task.text.clone()));
+            emit("in_note", ObjectValue::Node(path.into()));
+            if let Some(d) = &task.deadline {
+                emit("deadline", ObjectValue::Text(d.clone()));
+            }
+            if let Some(s) = &task.scheduled {
+                emit("scheduled", ObjectValue::Text(s.clone()));
+            }
+            if let Some(r) = &task.recur {
+                emit("recur", ObjectValue::Text(r.clone()));
+            }
+            if let Some(p) = task.priority {
+                let semantic = match p {
+                    'A' => "high",
+                    'B' => "medium",
+                    _ => "low",
+                };
+                emit("priority", ObjectValue::Text(semantic.into()));
+            }
+        }
+
+        // A card line (`#card` tag or a `{{cloze …}}`) emits a `card:` node whose
+        // identity mirrors the task scheme: the blake3 of its front text plus its
+        // occurrence index within the note — stable across answer/schedule edits
+        // (so a review is a `card_*` retract+insert on the same node, one signed
+        // DAG action, not a new node) yet distinct for two cards with identical
+        // fronts. Identity is STICKY: if the SRS comment carries an `id=`, that
+        // stored id is the subject verbatim, so editing the answer preserves the
+        // card's identity and schedule. The line's wikilinks/tags above still
+        // attach to the note itself. Date-dependent `card_status` is derived at
+        // query time (like the task agenda), not stored here — only the raw SRS
+        // facts are emitted so extraction stays deterministic.
+        if let Some(card) = crate::cards::parse_card(line) {
+            let occ = {
+                let entry = card_occ.entry(card.front.clone()).or_insert(0);
+                let v = *entry;
+                *entry += 1;
+                v
+            };
+            let id = card.id.clone().unwrap_or_else(|| {
+                let hex = blake3::hash(format!("{}\u{0}{occ}", card.front).as_bytes()).to_hex();
+                hex[..12].to_string()
+            });
+            let subject = format!("card:{path}#{id}");
+            let mut emit = |predicate: &str, object: ObjectValue| {
+                out.push(ProvenancedTriple {
+                    subject: subject.clone(),
+                    predicate: predicate.into(),
+                    object,
+                    provenance: prov(path, hash, line_no),
+                });
+            };
+            emit("is_a", ObjectValue::Text("card".into()));
+            emit("card_text", ObjectValue::Text(card.front.clone()));
+            emit("in_note", ObjectValue::Node(path.into()));
+            emit(
+                "card_cloze",
+                ObjectValue::Text(if card.cloze { "true" } else { "false" }.into()),
+            );
+            if let Some(srs) = &card.srs {
+                if let Some(v) = &srs.due {
+                    emit("card_due", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.ef {
+                    emit("card_ef", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.int {
+                    emit("card_int", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.reps {
+                    emit("card_reps", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.last {
+                    emit("card_last", ObjectValue::Text(v.clone()));
+                }
+                if let Some(v) = &srs.q {
+                    emit("card_q", ObjectValue::Text(v.clone()));
+                }
+            }
         }
     }
 

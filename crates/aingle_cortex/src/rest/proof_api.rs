@@ -125,6 +125,15 @@ pub async fn verify_proofs_batch(
 
     let mut verifications = Vec::new();
     for (proof_id, result) in request.proof_ids.iter().zip(results.into_iter()) {
+        // Every entry carries its own replay material: a batch verdict is no more
+        // authoritative than a single one, so it must not be the only thing a
+        // caller can act on.
+        let replay = state
+            .proof_store
+            .get(proof_id)
+            .await
+            .as_ref()
+            .and_then(crate::proofs::replay_for);
         match result {
             Ok(verification) => {
                 verifications.push(VerifyProofResponse {
@@ -133,6 +142,7 @@ pub async fn verify_proofs_batch(
                     verified_at: verification.verified_at,
                     details: verification.details,
                     verification_time_us: verification.verification_time_us,
+                    replay,
                 });
             }
             Err(e) => {
@@ -142,6 +152,7 @@ pub async fn verify_proofs_batch(
                     verified_at: chrono::Utc::now(),
                     details: vec![format!("Verification error: {}", e)],
                     verification_time_us: 0,
+                    replay,
                 });
             }
         }
@@ -189,9 +200,12 @@ pub async fn list_proofs(
     let limit = params.limit.unwrap_or(100).min(1000);
     filtered_proofs.truncate(limit);
 
+    // A listing carries no proof material: fetch a proof by id (or verify it) to
+    // get the bundle. `verified` in these entries is a stale cached verdict, and
+    // there is nothing here to check it against — treat the list as an index.
     let proofs_response: Vec<ProofResponse> = filtered_proofs
         .into_iter()
-        .map(ProofResponse::from)
+        .map(|p| ProofResponse::from(p).without_replay())
         .collect();
 
     Ok(Json(ListProofsResponse {
@@ -289,15 +303,30 @@ pub struct ProofResponse {
     pub id: ProofId,
     pub proof_type: ProofType,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Whether the last verification this node ran returned true.
+    ///
+    /// **An assertion by this server about its own stored data, and a stale one:
+    /// it is the cached outcome of a past call, not a check performed now.** It
+    /// is `false` for a proof that has simply never been verified. Use `replay`
+    /// to reach your own verdict.
     pub verified: bool,
     pub verified_at: Option<chrono::DateTime<chrono::Utc>>,
     pub metadata: ProofMetadata,
     pub size_bytes: usize,
+    /// The proof bytes, public parameters, public inputs and replay procedure —
+    /// so fetching a proof yields the material to check it, not just a record
+    /// that it exists.
+    ///
+    /// `None` when the stored bytes cannot be parsed as a proof, and always
+    /// omitted from `GET /api/v1/proofs` listings, where inlining every proof's
+    /// bytes would multiply the response. Fetch a proof by id to obtain it.
+    pub replay: Option<crate::proofs::ProofReplay>,
 }
 
 impl From<StoredProof> for ProofResponse {
     fn from(proof: StoredProof) -> Self {
         let size_bytes = proof.size_bytes();
+        let replay = crate::proofs::replay_for(&proof);
         Self {
             id: proof.id,
             proof_type: proof.proof_type,
@@ -306,7 +335,21 @@ impl From<StoredProof> for ProofResponse {
             verified_at: proof.verified_at,
             metadata: proof.metadata,
             size_bytes,
+            replay,
         }
+    }
+}
+
+impl ProofResponse {
+    /// Drop the replay bundle, for list-shaped responses.
+    ///
+    /// Same convention as the DAG action DTO: a list omits the proof material
+    /// because inlining every proof's bytes multiplies the response, and fetching
+    /// one proof by id returns it in full. The bundle is a per-proof artifact, not
+    /// a summary field — a listing is for finding an id, not for evidence.
+    fn without_replay(mut self) -> Self {
+        self.replay = None;
+        self
     }
 }
 
@@ -333,13 +376,38 @@ pub struct GetProofRequest {
     pub proof_id: ProofId,
 }
 
+/// The result of asking this node to verify a stored proof.
+///
+/// **`valid` is an assertion by the party serving the data, not proof.** The
+/// endpoint is named "verify" and answers with a boolean, which is precisely the
+/// shape that invites a consumer to relay it as evidence. It is not: the same
+/// process that stores the proof also grades it. A caller that needs evidence
+/// must replay the check from `replay` rather than read `valid` — and, for two of
+/// the four schemes, `valid: true` does not even mean the underlying claim was
+/// checked (see [`crate::proofs::replay`]).
 #[derive(Debug, Serialize)]
 pub struct VerifyProofResponse {
     pub proof_id: ProofId,
+    /// This node's own verdict on the proof.
+    ///
+    /// **An assertion, not proof.** Retained with its original meaning so
+    /// existing clients keep working. Never present it to a user as "verified";
+    /// only a completed replay warrants that word. Read `replay.check` first: it
+    /// names what was actually computed, and for `well_formedness_only` /
+    /// `root_consistency_only` a `true` here establishes nothing about the claim.
     pub valid: bool,
     pub verified_at: chrono::DateTime<chrono::Utc>,
+    /// Human-readable notes from the verifier. Display text computed by this
+    /// server; not covered by anything cryptographic.
     pub details: Vec<String>,
     pub verification_time_us: u64,
+    /// Everything required to replay this verification **without trusting this
+    /// server**: the proof bytes, the public parameters, the public inputs, and a
+    /// step-by-step procedure.
+    ///
+    /// `None` when the stored bytes cannot be parsed as a proof at all — there is
+    /// then nothing to replay, and `valid` is `false`.
+    pub replay: Option<crate::proofs::ProofReplay>,
 }
 
 #[derive(Debug, Deserialize)]

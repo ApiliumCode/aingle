@@ -41,6 +41,7 @@ mod memory;
 mod observability;
 #[cfg(feature = "p2p")]
 mod p2p;
+pub mod pol_evidence;
 mod proof;
 mod proof_api;
 mod query;
@@ -54,15 +55,20 @@ mod triples;
 // Re-export from proof (legacy validation endpoints)
 pub use proof::{
     ProofDto, ProofStepDto, StatementInput, TripleValidationResult, ValidateRequest,
-    ValidateResponse, ValidateTripleInput, ValidationMessage, VerificationDetails,
-    VerifyProofRequest,
+    ValidateResponse, ValidateTripleInput, ValidationMessage, ValidationProofDto,
+    VerificationDetails, VerifyProofRequest,
 };
+
+// Evidence shared by every proof-of-logic verdict (validate, validate_skill,
+// verify_assertions_batch, agent_consistency).
+pub use pol_evidence::{RuleSetFingerprint, TripleIdentity};
 
 // Re-export from reputation (agent consistency + batch assertion verification).
 // Shared with the service layer and MCP tools.
 pub use reputation::{
-    AgentConsistencyRequest, AssertionRef, AssertionVerifyResult, BatchVerifyAssertionsRequest,
-    BatchVerifyAssertionsResponse, ConsistencyResponse,
+    AgentAssertionOutcome, AgentConsistencyRequest, AssertionEvidence, AssertionRef,
+    AssertionVerifyResult, BatchVerifyAssertionsRequest, BatchVerifyAssertionsResponse,
+    ConsistencyResponse,
 };
 
 // Re-export from proof_api (ZK proof storage endpoints)
@@ -81,7 +87,7 @@ pub use triples::*;
 // layer and MCP tools).
 pub use skill_verification::{
     AssertionDecl, CreateSandboxRequest, CreateSandboxResponse, DeleteSandboxRequest,
-    DeleteSandboxResponse, ValidateManifestRequest, ValidateManifestResponse,
+    DeleteSandboxResponse, ManifestCheck, ValidateManifestRequest, ValidateManifestResponse,
 };
 
 use crate::state::AppState;

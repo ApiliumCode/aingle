@@ -25,7 +25,7 @@ pub(crate) fn obj_string(t: &aingle_graph::Triple) -> Option<String> {
 
 /// Strip leading `<` and trailing `>` angle-bracket wrappers from an IRI string.
 ///
-/// Node IDs in the graph are stored with angle-bracket wrappers (e.g. `<akashi://foo>`);
+/// Node IDs in the graph are stored with angle-bracket wrappers (e.g. `<note://foo>`);
 /// this strips them so the result matches the bare names used everywhere in the service layer.
 pub(crate) fn strip_brackets(s: &str) -> &str {
     s.trim_start_matches('<').trim_end_matches('>')

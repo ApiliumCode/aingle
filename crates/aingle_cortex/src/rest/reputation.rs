@@ -31,14 +31,67 @@ pub struct AgentConsistencyRequest {
 }
 
 /// Agent consistency score response.
+///
+/// The score is `verified / evaluated` over PoL verdicts, so it inherits
+/// everything those verdicts are and are not — see
+/// [`crate::rest::pol_evidence`]. It is arithmetic over this node's assertions,
+/// not a reputation measurement.
+///
+/// Units no rule could examine are excluded from both sides of the fraction
+/// rather than counted as passes. When `rule_set.vacuous` is true that means
+/// **every** unit is excluded and `score` is `null`: a rule set that rejects
+/// nothing would otherwise hand every agent with assertions a perfect 1.0
+/// derived from no evaluation at all.
 #[derive(Serialize, Debug)]
 pub struct ConsistencyResponse {
-    /// Consistency score between 0.0 and 1.0.
-    pub score: f64,
-    /// Total number of assertions by this agent.
+    /// Consistency score between 0.0 and 1.0: `verified / evaluated`.
+    ///
+    /// **`null` when `evaluated` is 0** — no assertion was examined, so there is
+    /// no score. That is not 0.0 (which would read as "0% consistent") and not
+    /// 1.0 (which would read as "everything passed"): it is the absence of a
+    /// measurement, and the response says so rather than pick a misleading
+    /// number.
+    ///
+    /// **Derived from assertions by this server, so it is an assertion too.**
+    pub score: Option<f64>,
+    /// Total number of assertion units found for this agent.
     pub total: usize,
-    /// Number of verified assertions.
+    /// How many of those units a rule actually examined — the denominator.
+    /// Less than `total` whenever the rule set could not evaluate a unit.
+    pub evaluated: usize,
+    /// Number that passed PoL validation — the numerator.
     pub verified: usize,
+    /// Every unit that went into the fraction, so the arithmetic is checkable
+    /// and each verdict can be re-requested individually rather than taken as a
+    /// summarized number.
+    pub assertions: Vec<AgentAssertionOutcome>,
+    /// The rule set every verdict above was evaluated against.
+    pub rule_set: crate::rest::pol_evidence::RuleSetFingerprint,
+    /// Steps a caller should run and report on instead of relaying the score.
+    pub procedure: Vec<String>,
+}
+
+/// One unit that contributed to an agent's consistency score.
+#[derive(Serialize, Debug)]
+pub struct AgentAssertionOutcome {
+    /// What the unit is: `subject` (an owned subject, verified when ANY of its
+    /// triples validates) or `triple` (a single agent-prefixed assertion).
+    /// The two are counted alike in the score even though they are not
+    /// equivalent evidence; that is stated rather than hidden.
+    pub unit: String,
+    /// Subject of the assertion.
+    pub subject: String,
+    /// Predicate, when the unit is a single triple.
+    pub predicate: Option<String>,
+    /// Whether this unit counted towards `verified`, or `null` when no rule
+    /// examined it — in which case it counts towards neither `verified` nor
+    /// `evaluated`.
+    pub verified: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated` for this unit.
+    pub outcome: String,
+    /// Identity of the triple evaluated, when the unit is a single triple, so a
+    /// client can confirm which triple the verdict is about.
+    pub triple: Option<crate::rest::pol_evidence::TripleIdentity>,
 }
 
 /// Request to batch-verify assertions.
@@ -66,8 +119,42 @@ pub struct AssertionVerifyResult {
     pub subject: String,
     /// Predicate of the assertion.
     pub predicate: String,
-    /// Whether the assertion is verified.
-    pub verified: bool,
+    /// Whether the assertion passed PoL validation on this node, or `null` when
+    /// a matching triple was found but no rule examined it.
+    ///
+    /// **An assertion by this server, not proof** — and a lossy one: `false`
+    /// covers both "no such triple exists here" and "a rule rejected it", which
+    /// are completely different claims. `evidence.outcome` separates them, and
+    /// separates both from "found but never checked".
+    pub verified: Option<bool>,
+    /// What the verdict was actually computed from.
+    pub evidence: AssertionEvidence,
+}
+
+/// The material behind one assertion verdict.
+#[derive(Serialize, Debug)]
+pub struct AssertionEvidence {
+    /// Whether a matching triple was found in the graph at all.
+    pub found: bool,
+    /// Precise outcome, never to be collapsed into the boolean:
+    ///
+    /// - `"accepted"` — a triple was found and no enabled rule rejected it.
+    /// - `"rejected"` — a triple was found and an enabled rule rejected it; see
+    ///   `rejected_by`.
+    /// - `"not_found"` — no such triple here. Nothing was evaluated. This is not
+    ///   evidence that the assertion is false, only that this node does not hold
+    ///   it (it may also be filtered out of scope for this caller).
+    /// - `"not_evaluated"` — a triple was found, but no rule is enabled on this
+    ///   node, so nothing examined it. `verified` is `null`; reporting `true`
+    ///   here would claim a check that never ran.
+    pub outcome: String,
+    /// Identity of the evaluated triple, so a client can confirm the verdict is
+    /// about the triple it meant. `None` when nothing was found.
+    pub triple: Option<crate::rest::pol_evidence::TripleIdentity>,
+    /// Ids of the enabled rules that matched and accepted.
+    pub matched_rule_ids: Vec<String>,
+    /// Ids of the enabled rules that rejected, with their reasons.
+    pub rejected_by: Vec<String>,
 }
 
 /// Response from batch assertion verification.
@@ -75,6 +162,11 @@ pub struct AssertionVerifyResult {
 pub struct BatchVerifyAssertionsResponse {
     /// Results for each assertion.
     pub results: Vec<AssertionVerifyResult>,
+    /// The rule set every verdict above was evaluated against — including
+    /// whether it was empty, in which case nothing was examined.
+    pub rule_set: crate::rest::pol_evidence::RuleSetFingerprint,
+    /// Steps a caller should run and report on instead of relaying `verified`.
+    pub procedure: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

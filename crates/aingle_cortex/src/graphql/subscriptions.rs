@@ -166,14 +166,18 @@ impl SubscriptionRoot {
             Ok(Event::ValidationCompleted {
                 hash,
                 valid,
+                outcome,
                 proof_hash,
             }) => {
-                if valid_only && !valid {
+                // `valid_only` means evaluated AND passed. An unevaluated event
+                // (`valid: None`) is not a pass and must not arrive as one.
+                if valid_only && valid != Some(true) {
                     None
                 } else {
                     Some(ValidationEvent {
                         hash,
                         valid,
+                        outcome,
                         proof_hash,
                         timestamp: chrono::Utc::now(),
                     })

@@ -218,8 +218,12 @@ pub struct ProofStep {
 /// Validation result (custom type to avoid conflict with async_graphql::ValidationResult)
 #[derive(Debug, Clone, SimpleObject)]
 pub struct TripleValidationResult {
-    /// Overall validity
-    pub valid: bool,
+    /// Overall validity, or `null` when this node has no enabled proof-of-logic
+    /// rules and therefore examined nothing. See `outcome`.
+    pub valid: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated`. Read this before `valid`: an
+    /// unexamined triple must not be reported as having passed.
+    pub outcome: String,
     /// Validation messages
     pub messages: Vec<ValidationMessage>,
     /// Generated proof hash
@@ -242,8 +246,10 @@ pub struct ValidationMessage {
 pub struct ValidationEvent {
     /// Triple hash
     pub hash: String,
-    /// Whether valid
-    pub valid: bool,
+    /// Whether valid, or `null` when no rule examined the triples.
+    pub valid: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated`.
+    pub outcome: String,
     /// Proof hash (if generated)
     pub proof_hash: Option<String>,
     /// Timestamp

@@ -7,8 +7,8 @@
 //! DAG action signed with the node's key. This makes the curation decision
 //! **cryptographically anchored** — who (the node), when (timestamp), and over
 //! WHAT (the note's content hash) — so an approval can be verified later, not
-//! merely asserted. This is Akashi's differentiator over a plain "human clicked
-//! approve" inbox: approved knowledge carries verifiable provenance.
+//! merely asserted. This is what separates the engine from a plain "human
+//! clicked approve" inbox: approved knowledge carries verifiable provenance.
 
 use crate::error::{Error, Result};
 use crate::state::AppState;

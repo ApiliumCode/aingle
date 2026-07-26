@@ -1,7 +1,19 @@
 // Copyright 2019-2026 Apilium Technologies OÜ. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0 OR Commercial
 
-//! Proof validation endpoints
+//! Proof validation endpoints.
+//!
+//! ## Asserted, reproducible, and neither
+//!
+//! `POST /api/v1/validate` answers with `valid` — this node's own PoL verdict,
+//! documented on [`ValidateResponse`] as an assertion rather than proof — and
+//! with `proof_hash`, which **is** reproducible: [`ValidationProofDto`] publishes
+//! its exact preimage. The two must not be read as one thing: the digest commits
+//! to which triples were submitted, never to the verdict on them.
+//!
+//! `GET /api/v1/proof/:hash` and `POST /api/v1/verify` are unimplemented and
+//! return 404. They are kept so the routes fail loudly rather than being served
+//! by something weaker; see the handlers.
 
 use axum::{
     extract::{Path, State},
@@ -10,10 +22,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::middleware::{is_in_namespace, RequestNamespace};
+use crate::middleware::RequestNamespace;
 use crate::rest::triples::{TripleDto, ValueDto};
-use crate::state::{AppState, Event};
-use aingle_graph::{NodeId, Predicate, Triple, Value};
+use crate::state::AppState;
 
 /// Request to validate triples
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
@@ -34,15 +45,77 @@ pub struct ValidateTripleInput {
     pub object: ValueDto,
 }
 
-/// Validation response
+/// Validation response.
+///
+/// **`valid` is an assertion by this node, not proof.** It reports that no rule
+/// in *this node's* loaded PoL rule set rejected the triples — which, on a node
+/// with no rules loaded, is true of everything. Read `rule_set.vacuous` before
+/// reading `valid`, and see [`crate::rest::pol_evidence`] for why this verdict
+/// cannot be replayed from the response alone.
+///
+/// `proof_hash`, by contrast, *is* reproducible: `proof` publishes its exact
+/// preimage.
 #[derive(Debug, Serialize)]
 pub struct ValidateResponse {
-    /// Overall validity
-    pub valid: bool,
+    /// Overall validity, as evaluated by this node against its own rule set.
+    ///
+    /// **`null` when nothing was evaluated.** With no enabled rule, no rule can
+    /// reject, so "no rule rejected these triples" is trivially true of
+    /// everything; answering `true` there would claim a check that never ran.
+    /// The boolean is therefore three-valued — `true`, `false`, or absent — and
+    /// `outcome` names which. A client testing truthiness gets `false` for the
+    /// unevaluated case, which is the safe reading.
+    ///
+    /// **An assertion, not proof.** A client that needs certainty must obtain
+    /// the rule set and re-run it; a client that cannot must report "this node
+    /// reports valid", never "validated".
+    pub valid: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated` — the verdict in a form that has no
+    /// misleading default. Read this before `valid`.
+    pub outcome: String,
     /// Individual validation results
     pub results: Vec<TripleValidationResult>,
-    /// Proof hash if generated
+    /// Digest committing to the validated triples' identities.
+    ///
+    /// Present only when every triple was reported valid. **It commits to the
+    /// inputs, not to the verdict** — see `proof.does_not_cover`. Reproduce it
+    /// from `proof` rather than treating it as an opaque anchor.
     pub proof_hash: Option<String>,
+    /// The exact preimage of `proof_hash`, so a client can recompute it.
+    /// `None` whenever `proof_hash` is `None`.
+    pub proof: Option<ValidationProofDto>,
+    /// The rule set this node evaluated the triples against — including whether
+    /// it was empty, in which case the verdict examined nothing.
+    pub rule_set: crate::rest::pol_evidence::RuleSetFingerprint,
+    /// Steps a caller should run and report on instead of relaying `valid`.
+    pub procedure: Vec<String>,
+}
+
+/// The reproducible preimage of a [`ValidateResponse::proof_hash`].
+///
+/// `proof_hash` was previously an anchor with nothing behind it: a digest with
+/// no published preimage and no way to fetch what it committed to. This makes it
+/// checkable — and, just as importantly, states what it does *not* cover, since
+/// a hash sitting next to `valid: true` reads as a proof of validity and is not.
+#[derive(Debug, Serialize)]
+pub struct ValidationProofDto {
+    /// Identifier of the digest scheme (`aingle-validation-proof-v1`).
+    pub spec: String,
+    /// Digest algorithm (`blake3-256`).
+    pub hash_alg: String,
+    /// What the digest commits to.
+    pub covers: String,
+    /// What the digest does **not** commit to. Read this before citing it.
+    pub does_not_cover: String,
+    /// The preimage, as the list of ASCII triple-id hex strings that were
+    /// hashed, in order. Concatenate them with no separator and digest the
+    /// resulting ASCII bytes to reproduce `proof_hash`.
+    pub preimage_parts: Vec<String>,
+    /// The literal hash inputs of each validated triple, so the ids in
+    /// `preimage_parts` are themselves recomputable rather than taken on trust.
+    pub triples: Vec<crate::rest::pol_evidence::TripleIdentity>,
+    /// Step-by-step reproduction procedure.
+    pub procedure: Vec<String>,
 }
 
 /// Individual triple validation result
@@ -50,8 +123,11 @@ pub struct ValidateResponse {
 pub struct TripleValidationResult {
     /// Triple that was validated
     pub triple: TripleDto,
-    /// Whether this triple is valid
-    pub valid: bool,
+    /// Whether this triple is valid, or `null` when no rule examined it.
+    /// See [`ValidateResponse::valid`].
+    pub valid: Option<bool>,
+    /// `valid` / `invalid` / `not_evaluated`.
+    pub outcome: String,
     /// Validation messages
     pub messages: Vec<ValidationMessage>,
 }
@@ -70,106 +146,20 @@ pub struct ValidationMessage {
 /// Validate triples against logic rules
 ///
 /// POST /api/v1/validate
+///
+/// Delegates to [`crate::service::validate::validate_triples`] so this endpoint
+/// and the MCP `aingle_validate` tool return the same verdict *and the same
+/// evidence*. They were separate implementations of the same logic; publishing
+/// the reproducible preimage of `proof_hash` from only one of them would have
+/// left the other quietly weaker.
 pub async fn validate_triples(
     State(state): State<AppState>,
     ns_ext: Option<axum::Extension<RequestNamespace>>,
     Json(req): Json<ValidateRequest>,
 ) -> Result<Json<ValidateResponse>> {
-    let logic = state.logic.read().await;
-
-    // Extract namespace if present
-    let ns_filter = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
-
-    let mut results = Vec::new();
-    let mut all_valid = true;
-
-    for input in req.triples {
-        // Enforce namespace on input subjects
-        if let Some(ref ns) = ns_filter {
-            if !is_in_namespace(&input.subject, ns) {
-                return Err(Error::Forbidden(format!(
-                    "Subject \"{}\" is not in namespace \"{}\"",
-                    input.subject, ns
-                )));
-            }
-        }
-        let object: Value = input.object.clone().into();
-
-        // Create a triple for validation
-        let triple = Triple::new(
-            NodeId::named(&input.subject),
-            Predicate::named(&input.predicate),
-            object,
-        );
-
-        // Validate using logic engine
-        let validation = logic.validate(&triple);
-
-        let valid = validation.is_valid();
-        if !valid {
-            all_valid = false;
-        }
-
-        // Convert messages
-        let mut messages = Vec::new();
-        for rejection in &validation.rejections {
-            messages.push(ValidationMessage {
-                level: "error".to_string(),
-                message: rejection.reason.clone(),
-                rule: Some(rejection.rule_id.clone()),
-            });
-        }
-        for warning in &validation.warnings {
-            messages.push(ValidationMessage {
-                level: "warning".to_string(),
-                message: warning.message.clone(),
-                rule: Some(warning.rule_id.clone()),
-            });
-        }
-
-        let triple_dto = TripleDto {
-            id: Some(triple.id().to_hex()),
-            subject: input.subject.clone(),
-            predicate: input.predicate.clone(),
-            object: input.object,
-            created_at: None,
-        };
-
-        results.push(TripleValidationResult {
-            triple: triple_dto,
-            valid,
-            messages,
-        });
-    }
-
-    // Generate a simple proof hash if all valid
-    let proof_hash = if all_valid {
-        // Simple hash of all triple hashes
-        let mut hasher = blake3::Hasher::new();
-        for result in &results {
-            if let Some(ref id) = result.triple.id {
-                hasher.update(id.as_bytes());
-            }
-        }
-        Some(hasher.finalize().to_hex().to_string())
-    } else {
-        None
-    };
-
-    // Broadcast validation event
-    if let Some(ref hash) = proof_hash {
-        state.broadcaster.broadcast(Event::ValidationCompleted {
-            hash: hash.clone(),
-            valid: all_valid,
-            proof_hash: proof_hash.clone(),
-        });
-    }
-
-    Ok(Json(ValidateResponse {
-        valid: all_valid,
-        results,
-        proof_hash,
-    }))
+    let namespace = ns_ext.and_then(|axum::Extension(RequestNamespace(ns))| ns);
+    let resp = crate::service::validate::validate_triples(&state, req, namespace).await?;
+    Ok(Json(resp))
 }
 
 /// Proof data structure
@@ -203,11 +193,19 @@ pub struct ProofStepDto {
 /// Get a proof by hash
 ///
 /// GET /api/v1/proof/:hash
+///
+/// **Not implemented: always 404.** A `proof_hash` from `POST /api/v1/validate`
+/// cannot be resolved into a stored proof here — that hash is a digest of the
+/// submitted triples' identities and nothing was ever stored under it. Reproduce
+/// it from `ValidateResponse::proof` instead. For stored ZK proofs, use
+/// `GET /api/v1/proofs/{id}`, which returns the proof bytes and a replay bundle.
 pub async fn get_proof(
     State(_state): State<AppState>,
     Path(hash): Path<String>,
 ) -> Result<Json<ProofDto>> {
-    // For now, return a placeholder - proof storage not implemented yet
+    // Returning 404 is the honest answer: there is no proof store behind this
+    // route. Synthesizing a `valid: true` response here would be worse than
+    // useless — it would be a verdict about nothing.
     Err(Error::NotFound(format!("Proof {} not found", hash)))
 }
 
@@ -228,10 +226,15 @@ pub struct StatementInput {
     pub object: ValueDto,
 }
 
-/// Verify proof response
+/// Verify proof response.
+///
+/// Shape of the (unimplemented) `POST /api/v1/verify` response. Were it
+/// implemented, `valid` here would be a server assertion exactly like the one on
+/// [`crate::rest::VerifyProofResponse`], and would need the same replay bundle to
+/// be worth anything.
 #[derive(Debug, Serialize)]
 pub struct VerifyProofResponse {
-    /// Whether proof is valid
+    /// Whether proof is valid — a server assertion, not proof.
     pub valid: bool,
     /// Verification details
     pub details: VerificationDetails,
@@ -253,11 +256,18 @@ pub struct VerificationDetails {
 /// Verify a proof
 ///
 /// POST /api/v1/verify
+///
+/// **Not implemented: always 404.** There is no proof store behind this route, so
+/// it cannot verify anything. Use `GET /api/v1/proofs/{id}/verify` for stored ZK
+/// proofs — that endpoint returns the material to replay the check rather than
+/// only a verdict.
 pub async fn verify_proof(
     State(_state): State<AppState>,
     Json(req): Json<VerifyProofRequest>,
 ) -> Result<Json<VerifyProofResponse>> {
-    // For now, return not found - proof verification not implemented yet
+    // A 404 is the honest answer. An endpoint named "verify" that answered
+    // `valid: true` without checking anything would be the worst possible
+    // version of the defect this module documents.
     Err(Error::NotFound(format!(
         "Proof {} not found",
         req.proof_hash

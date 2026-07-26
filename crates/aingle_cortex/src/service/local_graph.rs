@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR Commercial
 
 //! Local graph neighborhood for a single note: typed edges (link / semantic / tag)
-//! up to depth 2 for the Akashi per-note graph panel (VC-2).
+//! up to depth 2, for a client's per-note graph panel (VC-2).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 

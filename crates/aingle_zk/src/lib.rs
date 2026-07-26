@@ -114,7 +114,11 @@ pub use batch::{BatchResult, BatchVerifier};
 pub use commitment::{BlindedValue, CommitmentOpening, HashCommitment, PedersenCommitment};
 pub use error::{Result, ZkError};
 pub use merkle::{MerkleProof, MerkleTree, SparseMerkleTree};
-pub use proof::{EqualityProof, ProofBuilder, ProofType, ProofVerifier, SchnorrProof, ZkProof};
+pub use proof::{
+    equality_v2_challenge_preimage, knowledge_v2_challenge_preimage, EqualityProof, ProofBuilder,
+    ProofData, ProofType, ProofVerifier, SchnorrProof, ZkProof, EQUALITY_V2_DOMAIN,
+    EQUALITY_V2_PREIMAGE_LAYOUT, KNOWLEDGE_V2_DOMAIN, KNOWLEDGE_V2_PREIMAGE_LAYOUT,
+};
 
 #[cfg(feature = "bulletproofs")]
 pub use range::{AggregatedRangeProof, RangeProof, RangeProofGenerator};
