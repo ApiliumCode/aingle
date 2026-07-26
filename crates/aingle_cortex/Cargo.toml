@@ -88,7 +88,7 @@ subtle = "2.6"
 # generators, challenge hashes) are computed here so the response carries the
 # same values the verifier used, not a transcription of them.
 curve25519-dalek = { version = "4.1", features = ["serde"] }
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Streaming
 tokio-stream = { version = "0.1", features = ["sync"] }
