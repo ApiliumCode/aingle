@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_cortex"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "aingle_graph",
  "aingle_ingest",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_graph"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "bincode",
  "blake3",
@@ -225,7 +225,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_ingest"
-version = "0.7.2"
+version = "0.8.0"
 dependencies = [
  "aingle_graph",
  "blake3",
@@ -237,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_logic"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "aingle_graph",
  "chrono",
@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "aingle_zk"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "blake3",
  "bulletproofs",

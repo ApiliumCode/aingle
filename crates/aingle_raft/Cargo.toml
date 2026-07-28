@@ -28,7 +28,7 @@ tracing = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 anyerror = "0.1"
-aingle_graph = { version = "0.7", path = "../aingle_graph", features = ["sled-backend"] }
+aingle_graph = { version = "0.8", path = "../aingle_graph", features = ["sled-backend"] }
 ineru = { version = "0.7", path = "../ineru" }
 
 [dev-dependencies]

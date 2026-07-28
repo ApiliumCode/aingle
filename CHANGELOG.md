@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-28
+
+### Added
+- **Tasks and an agenda, read out of the notes themselves.** Checkbox tasks are
+  extracted as graph facts with their dates, recurring tasks are recognized as
+  recurring, and `aingle_tasks` / `aingle_agenda` expose both over MCP. Re-ingest
+  reconciles task nodes by diff rather than replacing them, so a task keeps its
+  identity across edits.
+- **Flashcards as signed graph facts**, with sticky card identifiers that
+  survive a rewrite of the surrounding note.
+- **Signed note editing over MCP.** `aingle_edit_note`, tag and folder tools, and
+  `aingle_propose_note`, which stages external content into a review inbox
+  instead of writing it straight into a vault.
+- **Client-side signature verification.** A caller can verify a DAG action's
+  signature itself rather than taking the server's word for it.
+- **Provenance on every verdict.** A proof publishes what it rests on, and says
+  so explicitly when it rests on nothing.
+- **One access table for every MCP tool call**, so what a connected client may
+  reach is declared in a single place rather than per tool.
+
+### Changed
+- **Path-targeted ingest.** Saving one file re-reads that file instead of the
+  whole vault, and ingestion is confined to the configured root with bounded
+  memory. `.trash` is skipped.
+- **Extracted prose is neutralized without flattening its structure**, so an
+  indexed document keeps its shape while carrying no markup into the graph.
+- The engine is described in its own terms throughout its documentation.
+
 ## [0.7.5] - 2026-07-13
 
 ### Added
