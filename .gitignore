@@ -138,3 +138,16 @@ contexto/*
 crates/ineru/test-models/
 # Local ONNX Runtime dylib for running the gated neural tests (set ORT_DYLIB_PATH to it)
 .tmp-ort/
+# Scratch files left in the repository root.
+#
+# Saved web pages and one-off scripts accumulate here during investigation and
+# then sit for days looking like they belong. They do not: the root of an
+# engine is the first place a newcomer reads, and anything there is taken for
+# structure. Keeping a saved copy of a page is also its own trap — the next
+# person checks the copy instead of the source it came from.
+#
+# Deliberately anchored to the root: a crate that genuinely serves HTML must
+# not have its assets silently ignored.
+/*.html
+/*.py
+/scratch/
