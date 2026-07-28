@@ -10,6 +10,7 @@
 //! the state as of a past commit via ordinary DAG time-travel. Reads `.git`
 //! directly; no dependency on the `git` CLI.
 
+#[cfg(feature = "dag")]
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -91,6 +92,7 @@ pub fn read_git_ref(root: &str) -> Option<GitRef> {
     }
 }
 
+#[cfg(feature = "dag")]
 fn short(sha: &str) -> &str {
     &sha[..sha.len().min(8)]
 }
@@ -99,6 +101,10 @@ fn short(sha: &str) -> &str {
 ///
 /// No-op (returns `None`) when `root` is not a git working tree or the DAG is
 /// unavailable. On success returns the hex hash of the recorded action.
+///
+/// Only exists when the DAG is compiled in: the marker's entire purpose is to be
+/// an entry in the signed history, so without one there is nothing to record.
+#[cfg(feature = "dag")]
 pub async fn record_git_provenance(
     state: &AppState,
     root: &str,
@@ -147,18 +153,35 @@ pub async fn record_git_provenance(
     };
     sign(&mut action);
 
-    // Never lose the marker to a transient stale-tip issue: retry parentless.
-    if let Err(e) = dag_store.put(&action) {
-        tracing::warn!("git-provenance put failed ({e}); retrying without parents");
-        action.parents = Vec::new();
+    // A `put` here fails on exactly one condition: a parent hash we picked as a
+    // tip is no longer in the store. Re-read the tips and retry once — a
+    // concurrent writer having advanced them is the whole reason the first
+    // attempt could go stale.
+    //
+    // What we must NOT do is retry with no parents at all. A parentless action is
+    // a second ROOT of the DAG: it detaches this marker from the chain, leaves a
+    // permanent extra tip until some later write happens to merge it, and makes
+    // anything that verifies a single hash-linked chain from one root either miss
+    // everything past the fork or reject the DAG outright. A lost marker is
+    // recoverable — the next ingest stamps a new one. A forked history is not.
+    if let Err(first) = dag_store.put(&action) {
+        tracing::warn!("git-provenance put failed ({first}); retrying with fresh tips");
+        action.parents = dag_store.tips().unwrap_or_default();
         action.signature = None;
         sign(&mut action);
-        dag_store.put(&action).ok()?;
+        if let Err(second) = dag_store.put(&action) {
+            tracing::error!(
+                "git-provenance put failed again ({second}); the ingest is not stamped \
+                 rather than recorded as a second root"
+            );
+            return None;
+        }
     }
     Some(action.compute_hash().to_hex())
 }
 
 /// A recorded ingest-run git ref.
+#[cfg(feature = "dag")]
 #[derive(Debug, Clone, Serialize)]
 pub struct GitProvenanceRecord {
     pub branch: Option<String>,
@@ -169,6 +192,7 @@ pub struct GitProvenanceRecord {
 }
 
 /// List recorded git-provenance markers, newest first — the graph's git history.
+#[cfg(feature = "dag")]
 pub async fn list_git_provenance(state: &AppState, limit: usize) -> Vec<GitProvenanceRecord> {
     let graph = state.graph.read().await;
     let Some(dag_store) = graph.dag_store() else {
@@ -273,6 +297,50 @@ mod tests {
         assert!(read_git_ref(dir.path().to_str().unwrap()).is_none());
     }
 
+    /// When the tips cannot be used as parents, the marker must be dropped — not
+    /// re-recorded parentless. A parentless action is a second root: it detaches
+    /// the marker from the chain and leaves the DAG with two origins, which
+    /// anything verifying one hash-linked chain does not expect.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn a_provenance_put_that_cannot_link_does_not_create_a_second_root() {
+        let state = crate::state::AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut g = state.graph.write().await;
+            g.enable_dag();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join(".git/HEAD"), "ref: refs/heads/main\n");
+        write(
+            &root.join(".git/refs/heads/main"),
+            "bbbb222200000000000000000000000000000000\n",
+        );
+
+        // Point the tip set at an action that does not exist, so every `put`
+        // that links to it fails.
+        let before = {
+            let g = state.graph.read().await;
+            let store = g.dag_store().unwrap();
+            store.restore_tips(vec![[0xAB; 32]]).unwrap();
+            store.action_count()
+        };
+
+        let hash = record_git_provenance(&state, root.to_str().unwrap(), 3).await;
+        assert!(
+            hash.is_none(),
+            "an unlinkable marker must be reported as not recorded"
+        );
+
+        let g = state.graph.read().await;
+        assert_eq!(
+            g.dag_store().unwrap().action_count(),
+            before,
+            "no parentless action may be written as a fallback"
+        );
+    }
+
+    #[cfg(feature = "dag")]
     #[tokio::test]
     async fn records_and_lists_a_git_provenance_marker() {
         let state = crate::state::AppState::with_db_path(":memory:", None).unwrap();

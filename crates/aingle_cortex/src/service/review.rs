@@ -85,13 +85,19 @@ pub async fn record_approval(
     sign(&mut action);
 
     // Persist the approval. If the tips we picked as parents can't be validated
-    // (stale/missing parent — the one way `put` fails here), retry once as a
-    // genesis-style action (no parents) so the curation decision is NEVER lost to
-    // a transient DAG-tip issue. The author index (what `list_approvals` reads) is
-    // updated either way.
+    // (stale/missing parent — the one way `put` fails here), retry once with
+    // freshly read tips: a concurrent writer having advanced them is the whole
+    // reason the first attempt could go stale.
+    //
+    // The retry deliberately does NOT drop the parents. A parentless action is a
+    // second ROOT of the DAG — it detaches the approval from the chain, leaves an
+    // extra tip behind, and makes anything that verifies a single hash-linked
+    // chain from one root either miss everything past the fork or reject the DAG.
+    // An approval that fails loudly can be retried; a forked history cannot be
+    // un-forked.
     if let Err(e) = dag_store.put(&action) {
-        tracing::warn!("review approval put failed ({e}); retrying without parents");
-        action.parents = Vec::new();
+        tracing::warn!("review approval put failed ({e}); retrying with fresh tips");
+        action.parents = dag_store.tips().unwrap_or_default();
         action.signature = None;
         sign(&mut action);
         dag_store

@@ -551,6 +551,7 @@ pub async fn ingest_path_with_progress(
     // git working tree — so the graph records the git state it was built from.
     // Recorded against the ANCHOR, which is the tree the subjects are relative to.
     // No-op for a non-git vault; best-effort so provenance never fails an ingest.
+    #[cfg(feature = "dag")]
     let _ = crate::service::git_provenance::record_git_provenance(
         state,
         &anchor.to_string_lossy(),
@@ -1038,6 +1039,7 @@ pub async fn ingest_paths(
     // actually changed something, so a no-op watcher cycle does not append a
     // provenance action per keystroke-save. Best-effort, never fails an ingest.
     if report.files_ingested > 0 || report.files_removed > 0 {
+        #[cfg(feature = "dag")]
         let _ = crate::service::git_provenance::record_git_provenance(
             state,
             &anchor.to_string_lossy(),
