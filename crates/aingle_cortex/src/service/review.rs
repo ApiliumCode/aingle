@@ -52,9 +52,7 @@ pub async fn record_approval(
         .dag_author
         .clone()
         .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
-    let seq = state
-        .dag_seq_counter
-        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let seq = state.next_dag_seq(&author, Some(dag_store));
     let parents = dag_store.tips().unwrap_or_default();
     let approved_at = chrono::Utc::now();
 

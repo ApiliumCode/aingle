@@ -70,9 +70,7 @@ pub(crate) fn record_insert_action(
     origin: Option<&str>,
 ) -> Result<()> {
     let dag_author = dag_action_author(state, origin);
-    let dag_seq = state
-        .dag_seq_counter
-        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let dag_seq = state.next_dag_seq(&dag_author, Some(dag_store));
     let parents = dag_store.tips().unwrap_or_default();
 
     let mut action = aingle_graph::dag::DagAction {
@@ -399,9 +397,7 @@ pub async fn delete_triple(
         if deleted {
             if let Some(dag_store) = graph.dag_store() {
                 let dag_author = dag_action_author(state, origin);
-                let dag_seq = state
-                    .dag_seq_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let dag_seq = state.next_dag_seq(&dag_author, Some(dag_store));
                 let parents = dag_store.tips().unwrap_or_default();
 
                 let mut action = aingle_graph::dag::DagAction {
@@ -778,6 +774,119 @@ mod tests {
                 assert_eq!(triples.len(), 5, "every row of the batch must be recorded");
             }
             other => panic!("expected a TripleInsert payload, got {other:?}"),
+        }
+    }
+
+    /// A restart must continue each author's sequence, not restart it. The DAG
+    /// store keys its author index on `(author, seq)`, so re-issuing a number the
+    /// store already holds evicts the older action from that index: it survives
+    /// on disk and in the parent chain, but vanishes from every author-chain view
+    /// — history that is present and unreadable.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn a_restart_continues_the_author_sequence_instead_of_evicting_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("g.sled");
+        let p = path.to_str().unwrap().to_string();
+
+        let author = NodeId::named("node:local");
+
+        // First run: two writes.
+        {
+            let state = AppState::with_db_path(&p, None).unwrap();
+            {
+                let mut graph = state.graph.write().await;
+                graph.enable_dag_persistent(&p).unwrap();
+            }
+            create_triple(&state, req("ex:a", "ex:p", "ex:1"), None, None)
+                .await
+                .unwrap();
+            create_triple(&state, req("ex:b", "ex:p", "ex:2"), None, None)
+                .await
+                .unwrap();
+            state
+                .graph
+                .read()
+                .await
+                .dag_store()
+                .unwrap()
+                .flush()
+                .unwrap();
+        }
+
+        // Second run against the same store: a fresh in-memory allocator.
+        {
+            let state = AppState::with_db_path(&p, None).unwrap();
+            {
+                let mut graph = state.graph.write().await;
+                graph.enable_dag_persistent(&p).unwrap();
+            }
+            create_triple(&state, req("ex:c", "ex:p", "ex:3"), None, None)
+                .await
+                .unwrap();
+            create_triple(&state, req("ex:d", "ex:p", "ex:4"), None, None)
+                .await
+                .unwrap();
+
+            let graph = state.graph.read().await;
+            let store = graph.dag_store().unwrap();
+            let chain = store.chain(&author, 100).unwrap();
+            assert_eq!(
+                chain.len(),
+                4,
+                "all four writes must remain visible in the author chain after a restart"
+            );
+            let mut seqs: Vec<u64> = chain.iter().map(|a| a.seq).collect();
+            seqs.sort_unstable();
+            assert_eq!(
+                seqs,
+                vec![1, 2, 3, 4],
+                "an author's sequence must be contiguous, not restarted or gapped"
+            );
+        }
+    }
+
+    /// Two authors writing through the same node must not eat each other's
+    /// numbers: `seq` is documented and indexed per author.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn interleaved_authors_get_independent_sequences() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        for i in 0..3 {
+            create_triple(
+                &state,
+                req("ex:alice", "ex:knows", &format!("ex:local{i}")),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+            create_triple(
+                &state,
+                req("ex:alice", "ex:knows", &format!("ex:tool{i}")),
+                None,
+                Some("mcp"),
+            )
+            .await
+            .unwrap();
+        }
+
+        let graph = state.graph.read().await;
+        let store = graph.dag_store().unwrap();
+        for author in ["node:local", "mcp"] {
+            let mut seqs: Vec<u64> = store
+                .chain(&NodeId::named(author), 100)
+                .unwrap()
+                .iter()
+                .map(|a| a.seq)
+                .collect();
+            seqs.sort_unstable();
+            assert_eq!(seqs, vec![1, 2, 3], "{author} must own a gapless sequence");
         }
     }
 

@@ -176,9 +176,7 @@ impl MutationRoot {
                     .dag_author
                     .clone()
                     .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
-                let dag_seq = state
-                    .dag_seq_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let dag_seq = state.next_dag_seq(&dag_author, Some(dag_store));
                 let parents = dag_store.tips().unwrap_or_default();
 
                 let mut action = aingle_graph::dag::DagAction {
@@ -238,9 +236,7 @@ impl MutationRoot {
                         .dag_author
                         .clone()
                         .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"));
-                    let dag_seq = state
-                        .dag_seq_counter
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let dag_seq = state.next_dag_seq(&dag_author, Some(dag_store));
                     let parents = dag_store.tips().unwrap_or_default();
 
                     let mut action = aingle_graph::dag::DagAction {

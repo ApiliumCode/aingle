@@ -640,14 +640,14 @@ pub async fn post_create_dag_action(
             .unwrap_or_else(|| aingle_graph::NodeId::named("node:local"))
     };
 
-    let dag_seq = state
-        .dag_seq_counter
-        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
     let graph = state.graph.read().await;
     let dag_store = graph
         .dag_store()
         .ok_or_else(|| Error::Internal("DAG not enabled".into()))?;
+
+    // Allocated after the store is in hand: the number continues this author's
+    // recorded chain instead of restarting at 1 and evicting its own history.
+    let dag_seq = state.next_dag_seq(&dag_author, Some(dag_store));
 
     let parents = dag_store
         .tips()

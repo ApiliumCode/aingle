@@ -110,9 +110,22 @@ pub struct AppState {
     /// This node's author identity for DAG actions.
     #[cfg(feature = "dag")]
     pub dag_author: Option<aingle_graph::NodeId>,
-    /// Per-author monotonic sequence counter for DAG actions.
+    /// Next DAG sequence number to hand out, per author.
+    ///
+    /// A `DagAction`'s `seq` is documented — and indexed — as a *per-author*
+    /// number: the DAG store keys its author index on `(author, seq)`. A single
+    /// process-wide counter therefore broke in two ways. Interleaved writes by
+    /// different authors (the node itself, the tool surface) tore holes in each
+    /// author's sequence; and because the counter always restarted at 1, a
+    /// restart against a persistent DAG re-issued sequences the store had already
+    /// used, so each new action silently EVICTED the pre-restart action holding
+    /// that key — the actions survived on disk and in the chain, but dropped out
+    /// of every author-chain view (`/dag/chain`, git provenance, approvals).
+    ///
+    /// Allocate through [`AppState::next_dag_seq`], which seeds an author's
+    /// counter from the store the first time it is asked.
     #[cfg(feature = "dag")]
-    pub dag_seq_counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    pub dag_seq: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, u64>>>,
     /// Ed25519 signing key for DAG actions (mandatory in production).
     #[cfg(feature = "dag")]
     pub dag_signing_key: Option<std::sync::Arc<aingle_graph::dag::DagSigningKey>>,
@@ -189,7 +202,7 @@ impl AppState {
             #[cfg(feature = "dag")]
             dag_author: None,
             #[cfg(feature = "dag")]
-            dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            dag_seq: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
             #[cfg(feature = "mcp")]
@@ -248,7 +261,7 @@ impl AppState {
             #[cfg(feature = "dag")]
             dag_author: None,
             #[cfg(feature = "dag")]
-            dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            dag_seq: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
             #[cfg(feature = "mcp")]
@@ -307,7 +320,7 @@ impl AppState {
             #[cfg(feature = "dag")]
             dag_author: None,
             #[cfg(feature = "dag")]
-            dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            dag_seq: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
             #[cfg(feature = "mcp")]
@@ -483,7 +496,7 @@ impl AppState {
             #[cfg(feature = "dag")]
             dag_author: None,
             #[cfg(feature = "dag")]
-            dag_seq_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            dag_seq: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             #[cfg(feature = "dag")]
             dag_signing_key: None,
             #[cfg(feature = "mcp")]
@@ -666,6 +679,44 @@ impl AppState {
             .read()
             .map(|g| g.clone())
             .unwrap_or_default()
+    }
+
+    /// Allocate the next DAG sequence number for `author`.
+    ///
+    /// The DAG store keys its author index on `(author, seq)`, so a sequence
+    /// number must be unique *within its author* and must not collide with one
+    /// already on disk. The first request for an author therefore seeds from the
+    /// store — the author's highest recorded `seq` plus one — instead of assuming
+    /// an empty history; every later request increments in memory. Reusing a
+    /// number a persistent DAG already holds silently evicts the older action
+    /// from the author index, hiding it from every chain view even though it is
+    /// still stored and still linked.
+    ///
+    /// `dag_store` is `None` only where the DAG is not enabled, in which case
+    /// numbering starts at 1 because there is no history to continue.
+    ///
+    /// A poisoned lock is recovered rather than panicked on: a mutation must not
+    /// be lost because some unrelated writer panicked while holding this map.
+    #[cfg(feature = "dag")]
+    pub fn next_dag_seq(
+        &self,
+        author: &aingle_graph::NodeId,
+        dag_store: Option<&aingle_graph::dag::DagStore>,
+    ) -> u64 {
+        let key = format!("{author}");
+        let mut map = self
+            .dag_seq
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let seq = match map.get(&key) {
+            Some(next) => *next,
+            None => dag_store
+                .and_then(|s| s.chain(author, 1).ok())
+                .and_then(|c| c.first().map(|a| a.seq + 1))
+                .unwrap_or(1),
+        };
+        map.insert(key, seq + 1);
+        seq
     }
 
     /// Sets the workspace working-copy root that the note-write tools resolve

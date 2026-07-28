@@ -180,14 +180,14 @@ pub async fn create_triple(
         let dag_author = state.dag_author.clone().unwrap_or_else(|| {
             aingle_graph::NodeId::named(&format!("node:{}", state.cluster_node_id.unwrap_or(0)))
         });
-        let dag_seq = state
-            .dag_seq_counter
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-        // Get current tips
-        let parents = {
+        // Get current tips, and a sequence number that continues this author's
+        // recorded chain rather than restarting at 1 and evicting its own history
+        // from the (author, seq) index.
+        let (parents, dag_seq) = {
             let graph = state.graph.read().await;
-            graph.dag_tips().unwrap_or_default()
+            let parents = graph.dag_tips().unwrap_or_default();
+            let seq = state.next_dag_seq(&dag_author, graph.dag_store());
+            (parents, seq)
         };
 
         let mut action = aingle_graph::dag::DagAction {
@@ -459,11 +459,7 @@ pub async fn delete_triple(
         let dag_author = state.dag_author.clone().unwrap_or_else(|| {
             aingle_graph::NodeId::named(&format!("node:{}", state.cluster_node_id.unwrap_or(0)))
         });
-        let dag_seq = state
-            .dag_seq_counter
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-        let (parents, subject_for_dag) = {
+        let (parents, subject_for_dag, dag_seq) = {
             let graph = state.graph.read().await;
             let tips = graph.dag_tips().unwrap_or_default();
             let subj = graph
@@ -471,7 +467,9 @@ pub async fn delete_triple(
                 .ok()
                 .flatten()
                 .map(|t| crate::service::triples::dag_subject_name(&t.subject));
-            (tips, subj)
+            // Continues this author's recorded chain instead of restarting at 1.
+            let seq = state.next_dag_seq(&dag_author, graph.dag_store());
+            (tips, subj, seq)
         };
 
         let mut action = aingle_graph::dag::DagAction {
