@@ -119,86 +119,109 @@ fn value_as_string(v: &Value) -> Option<&str> {
 }
 
 /// POST /api/v1/events — Batch store trace events as RDF triples.
+///
+/// The triples land through the same signed path as every other write: the whole
+/// request becomes one action in the hash-linked history. Writing them straight
+/// to the store, as this handler used to, produced facts with no author and no
+/// signature that a replay of the history would not reproduce — an event trace
+/// that the engine's own audit trail cannot account for is worth little.
 pub async fn batch_store_events(
     State(state): State<AppState>,
     Json(req): Json<BatchStoreEventsRequest>,
-) -> impl IntoResponse {
+) -> crate::error::Result<(StatusCode, Json<BatchStoreEventsResponse>)> {
     let ns = &req.namespace;
-    let graph = state.graph.write().await;
-    let mut triples_created: usize = 0;
+    let mut triples: Vec<Triple> = Vec::new();
 
     for event in &req.events {
         let subj = NodeId::named(format!("{}:event:{}", ns, event.id));
 
         // Core event triples
-        let core = vec![
-            Triple::new(
-                subj.clone(),
-                Predicate::named(format!("{}:event:type", ns)),
-                Value::literal(&event.event_type),
-            ),
-            Triple::new(
-                subj.clone(),
-                Predicate::named(format!("{}:event:agent", ns)),
-                Value::node(NodeId::named(format!("{}:agent:{}", ns, event.agent_id))),
-            ),
-            Triple::new(
-                subj.clone(),
-                Predicate::named(format!("{}:event:timestamp", ns)),
-                Value::literal(&event.timestamp),
-            ),
-        ];
-
-        for t in core {
-            let _ = graph.insert(t);
-            triples_created += 1;
-        }
+        triples.push(Triple::new(
+            subj.clone(),
+            Predicate::named(format!("{}:event:type", ns)),
+            Value::literal(&event.event_type),
+        ));
+        triples.push(Triple::new(
+            subj.clone(),
+            Predicate::named(format!("{}:event:agent", ns)),
+            Value::node(NodeId::named(format!("{}:agent:{}", ns, event.agent_id))),
+        ));
+        triples.push(Triple::new(
+            subj.clone(),
+            Predicate::named(format!("{}:event:timestamp", ns)),
+            Value::literal(&event.timestamp),
+        ));
 
         if let Some(ref session) = event.session {
-            let _ = graph.insert(Triple::new(
+            triples.push(Triple::new(
                 subj.clone(),
                 Predicate::named(format!("{}:event:session", ns)),
                 Value::node(NodeId::named(format!("{}:session:{}", ns, session))),
             ));
-            triples_created += 1;
         }
 
         if let Some(ref parent) = event.parent_event {
-            let _ = graph.insert(Triple::new(
+            triples.push(Triple::new(
                 subj.clone(),
                 Predicate::named(format!("{}:event:parent_event", ns)),
                 Value::node(NodeId::named(format!("{}:event:{}", ns, parent))),
             ));
-            triples_created += 1;
         }
 
         if let Some(duration) = event.duration_ms {
-            let _ = graph.insert(Triple::new(
+            triples.push(Triple::new(
                 subj.clone(),
                 Predicate::named(format!("{}:event:duration_ms", ns)),
                 Value::literal(duration.to_string()),
             ));
-            triples_created += 1;
         }
 
         // Store additional fields
         for (key, value) in &event.fields {
-            let _ = graph.insert(Triple::new(
+            triples.push(Triple::new(
                 subj.clone(),
                 Predicate::named(format!("{}:event:{}", ns, key)),
                 Value::literal(value),
             ));
-            triples_created += 1;
         }
     }
 
-    (
+    let triples_created = triples.len();
+
+    {
+        let graph = state.graph.write().await;
+
+        // Duplicate events are skipped, not rejected: a re-sent trace batch must
+        // converge instead of failing the whole request.
+        graph.insert_batch(triples.clone())?;
+
+        #[cfg(feature = "dag")]
+        if let Some(dag_store) = graph.dag_store() {
+            let payloads: Vec<aingle_graph::dag::TripleInsertPayload> = triples
+                .iter()
+                .map(|t| aingle_graph::dag::TripleInsertPayload {
+                    // Bare names, not the `<...>` display form: the DAG subject
+                    // index is keyed on this string exactly as written.
+                    subject: crate::service::triples::dag_subject_name(&t.subject),
+                    predicate: t.predicate.as_str().to_string(),
+                    // Same wire form the triple write paths use, so replay and
+                    // the DAG indexes read one object encoding, not two.
+                    object: serde_json::to_value(crate::rest::ValueDto::from(t.object.clone()))
+                        .unwrap_or_default(),
+                    provenance: None,
+                })
+                .collect();
+            crate::service::triples::record_insert_action(&state, dag_store, payloads, None)?;
+        }
+    }
+
+    Ok((
         StatusCode::CREATED,
         Json(BatchStoreEventsResponse {
             stored: req.events.len(),
             triples_created,
         }),
-    )
+    ))
 }
 
 /// GET /api/v1/events — Query trace events.
@@ -442,4 +465,80 @@ pub fn observability_router() -> axum::Router<AppState> {
             "/api/v1/events/{id}/chain",
             axum::routing::get(get_causal_chain),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event(id: &str) -> TraceEventInput {
+        TraceEventInput {
+            id: id.into(),
+            event_type: "tool_call".into(),
+            agent_id: "a1".into(),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+            session: None,
+            parent_event: None,
+            duration_ms: None,
+            fields: Default::default(),
+        }
+    }
+
+    /// The trace endpoint writes facts like any other client, so it owes the same
+    /// signed trail: unattributed events would be invisible to the action log and
+    /// absent from a replay of it.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn stored_events_are_accounted_for_in_the_signed_history() {
+        let mut state = AppState::with_db_path(":memory:", None).unwrap();
+        state.dag_signing_key = Some(std::sync::Arc::new(
+            aingle_graph::dag::DagSigningKey::generate(),
+        ));
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        let req = BatchStoreEventsRequest {
+            namespace: "ns".into(),
+            events: vec![event("e1"), event("e2")],
+        };
+        let (status, Json(body)) = batch_store_events(State(state.clone()), Json(req))
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(body.stored, 2);
+
+        let graph = state.graph.read().await;
+        for id in ["e1", "e2"] {
+            let actions = graph
+                .dag_history_by_subject(&format!("ns:event:{id}"), 10)
+                .unwrap();
+            assert!(
+                !actions.is_empty(),
+                "event {id} must appear in the action history"
+            );
+            assert!(
+                actions.iter().all(|a| a.signature.is_some()),
+                "the action recording event {id} must be signed"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn re_sending_the_same_batch_converges_instead_of_failing() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        let make = || BatchStoreEventsRequest {
+            namespace: "ns".into(),
+            events: vec![event("e1")],
+        };
+        let _ = batch_store_events(State(state.clone()), Json(make()))
+            .await
+            .unwrap();
+        // A duplicate replay of the same trace must not fail the request.
+        let (status, _) = batch_store_events(State(state.clone()), Json(make()))
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::CREATED);
+    }
 }

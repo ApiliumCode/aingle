@@ -28,6 +28,75 @@ fn dag_action_author(state: &AppState, origin: Option<&str>) -> aingle_graph::No
     }
 }
 
+/// The plain name a DAG payload must carry for a subject.
+///
+/// `NodeId`'s `Display` wraps a named node in angle brackets (`<ex:alice>`), and
+/// the DAG's subject index is keyed on the payload string byte for byte. Inserts
+/// record the bare name, and every reader — the history-by-subject endpoint, the
+/// MCP tool, grounding — queries the bare name. Recording the display form files
+/// a mutation under a key nothing looks up, which is indistinguishable from not
+/// recording it at all.
+#[cfg(feature = "dag")]
+pub(crate) fn dag_subject_name(subject: &NodeId) -> String {
+    subject
+        .as_name()
+        .map(str::to_string)
+        .unwrap_or_else(|| subject.to_string())
+}
+
+/// Build, sign and persist one `TripleInsert` action covering every triple in
+/// `triples`, so a write of any size leaves exactly one link in the hash-linked
+/// history.
+///
+/// **One action per write, not one per triple.** `DagPayload::TripleInsert`
+/// already carries a *vector* of `TripleInsertPayload`, and each element keeps
+/// its own `Provenance` — so a batch stays attributable fact by fact without
+/// paying the per-action cost (parents, author, timestamp, a 64-byte signature,
+/// a fresh index entry and a tip persist, ~750 bytes measured on a real store) a
+/// thousand times over. `DagPayload::Batch` is not used: it exists to carry ops
+/// of *different kinds* in one action, and wrapping a single `TripleInsert` in
+/// it only adds a nesting layer that every consumer — replay, the affected/
+/// subject indexes, the Raft state machine — has to unwrap again.
+///
+/// A failure here is an error, never a silent success: the store write has
+/// already landed, so swallowing it would leave a fact in the graph that the
+/// signed history denies — unattributable, invisible to the action log, and not
+/// reproduced by a replay of it.
+#[cfg(feature = "dag")]
+pub(crate) fn record_insert_action(
+    state: &AppState,
+    dag_store: &aingle_graph::dag::DagStore,
+    triples: Vec<aingle_graph::dag::TripleInsertPayload>,
+    origin: Option<&str>,
+) -> Result<()> {
+    let dag_author = dag_action_author(state, origin);
+    let dag_seq = state
+        .dag_seq_counter
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let parents = dag_store.tips().unwrap_or_default();
+
+    let mut action = aingle_graph::dag::DagAction {
+        parents,
+        author: dag_author,
+        seq: dag_seq,
+        timestamp: chrono::Utc::now(),
+        payload: aingle_graph::dag::DagPayload::TripleInsert { triples },
+        signature: None,
+    };
+
+    if let Some(ref key) = state.dag_signing_key {
+        key.sign(&mut action);
+    }
+
+    dag_store.put(&action).map_err(|e| {
+        Error::Internal(format!(
+            "DAG action failed for triple insert — data integrity at risk: {e}"
+        ))
+    })?;
+
+    Ok(())
+}
+
 /// Create (insert) a single triple, returning its stored form (with hash id).
 ///
 /// Performs the same side-effects as the REST handler's direct-write path:
@@ -90,37 +159,17 @@ pub async fn insert_triple_inner(
 
         #[cfg(feature = "dag")]
         if let Some(dag_store) = graph.dag_store() {
-            let dag_author = dag_action_author(state, origin);
-            let dag_seq = state
-                .dag_seq_counter
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let parents = dag_store.tips().unwrap_or_default();
-
-            let mut action = aingle_graph::dag::DagAction {
-                parents,
-                author: dag_author,
-                seq: dag_seq,
-                timestamp: chrono::Utc::now(),
-                payload: aingle_graph::dag::DagPayload::TripleInsert {
-                    triples: vec![aingle_graph::dag::TripleInsertPayload {
-                        subject: subject.to_string(),
-                        predicate: predicate.to_string(),
-                        object: serde_json::to_value(&object_dto).unwrap_or_default(),
-                        provenance,
-                    }],
-                },
-                signature: None,
-            };
-
-            if let Some(ref key) = state.dag_signing_key {
-                key.sign(&mut action);
-            }
-
-            dag_store.put(&action).map_err(|e| {
-                Error::Internal(format!(
-                    "DAG action failed for triple insert — data integrity at risk: {e}"
-                ))
-            })?;
+            record_insert_action(
+                state,
+                dag_store,
+                vec![aingle_graph::dag::TripleInsertPayload {
+                    subject: subject.to_string(),
+                    predicate: predicate.to_string(),
+                    object: serde_json::to_value(&object_dto).unwrap_or_default(),
+                    provenance,
+                }],
+                origin,
+            )?;
         }
 
         id
@@ -154,15 +203,22 @@ pub async fn insert_triple_inner(
 ///
 /// Mirrors the REST batch handler's non-cluster direct-write path: validates
 /// every row, performs an atomic `insert_batch` (which silently skips
-/// duplicates), records a single `batch_create` audit entry, and broadcasts a
-/// `TripleAdded` event per row. `namespace` scopes the audit entry.
+/// duplicates), records the write in the signed action history exactly as the
+/// single-triple path does, records a single `batch_create` audit entry, and
+/// broadcasts a `TripleAdded` event per row. `namespace` scopes the audit entry.
 ///
 /// NOTE: cluster/Raft routing and namespace ENFORCEMENT are transport concerns
 /// and remain in the REST handler.
+///
+/// `origin`, when `Some`, is stamped as the DAG action author (e.g. `"mcp"` for
+/// writes coming through the MCP tools) so a bulk write is attributable to the
+/// surface it arrived on — the one place attribution matters most, since that
+/// surface is reachable by external clients.
 pub async fn batch_insert(
     state: &AppState,
     req: BatchInsertRequest,
     namespace: Option<String>,
+    #[cfg_attr(not(feature = "dag"), allow(unused_variables))] origin: Option<&str>,
 ) -> Result<BatchInsertResponse> {
     if req.triples.is_empty() {
         return Ok(BatchInsertResponse {
@@ -202,23 +258,43 @@ pub async fn batch_insert(
         })
         .collect();
 
-    let count_before = {
+    // One guard for count/insert/record: the duplicate arithmetic below is a
+    // difference of two counts, so releasing the lock between them would let a
+    // concurrent writer be miscounted as this batch's work — and the history
+    // entry must be written under the same guard as the store write it accounts
+    // for.
+    let (ids, actually_inserted) = {
         let graph = state.graph.read().await;
-        graph.count()
+        let count_before = graph.count();
+
+        // Atomic batch insert
+        let ids = graph.insert_batch(triples)?;
+
+        let count_after = graph.count();
+
+        // Record the whole batch as ONE signed action carrying one payload per
+        // triple. The payloads describe what this call asserted, including rows
+        // `insert_batch` deduplicated against a fact already present: replay is
+        // idempotent, and dropping them would make the history unable to say who
+        // asserted a fact it already held.
+        #[cfg(feature = "dag")]
+        if let Some(dag_store) = graph.dag_store() {
+            let payloads: Vec<aingle_graph::dag::TripleInsertPayload> = req
+                .triples
+                .iter()
+                .map(|t| aingle_graph::dag::TripleInsertPayload {
+                    subject: t.subject.clone(),
+                    predicate: t.predicate.clone(),
+                    object: serde_json::to_value(&t.object).unwrap_or_default(),
+                    provenance: None,
+                })
+                .collect();
+            record_insert_action(state, dag_store, payloads, origin)?;
+        }
+
+        (ids, count_after - count_before)
     };
 
-    // Atomic batch insert
-    let ids = {
-        let graph = state.graph.read().await;
-        graph.insert_batch(triples)?
-    };
-
-    let count_after = {
-        let graph = state.graph.read().await;
-        graph.count()
-    };
-
-    let actually_inserted = count_after - count_before;
     let duplicates = ids.len() - actually_inserted;
 
     // Build response DTOs
@@ -314,7 +390,7 @@ pub async fn delete_triple(
             .get(&triple_id)
             .ok()
             .flatten()
-            .map(|t| t.subject.to_string());
+            .map(|t| dag_subject_name(&t.subject));
 
         let deleted = graph.delete(&triple_id)?;
 
@@ -469,7 +545,7 @@ mod tests {
                 req("ex:alice", "ex:knows", "ex:carol"),
             ],
         };
-        let resp = batch_insert(&state, batch, None).await.unwrap();
+        let resp = batch_insert(&state, batch, None, None).await.unwrap();
         assert_eq!(resp.total, 2);
         assert_eq!(resp.duplicates, 0);
         let count = state.graph.read().await.count();
@@ -571,6 +647,138 @@ mod tests {
             found,
             "provenance must be present in the TripleInsert DAG payload"
         );
+    }
+
+    /// The batch path must leave the same trail as the single-triple path: a
+    /// signed action in the hash-linked history accounting for every triple it
+    /// wrote. Facts that reach the store without one have no author and no
+    /// signature, never show up in the action log, and are not reproduced by a
+    /// replay of it — the graph would then hold facts its own history denies.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn batch_insert_records_every_triple_in_the_signed_history() {
+        let mut state = AppState::with_db_path(":memory:", None).unwrap();
+        state.dag_signing_key = Some(std::sync::Arc::new(
+            aingle_graph::dag::DagSigningKey::generate(),
+        ));
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        let rows = [
+            ("ex:alice", "ex:name", "Alice"),
+            ("ex:bob", "ex:name", "Bob"),
+            ("ex:carol", "ex:name", "Carol"),
+        ];
+        let batch = BatchInsertRequest {
+            triples: rows
+                .iter()
+                .map(|(s, p, o)| CreateTripleRequest {
+                    subject: (*s).into(),
+                    predicate: (*p).into(),
+                    object: ValueDto::String((*o).into()),
+                })
+                .collect(),
+        };
+
+        let resp = batch_insert(&state, batch, None, None).await.unwrap();
+        assert_eq!(resp.total, 3);
+
+        let graph = state.graph.read().await;
+        for (s, p, o) in rows {
+            let triple = Triple::new(
+                NodeId::named(s),
+                Predicate::named(p),
+                Value::String(o.into()),
+            );
+            let tid = *TripleId::from_triple(&triple).as_bytes();
+            let actions = graph.dag_history(&tid, 10).unwrap();
+            assert!(
+                !actions.is_empty(),
+                "triple <{s}> <{p}> written by the batch path must appear in the action history"
+            );
+            assert!(
+                actions.iter().all(|a| a.signature.is_some()),
+                "the action recording <{s}> <{p}> must be signed"
+            );
+        }
+    }
+
+    /// A deletion must land in the same subject's history as the insert it
+    /// undoes. The subject string is the index key, so recording the `<name>`
+    /// display form instead of the bare name files the deletion where nothing
+    /// looks — the history would show the fact being asserted and never removed.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn a_delete_lands_in_the_same_subject_history_as_its_insert() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        let dto = create_triple(&state, req("ex:alice", "ex:knows", "ex:bob"), None, None)
+            .await
+            .unwrap();
+        delete_triple(&state, dto.id.as_deref().unwrap(), None, None)
+            .await
+            .unwrap();
+
+        let graph = state.graph.read().await;
+        let actions = graph.dag_history_by_subject("ex:alice", 10).unwrap();
+        assert!(
+            actions.iter().any(|a| matches!(
+                a.payload,
+                aingle_graph::dag::DagPayload::TripleDelete { .. }
+            )),
+            "the delete must appear in <ex:alice>'s history, not under a bracketed key"
+        );
+    }
+
+    /// Pins the two deliberate choices: a batch is ONE action (a thousand-triple
+    /// batch must not become a thousand ~750-byte actions), and it is attributed
+    /// to the surface it arrived on, so a bulk write through the external tool
+    /// surface is not silently credited to the node itself.
+    #[cfg(feature = "dag")]
+    #[tokio::test]
+    async fn batch_insert_is_one_action_attributed_to_its_origin() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        {
+            let mut graph = state.graph.write().await;
+            graph.enable_dag();
+        }
+
+        let before = {
+            let graph = state.graph.read().await;
+            graph.dag_store().unwrap().action_count()
+        };
+
+        let batch = BatchInsertRequest {
+            triples: (0..5)
+                .map(|i| req("ex:alice", "ex:knows", &format!("ex:peer{i}")))
+                .collect(),
+        };
+        batch_insert(&state, batch, None, Some("mcp"))
+            .await
+            .unwrap();
+
+        let graph = state.graph.read().await;
+        let store = graph.dag_store().unwrap();
+        assert_eq!(
+            store.action_count() - before,
+            1,
+            "a batch must cost exactly one action, whatever its size"
+        );
+
+        let chain = store.chain(&NodeId::named("mcp"), 10).unwrap();
+        assert_eq!(chain.len(), 1, "the action must be authored by the origin");
+        match &chain[0].payload {
+            aingle_graph::dag::DagPayload::TripleInsert { triples } => {
+                assert_eq!(triples.len(), 5, "every row of the batch must be recorded");
+            }
+            other => panic!("expected a TripleInsert payload, got {other:?}"),
+        }
     }
 
     #[tokio::test]

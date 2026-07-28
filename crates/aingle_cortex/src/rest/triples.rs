@@ -470,7 +470,7 @@ pub async fn delete_triple(
                 .get(&triple_id)
                 .ok()
                 .flatten()
-                .map(|t| t.subject.to_string());
+                .map(|t| crate::service::triples::dag_subject_name(&t.subject));
             (tips, subj)
         };
 
@@ -660,7 +660,7 @@ pub async fn batch_insert_triples(
         .and_then(|axum::Extension(RequestNamespace(ns))| ns.clone());
 
     // Delegate the shared validate + atomic insert + audit + event side-effects.
-    let resp = crate::service::triples::batch_insert(&state, req, namespace).await?;
+    let resp = crate::service::triples::batch_insert(&state, req, namespace, None).await?;
 
     // An empty batch is a no-op success (parity with the prior handler).
     let status = if empty {

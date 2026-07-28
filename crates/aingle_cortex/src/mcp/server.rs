@@ -991,9 +991,10 @@ impl AingleMcp {
             return Ok(read_only_denied());
         }
         let Parameters(req) = params;
-        let resp = crate::service::triples::batch_insert(&self.state, req, None)
-            .await
-            .map_err(super::convert::to_mcp_error)?;
+        let resp =
+            crate::service::triples::batch_insert(&self.state, req, None, Some(super::MCP_ORIGIN))
+                .await
+                .map_err(super::convert::to_mcp_error)?;
         Ok(CallToolResult::success(vec![Content::json(resp)?]))
     }
 
