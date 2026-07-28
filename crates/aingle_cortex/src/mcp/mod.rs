@@ -17,9 +17,30 @@ pub mod oauth;
 pub mod policy;
 mod server;
 
+pub use policy::{ToolAccess, ToolDescriptor};
 pub use server::AingleMcp;
+/// This surface's gate table, re-exported so an embedding host can run the same
+/// [`policy::gate_tool_call`] decision the server runs — and prove in its own
+/// tests that whatever it shows a user agrees with it.
+pub use server::TOOL_ACCESS;
 
 use crate::state::AppState;
+
+/// The complete tool surface this MCP server exposes, each tool paired with its
+/// read/mutate classification.
+///
+/// Derived from the very table [`policy::gate_tool_call`] enforces, so an
+/// embedding host can answer "what can the connected assistant reach, and what
+/// can it change?" without keeping its own copy of the answer. A hand-written
+/// copy goes stale the first time a tool is added and then under-reports the
+/// surface indefinitely — and an inventory that under-reports is worse than none,
+/// because the user acts on it.
+///
+/// Ordering is stable: read-only tools first, then mutating ones, each in the
+/// order this surface declares them.
+pub fn exposed_tools() -> Vec<ToolDescriptor> {
+    server::TOOL_ACCESS.declared_tools()
+}
 
 /// Origin/author tag stamped onto DAG actions produced through MCP mutation
 /// tools. Lets a host attribute "what the connected AI did" by filtering the DAG

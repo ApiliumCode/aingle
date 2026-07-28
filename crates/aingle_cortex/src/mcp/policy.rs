@@ -97,12 +97,26 @@ impl McpPolicy {
 }
 
 /// What a tool does to the graph or the workspace, for policy purposes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// `Serialize` so a host can hand the classification straight to its own UI
+/// without restating it — a second spelling of "is this tool read-only?" is a
+/// second place to get it wrong.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum ToolAccess {
     /// Reads only. Permitted under every permission mode.
     ReadOnly,
     /// Changes state. Permitted only when the policy allows mutation.
     Mutating,
+}
+
+/// One declared tool: its name and what it does.
+///
+/// Produced by [`ToolAccessTable::declared_tools`] so the inventory a host
+/// displays and the verdict [`gate_tool_call`] reaches come from one array.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct ToolDescriptor {
+    pub name: &'static str,
+    pub access: ToolAccess,
 }
 
 /// One MCP surface's declaration of what each of its tools does.
@@ -141,6 +155,30 @@ impl ToolAccessTable {
         } else {
             ToolAccess::Mutating
         }
+    }
+
+    /// Every tool this table classifies, read-only entries first, each carrying
+    /// its classification.
+    ///
+    /// This is the *only* supported way to enumerate a surface's tools for
+    /// display. It reads the same two slices [`Self::access`] consults, so a
+    /// host that shows a user "here is what your connected assistant can reach"
+    /// cannot drift from what the gate actually permits. Enumerating the surface
+    /// by hand instead is what produces a list that silently under-reports, and
+    /// a trust display that under-reports is worse than none — the user believes
+    /// it.
+    pub fn declared_tools(&self) -> Vec<ToolDescriptor> {
+        self.read_only
+            .iter()
+            .map(|&name| ToolDescriptor {
+                name,
+                access: ToolAccess::ReadOnly,
+            })
+            .chain(self.mutating.iter().map(|&name| ToolDescriptor {
+                name,
+                access: ToolAccess::Mutating,
+            }))
+            .collect()
     }
 
     /// Whether the surface has explicitly classified `tool` either way. Used by

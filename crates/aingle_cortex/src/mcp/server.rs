@@ -1826,6 +1826,60 @@ mod tool_access_tests {
         }
     }
 
+    /// The mirror of `every_exposed_tool_is_classified`. That test proves the
+    /// table covers the router (nothing escapes classification); this one proves
+    /// the list [`crate::mcp::exposed_tools`] publishes is *exactly* the router
+    /// and *exactly* the gate table, in both directions.
+    ///
+    /// Hosts render that list as "what the connected assistant can reach". A
+    /// published list that drifts from the gate under-reports the surface, and a
+    /// trust display that under-reports is worse than none because the user
+    /// believes it. Building the list from a second, hand-maintained array is
+    /// how that drift happens, so this test refuses to compile-and-pass unless
+    /// the published list is derived from the table the gate consults.
+    #[test]
+    fn published_tool_list_matches_the_router_and_the_gate() {
+        let state = AppState::with_db_path(":memory:", None).unwrap();
+        state.set_mcp_policy(McpPolicy::default()); // read-only
+        let mcp = AingleMcp::new(state);
+
+        let published = crate::mcp::exposed_tools();
+
+        let mut published_names: Vec<String> =
+            published.iter().map(|d| d.name.to_string()).collect();
+        published_names.sort();
+        let mut router_names: Vec<String> = mcp
+            .tool_router
+            .list_all()
+            .iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        router_names.sort();
+        assert_eq!(
+            published_names, router_names,
+            "the published tool list and the router disagree: a host showing \
+             this list would misreport what the assistant can reach"
+        );
+
+        for d in &published {
+            assert_eq!(
+                d.access,
+                TOOL_ACCESS.access(d.name),
+                "published access for '{}' disagrees with the gate table",
+                d.name
+            );
+            // The published classification must predict the real verdict: under
+            // a read-only policy, exactly the tools published as mutating are
+            // the ones the gate refuses.
+            assert_eq!(
+                mcp.gate(d.name).is_some(),
+                d.access == ToolAccess::Mutating,
+                "published access for '{}' does not predict the gate verdict",
+                d.name
+            );
+        }
+    }
+
     /// The classification must agree with the `read_only_hint` each tool
     /// advertises to clients: a tool that tells the model "I only read" but is
     /// filed as mutating (or the reverse) is a lie in one direction or a hole in
