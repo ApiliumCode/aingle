@@ -12,8 +12,8 @@
 //! - Serialize/deserialize agent state
 
 use kaneru::{
-    Action, ActionResult, ActionType, Goal, GoalSelectionStrategy, KaneruAgent, KaneruConfig,
-    LearningAlgorithm, LearningConfig, Observation, OperationMode, Outcome, PredictiveConfig,
+    ActionResult, ActionType, Goal, GoalSelectionStrategy, KaneruAgent, KaneruConfig,
+    LearningAlgorithm, LearningConfig, Observation, OperationMode, Outcome,
     Priority,
 };
 

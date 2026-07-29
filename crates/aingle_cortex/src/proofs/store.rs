@@ -282,7 +282,7 @@ impl ProofStore {
             .map_err(|e| VerificationError::InvalidProofData(e.to_string()))?;
         self.backend
             .put(&proof_id, &serialized)
-            .map_err(|e| VerificationError::InvalidProofData(e))?;
+            .map_err(VerificationError::InvalidProofData)?;
 
         // Update stats
         let mut stats = self.stats.write().await;

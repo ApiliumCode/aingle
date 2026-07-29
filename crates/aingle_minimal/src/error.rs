@@ -740,7 +740,7 @@ mod tests {
         let _: &dyn StdError = &error;
 
         // Test source() for Io error
-        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "test");
+        let io_err = std::io::Error::other("test");
         let error = Error::Io(io_err);
         assert!(StdError::source(&error).is_some());
     }

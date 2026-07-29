@@ -139,7 +139,7 @@ async fn test_graph_dag_triple_materialization_consistency() {
     let mut triple_ids = Vec::new();
     for i in 0..50 {
         let triple = Triple::new(
-            NodeId::named(&format!("entity:{}", i)),
+            NodeId::named(format!("entity:{}", i)),
             Predicate::named("has_value"),
             Value::Integer(i * 100),
         );
@@ -166,7 +166,7 @@ async fn test_graph_dag_triple_materialization_consistency() {
 
     // Verify pattern queries return correct results
     for i in 0..50 {
-        let pattern = TriplePattern::subject(NodeId::named(&format!("entity:{}", i)));
+        let pattern = TriplePattern::subject(NodeId::named(format!("entity:{}", i)));
         let results = graph.find(pattern).unwrap();
         assert_eq!(
             results.len(),
@@ -209,7 +209,7 @@ async fn test_batch_insert_index_consistency() {
     let triples: Vec<Triple> = (0..100)
         .map(|i| {
             Triple::new(
-                NodeId::named(&format!("batch:{}", i)),
+                NodeId::named(format!("batch:{}", i)),
                 Predicate::named("batch_value"),
                 Value::Integer(i),
             )
@@ -222,7 +222,7 @@ async fn test_batch_insert_index_consistency() {
 
     // Verify every triple is findable by subject pattern (uses SPO index)
     for i in 0..100 {
-        let pattern = TriplePattern::subject(NodeId::named(&format!("batch:{}", i)));
+        let pattern = TriplePattern::subject(NodeId::named(format!("batch:{}", i)));
         let results = graph.find(pattern).unwrap();
         assert_eq!(results.len(), 1, "batch:{} should be findable via index", i);
         assert_eq!(results[0].object, Value::Integer(i));
@@ -238,7 +238,7 @@ async fn test_batch_insert_index_consistency() {
     let triples2: Vec<Triple> = (0..100)
         .map(|i| {
             Triple::new(
-                NodeId::named(&format!("batch:{}", i)),
+                NodeId::named(format!("batch:{}", i)),
                 Predicate::named("batch_value"),
                 Value::Integer(i),
             )
@@ -270,7 +270,7 @@ async fn test_app_state_flush_restore_roundtrip() {
             let graph = state.graph.read().await;
             for i in 0..10 {
                 let triple = Triple::new(
-                    NodeId::named(&format!("node:{}", i)),
+                    NodeId::named(format!("node:{}", i)),
                     Predicate::named("value"),
                     Value::String(format!("data-{}", i)),
                 );
@@ -308,7 +308,7 @@ async fn test_app_state_flush_restore_roundtrip() {
             assert_eq!(graph.count(), 10, "graph triples should survive restart");
 
             for i in 0..10 {
-                let pattern = TriplePattern::subject(NodeId::named(&format!("node:{}", i)));
+                let pattern = TriplePattern::subject(NodeId::named(format!("node:{}", i)));
                 let results = graph.find(pattern).unwrap();
                 assert_eq!(results.len(), 1, "node:{} missing after restart", i);
                 assert_eq!(
@@ -496,7 +496,7 @@ async fn test_graph_sled_persistence_full_cycle() {
         let graph = GraphDB::sled(path_str).unwrap();
         for i in 0..25 {
             let triple = Triple::new(
-                NodeId::named(&format!("persist:{}", i)),
+                NodeId::named(format!("persist:{}", i)),
                 Predicate::named("data"),
                 Value::Float(i as f64 * 1.5),
             );
@@ -512,7 +512,7 @@ async fn test_graph_sled_persistence_full_cycle() {
         assert_eq!(graph.count(), 25, "sled graph should persist");
 
         for i in 0..25 {
-            let pattern = TriplePattern::subject(NodeId::named(&format!("persist:{}", i)));
+            let pattern = TriplePattern::subject(NodeId::named(format!("persist:{}", i)));
             let results = graph.find(pattern).unwrap();
             assert_eq!(results.len(), 1, "persist:{} missing", i);
             match &results[0].object {

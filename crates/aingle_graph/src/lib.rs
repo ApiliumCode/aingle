@@ -1108,11 +1108,10 @@ impl GraphDB {
         let mut deleted = 0usize;
         for triple in all {
             if let Some(name) = triple.subject.as_name() {
-                if name.starts_with(prefix) {
-                    if self.delete(&triple.id())? {
+                if name.starts_with(prefix)
+                    && self.delete(&triple.id())? {
                         deleted += 1;
                     }
-                }
             }
         }
         Ok(deleted)
@@ -1456,7 +1455,7 @@ mod tests {
 
         for i in 0..10 {
             db.insert(Triple::new(
-                NodeId::named(&format!("node:{}", i)),
+                NodeId::named(format!("node:{}", i)),
                 Predicate::named("has_value"),
                 Value::integer(i as i64),
             ))
@@ -1808,7 +1807,7 @@ mod tests {
             // DAG has one action
             let action = db.dag_action(&dag_hash).unwrap().unwrap();
             assert_eq!(action.seq, 1);
-            assert!(action.is_genesis() == false || action.parents.is_empty());
+            assert!(!action.is_genesis() || action.parents.is_empty());
 
             // Tips point to the new action
             let tips = db.dag_tips().unwrap();
@@ -1874,7 +1873,7 @@ mod tests {
 
             for seq in 1..=5 {
                 let triple = Triple::new(
-                    NodeId::named(&format!("node:{}", seq)),
+                    NodeId::named(format!("node:{}", seq)),
                     Predicate::named("p"),
                     Value::integer(seq),
                 );

@@ -74,8 +74,7 @@ impl WalWriter {
 
         let prev_hash = {
             let guard = self.last_hash.lock().map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
+                io::Error::other(
                     format!("WAL last_hash lock poisoned: {e}"),
                 )
             })?;
@@ -94,8 +93,7 @@ impl WalWriter {
 
         {
             let mut seg = self.current_segment.lock().map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
+                io::Error::other(
                     format!("WAL segment lock poisoned: {e}"),
                 )
             })?;
@@ -113,8 +111,7 @@ impl WalWriter {
         // Update last_hash
         {
             let mut guard = self.last_hash.lock().map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
+                io::Error::other(
                     format!("WAL last_hash lock poisoned: {e}"),
                 )
             })?;
@@ -127,8 +124,7 @@ impl WalWriter {
     /// Flush the current segment to disk.
     pub fn sync(&self) -> io::Result<()> {
         let mut seg = self.current_segment.lock().map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("WAL segment lock poisoned: {e}"),
             )
         })?;

@@ -45,6 +45,7 @@ use std::time::Duration;
 /// config.power_mode = PowerMode::Low;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum PowerMode {
     /// Full performance with no power-saving measures.
     ///
@@ -54,6 +55,7 @@ pub enum PowerMode {
     /// A balance between performance and power consumption.
     ///
     /// This is the default mode, suitable for most use cases.
+    #[default]
     Balanced,
     /// Prioritizes low power usage by reducing activity.
     ///
@@ -65,11 +67,6 @@ pub enum PowerMode {
     Critical,
 }
 
-impl Default for PowerMode {
-    fn default() -> Self {
-        Self::Balanced
-    }
-}
 
 /// Defines the network transport to be used by the node.
 ///
@@ -321,12 +318,14 @@ impl GossipConfig {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum StorageBackendType {
     /// Use SQLite for storage.
     ///
     /// SQLite is a lightweight, single-file database that's ideal for IoT devices
     /// and embedded systems. It has minimal dependencies and works well on
     /// resource-constrained platforms.
+    #[default]
     Sqlite,
     /// Use RocksDB for storage.
     ///
@@ -341,12 +340,6 @@ pub enum StorageBackendType {
     Memory,
 }
 
-impl Default for StorageBackendType {
-    fn default() -> Self {
-        // SQLite is the default for IoT compatibility.
-        Self::Sqlite
-    }
-}
 
 impl std::fmt::Display for StorageBackendType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

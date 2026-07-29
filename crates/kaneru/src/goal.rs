@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn test_goal_status_clone() {
         let status = GoalStatus::Active;
-        let cloned = status.clone();
+        let cloned = status;
         assert_eq!(status, cloned);
     }
 

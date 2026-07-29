@@ -294,7 +294,7 @@ mod tests {
 
         // Process and update
         let tx = make_tx(1);
-        let processed = tl.process(tx.clone());
+        let _processed = tl.process(tx.clone());
 
         let outcome = ValidationOutcome {
             valid: true,

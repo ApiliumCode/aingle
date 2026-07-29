@@ -124,7 +124,7 @@ pub async fn verify_proofs_batch(
     let results = state.proof_store.batch_verify(&request.proof_ids).await;
 
     let mut verifications = Vec::new();
-    for (proof_id, result) in request.proof_ids.iter().zip(results.into_iter()) {
+    for (proof_id, result) in request.proof_ids.iter().zip(results) {
         // Every entry carries its own replay material: a batch verdict is no more
         // authoritative than a single one, so it must not be the only thing a
         // caller can act on.

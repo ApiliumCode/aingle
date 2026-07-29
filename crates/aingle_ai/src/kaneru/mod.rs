@@ -424,7 +424,7 @@ mod tests {
         let result = agent.query(&query);
 
         // Should have some results
-        assert!(result.relevant_contexts.len() > 0 || result.memory_matches.len() >= 0);
+        assert!(!result.relevant_contexts.is_empty() || result.memory_matches.len() >= 0);
     }
 
     #[test]

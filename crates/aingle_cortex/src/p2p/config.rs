@@ -114,14 +114,13 @@ impl P2pConfig {
                         i += 1;
                     }
                 }
-                "--p2p-peer" => {
-                    if i + 1 < args.len() {
+                "--p2p-peer"
+                    if i + 1 < args.len() => {
                         if let Ok(addr) = args[i + 1].parse::<SocketAddr>() {
                             cfg.manual_peers.push(addr);
                         }
                         i += 1;
                     }
-                }
                 _ => {}
             }
             i += 1;

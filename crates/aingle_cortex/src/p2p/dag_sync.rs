@@ -19,7 +19,7 @@ pub fn collect_local_tips(graph: &GraphDB) -> (Vec<String>, u64) {
             .tips_raw()
             .unwrap_or_default()
             .into_iter()
-            .map(|h| hex::encode(h))
+            .map(hex::encode)
             .collect::<Vec<_>>();
         let count = dag_store.action_count() as u64;
         (tips, count)

@@ -259,7 +259,7 @@ mod tests {
         let tx = make_test_tx(1);
         let result = nested.process(&tx).unwrap();
 
-        assert!(result.processed.features.len() > 0);
+        assert!(!result.processed.features.is_empty());
     }
 
     #[test]
@@ -267,7 +267,7 @@ mod tests {
         let config = NestedConfig::default();
         let nested = NestedLearning::new(config);
 
-        let batch: Vec<_> = (0..10).map(|i| make_test_tx(i)).collect();
+        let batch: Vec<_> = (0..10).map(make_test_tx).collect();
         let plan = nested.get_validation_plan(&batch);
 
         assert_eq!(plan.order.len(), 10);

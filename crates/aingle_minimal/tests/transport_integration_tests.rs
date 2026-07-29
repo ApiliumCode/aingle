@@ -8,7 +8,6 @@
 //! - BLE scanning, connection, and message exchange
 //! - Hardware wallet connection and signing workflow
 
-use std::time::Duration;
 
 // ============================================================================
 // WebRTC Transport Tests

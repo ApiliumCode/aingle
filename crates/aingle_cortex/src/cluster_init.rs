@@ -103,12 +103,11 @@ impl ClusterConfig {
                         i += 1;
                     }
                 }
-                "--cluster-tls-key" => {
-                    if i + 1 < args.len() {
+                "--cluster-tls-key"
+                    if i + 1 < args.len() => {
                         cfg.tls_key = Some(args[i + 1].clone());
                         i += 1;
                     }
-                }
                 _ => {}
             }
             i += 1;
@@ -406,7 +405,7 @@ pub async fn ensure_dag_ready(state: &mut crate::state::AppState, db_path: Optio
 
     // Set DAG author from cluster node ID (no-op when not in cluster mode).
     if let Some(node_id) = state.cluster_node_id {
-        state.dag_author = Some(aingle_graph::NodeId::named(&format!("node:{}", node_id)));
+        state.dag_author = Some(aingle_graph::NodeId::named(format!("node:{}", node_id)));
     }
 
     // Initialize the Ed25519 signing key for DAG actions.
@@ -459,7 +458,7 @@ pub async fn ensure_dag_ready(state: &mut crate::state::AppState, db_path: Optio
                 }
                 #[cfg(not(unix))]
                 {
-                    if let Err(e) = std::fs::write(&key_path, &seed) {
+                    if let Err(e) = std::fs::write(&key_path, seed) {
                         tracing::error!("Failed to persist DAG signing key: {e}");
                     }
                 }
@@ -496,7 +495,7 @@ pub async fn init_cluster(
     bind_addr: &str,
     p2p_addr: &str,
 ) -> Result<(), Error> {
-    config.validate().map_err(|e| Error::Internal(e))?;
+    config.validate().map_err(Error::Internal)?;
 
     let wal_dir = config.wal_dir.as_deref().unwrap_or("wal");
     let wal_path = std::path::Path::new(wal_dir);

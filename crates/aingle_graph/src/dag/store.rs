@@ -713,11 +713,10 @@ impl DagStore {
             hash.copy_from_slice(&key[2..]);
 
             if let Some(action) = DagAction::from_bytes(value) {
-                if action.timestamp <= *ts {
-                    if best.as_ref().map_or(true, |(_, t)| action.timestamp > *t) {
+                if action.timestamp <= *ts
+                    && best.as_ref().is_none_or(|(_, t)| action.timestamp > *t) {
                         best = Some((DagActionHash(hash), action.timestamp));
                     }
-                }
             }
         }
 
@@ -1046,7 +1045,7 @@ fn extract_affected_triple_ids(payload: &DagPayload) -> Vec<[u8; 32]> {
     match payload {
         DagPayload::TripleInsert { triples } => triples
             .iter()
-            .map(|t| compute_triple_id_from_payload(t))
+            .map(compute_triple_id_from_payload)
             .collect(),
         DagPayload::TripleDelete { triple_ids, .. } => triple_ids.clone(),
         DagPayload::Batch { ops } => ops.iter().flat_map(extract_affected_triple_ids).collect(),

@@ -258,7 +258,7 @@ impl CortexLogStore {
                     term: *term,
                     data: data.clone(),
                 })
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
         }
 
         // Only update BTreeMap after all WAL writes succeed
@@ -279,7 +279,7 @@ impl CortexLogStore {
 
     pub async fn last_log_id(&self) -> Option<LogId> {
         let log = self.log.read().await;
-        log.values().last().map(|e| e.log_id.clone())
+        log.values().last().map(|e| e.log_id)
     }
 }
 
@@ -299,7 +299,7 @@ impl RaftLogReader<C> for Arc<CortexLogStore> {
 
     async fn read_vote(&mut self) -> Result<Option<Vote>, io::Error> {
         let v = self.vote.read().await;
-        Ok(v.clone())
+        Ok(*v)
     }
 }
 
@@ -318,11 +318,11 @@ impl RaftLogStorage<C> for Arc<CortexLogStore> {
         let last_log_id = log
             .values()
             .last()
-            .map(|e| e.log_id.clone())
-            .or_else(|| purged.clone());
+            .map(|e| e.log_id)
+            .or_else(|| *purged);
 
         Ok(LogState {
-            last_purged_log_id: purged.clone(),
+            last_purged_log_id: *purged,
             last_log_id,
         })
     }
@@ -334,7 +334,7 @@ impl RaftLogStorage<C> for Arc<CortexLogStore> {
     async fn save_vote(&mut self, vote: &Vote) -> Result<(), io::Error> {
         CortexLogStore::persist_vote(&self.wal_dir, vote)?;
         let mut v = self.vote.write().await;
-        *v = Some(vote.clone());
+        *v = Some(*vote);
         Ok(())
     }
 
@@ -347,7 +347,7 @@ impl RaftLogStorage<C> for Arc<CortexLogStore> {
 
     async fn read_committed(&mut self) -> Result<Option<LogId>, io::Error> {
         let c = self.committed.read().await;
-        Ok(c.clone())
+        Ok(*c)
     }
 
     async fn append<I>(&mut self, entries: I, callback: IOFlushed<C>) -> Result<(), io::Error>
@@ -384,7 +384,7 @@ impl RaftLogStorage<C> for Arc<CortexLogStore> {
 
         // Persist truncation boundary so recovery filters out stale entries
         let mut trunc = self.truncated_after.write().await;
-        *trunc = last_log_id.clone();
+        *trunc = last_log_id;
         CortexLogStore::persist_truncated_after(&self.wal_dir, &last_log_id)?;
 
         Ok(())
@@ -400,7 +400,7 @@ impl RaftLogStorage<C> for Arc<CortexLogStore> {
 
         // Persist purge boundary
         let mut purged = self.purged_log_id.write().await;
-        *purged = Some(log_id.clone());
+        *purged = Some(log_id);
         CortexLogStore::persist_purged(&self.wal_dir, &log_id)?;
 
         // Clean up old WAL segments that are entirely below the purge point

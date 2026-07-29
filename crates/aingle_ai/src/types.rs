@@ -287,6 +287,6 @@ mod tests {
 
         let features = tx.extract_features();
         assert_eq!(features.len(), 16);
-        assert!(features.iter().all(|&f| f >= 0.0 && f <= 2.0));
+        assert!(features.iter().all(|&f| (0.0..=2.0).contains(&f)));
     }
 }

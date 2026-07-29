@@ -46,7 +46,7 @@ impl Address {
         hasher.update(b"aingle_deploy:");
         hasher.update(deployer.as_bytes());
         hasher.update(code_hash);
-        hasher.update(&nonce);
+        hasher.update(nonce);
         let hash: [u8; 32] = hasher.finalize().into();
         Self(hash)
     }

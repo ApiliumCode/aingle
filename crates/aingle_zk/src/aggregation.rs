@@ -423,7 +423,7 @@ mod tests {
 
         // Should have some size savings from aggregation
         let savings = agg.size_savings();
-        assert!(savings >= 0.0 && savings <= 1.0);
+        assert!((0.0..=1.0).contains(&savings));
 
         let ratio = agg.compression_ratio();
         // Ratio could be < 1.0 if aggregated format has overhead

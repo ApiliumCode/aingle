@@ -281,7 +281,7 @@ async fn test_rate_limiter_gradual_refill() {
 
     // Should have succeeded ~3 times (with some tolerance for timing)
     assert!(
-        successes >= 2 && successes <= 4,
+        (2..=4).contains(&successes),
         "Should refill approximately 3 tokens, got {}",
         successes
     );
