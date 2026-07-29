@@ -106,10 +106,9 @@ pub fn parse_task(line: &str) -> Option<ParsedTask> {
         let ch = c[1].chars().next().unwrap();
         let rest = c.get(2).map_or(String::new(), |m| m.as_str().to_string());
         (status_from_checkbox(ch), rest)
-    } else if let Some(c) = KEYWORD.captures(line) {
-        (status_from_keyword(&c[1]), c[2].to_string())
     } else {
-        return None;
+        let c = KEYWORD.captures(line)?;
+        (status_from_keyword(&c[1]), c[2].to_string())
     };
 
     let priority = PRIORITY.captures(&rest).and_then(|c| c[1].chars().next());
