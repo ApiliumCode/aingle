@@ -498,7 +498,7 @@ mod tests {
                 proof_data: serde_json::json!({"test": "data"}),
                 metadata: None,
             };
-            submit_proof(AxumState(state.clone()), None, Json(request))
+            let _ = submit_proof(AxumState(state.clone()), None, Json(request))
                 .await
                 .unwrap();
         }
@@ -526,7 +526,7 @@ mod tests {
             metadata: None,
         };
 
-        submit_proof(AxumState(state.clone()), None, Json(request))
+        let _ = submit_proof(AxumState(state.clone()), None, Json(request))
             .await
             .unwrap();
 

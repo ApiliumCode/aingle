@@ -185,8 +185,8 @@ async fn test_graph_dag_triple_materialization_consistency() {
     assert_eq!(graph.count(), 25);
 
     // Verify even ones remain, odd ones gone
-    for i in 0..50 {
-        let exists = graph.get(&triple_ids[i]).unwrap().is_some();
+    for (i, id) in triple_ids.iter().enumerate().take(50) {
+        let exists = graph.get(id).unwrap().is_some();
         if i % 2 == 0 {
             assert!(exists, "even triple {} should still exist", i);
         } else {

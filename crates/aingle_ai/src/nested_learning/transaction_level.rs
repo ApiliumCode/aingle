@@ -198,7 +198,16 @@ impl TransactionClassifier {
         let min_dist = sorted.first().copied().unwrap_or(1.0);
         let second_dist = sorted.get(1).copied().unwrap_or(min_dist);
 
-        // Confidence based on separation
+        // Confidence based on separation.
+        //
+        // NOT `clamp`: `max`/`min` discard NaN and `clamp` propagates it, so the
+        // two differ exactly when the input is NaN. Here the division is guarded
+        // by `second_dist > 0.0`, so NaN should be unreachable — but that rests
+        // on the `partial_cmp().unwrap()` in the sort above, which PANICS on a
+        // NaN distance rather than producing one. Substituting `clamp` would be
+        // safe and would also settle nothing; the real work is making that sort
+        // total (`total_cmp`) and then deciding what a NaN distance means.
+        #[allow(clippy::manual_clamp)]
         if second_dist > 0.0 {
             (1.0 - min_dist / second_dist).max(0.0).min(1.0)
         } else {

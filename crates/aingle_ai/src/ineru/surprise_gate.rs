@@ -130,6 +130,21 @@ impl SurpriseGate {
     }
 
     /// Get adaptive threshold based on recent statistics
+    ///
+    /// NOT `clamp`, and not by accident. `f32::min(NaN, 1.0)` returns `1.0` —
+    /// `min`/`max` discard NaN and return the other operand — so a NaN mean or
+    /// std yields a threshold of `1.0` here. `NaN.clamp(0.1, 1.0)` returns NaN,
+    /// and a NaN threshold is worse than either bound: every comparison against
+    /// it is false, so the gate would stop firing and do so silently.
+    /// `get_std()` can produce NaN from an empty history or from a negative
+    /// variance caused by floating-point error.
+    ///
+    /// The right fix is neither expression: branch on `is_nan()` explicitly and
+    /// pin the chosen fallback with a test. Which fallback is correct — today's
+    /// 1.0, meaning the gate almost never fires, or 0.1, meaning it almost
+    /// always does — belongs to whoever owns this gate, so it is left as a
+    /// decision rather than made silently by a lint fix.
+    #[allow(clippy::manual_clamp)]
     pub fn adaptive_threshold(&self) -> f32 {
         // Use mean + 1 std as adaptive threshold
         let std = self.get_std();

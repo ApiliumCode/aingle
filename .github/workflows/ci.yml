@@ -86,8 +86,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
 
+      # The bar CLAUDE.md declares as `make lint`, which nothing enforced.
+      #
+      # This step used to read `-p aingle_minimal --features rest -- -W
+      # clippy::all`: one crate of seventeen, the library target only, and
+      # warnings that did not fail anything. It reported green while 54 lints
+      # accumulated across the workspace — among them a benchmark that had not
+      # compiled in months, and assertions that compared unsigned counters
+      # against zero and therefore passed no matter what the code did.
+      #
+      # `--all-targets` is load-bearing, not thoroughness for its own sake: it
+      # is what covers tests, benches and examples, and it is the only reason
+      # the dead benchmark was found at all.
       - name: Run Clippy
-        run: cargo clippy -p aingle_minimal --features rest -- -W clippy::all
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # No separate "did it really compile?" step: with `--workspace` and
+      # `-D warnings`, a member that fails to build makes THIS step exit
+      # non-zero. The companion-repo failure that inspired one was a job that
+      # went red for a lint and stayed red for a build script nobody read to
+      # the bottom of — a reading problem, not a missing check.
 
   # Build check
   build:
