@@ -670,10 +670,12 @@ mod tests {
 
     #[test]
     fn test_epsilon_decay() {
-        let mut config = LearningConfig::default();
-        config.epsilon = 1.0;
-        config.epsilon_decay = 0.9;
-        config.epsilon_min = 0.1;
+        let config = LearningConfig {
+            epsilon: 1.0,
+            epsilon_decay: 0.9,
+            epsilon_min: 0.1,
+            ..Default::default()
+        };
 
         let mut engine = LearningEngine::new(config);
 

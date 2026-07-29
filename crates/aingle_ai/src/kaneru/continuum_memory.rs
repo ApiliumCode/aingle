@@ -5,6 +5,8 @@
 //!
 //! Non-discrete memory system with smooth interpolation.
 
+use std::cmp::Reverse;
+
 use super::{Experience, MemoryResult, Query};
 use crate::types::{pattern_id, Embedding};
 
@@ -123,8 +125,7 @@ impl ContinuumMemory {
     pub fn compress(&mut self) {
         // Keep only top half by access count
         if self.entries.len() > 100 {
-            self.entries
-                .sort_by(|a, b| b.access_count.cmp(&a.access_count));
+            self.entries.sort_by_key(|e| Reverse(e.access_count));
             self.entries.truncate(self.entries.len() / 2);
         }
     }

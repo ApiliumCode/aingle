@@ -564,7 +564,6 @@ fn is_mutually_exclusive(g1: &GoalType, g2: &GoalType) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_goal_solver_creation() {

@@ -521,8 +521,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
 
         // Build both new graph and new memory into temporaries FIRST,
         // then swap atomically only if both succeed (#7).
-        let new_graph =
-            GraphDB::memory().map_err(|e| io::Error::other(e.to_string()))?;
+        let new_graph = GraphDB::memory().map_err(|e| io::Error::other(e.to_string()))?;
         for ts in &cluster_snap.triples {
             let value = json_to_value(&ts.object);
             let triple = aingle_graph::Triple::new(

@@ -315,11 +315,7 @@ impl RaftLogStorage<C> for Arc<CortexLogStore> {
         let log = self.log.read().await;
         let purged = self.purged_log_id.read().await;
 
-        let last_log_id = log
-            .values()
-            .last()
-            .map(|e| e.log_id)
-            .or_else(|| *purged);
+        let last_log_id = log.values().last().map(|e| e.log_id).or_else(|| *purged);
 
         Ok(LogState {
             last_purged_log_id: *purged,

@@ -8,7 +8,6 @@
 //! - BLE scanning, connection, and message exchange
 //! - Hardware wallet connection and signing workflow
 
-
 // ============================================================================
 // WebRTC Transport Tests
 // ============================================================================

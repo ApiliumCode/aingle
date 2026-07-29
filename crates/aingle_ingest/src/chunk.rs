@@ -188,9 +188,7 @@ mod tests {
         // 50 lines that are each ~1KB: a full 50-line window would exceed the
         // cap, so the window must close early on the byte budget.
         let one = "a".repeat(1024);
-        let content = std::iter::repeat_n(one, 50)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let content = std::iter::repeat_n(one, 50).collect::<Vec<_>>().join("\n");
         let chunks = chunk_fixed("data.txt", &content, "h", 50);
 
         assert!(

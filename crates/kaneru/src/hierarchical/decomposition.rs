@@ -330,7 +330,6 @@ impl DecompositionStrategy for ConditionalStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_default_rules_exist() {

@@ -44,8 +44,7 @@ use std::time::Duration;
 /// let mut config = Config::test_mode();
 /// config.power_mode = PowerMode::Low;
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PowerMode {
     /// Full performance with no power-saving measures.
     ///
@@ -66,7 +65,6 @@ pub enum PowerMode {
     /// The node operates at minimal capacity to preserve remaining battery.
     Critical,
 }
-
 
 /// Defines the network transport to be used by the node.
 ///
@@ -339,7 +337,6 @@ pub enum StorageBackendType {
     /// Data is lost when the node stops.
     Memory,
 }
-
 
 impl std::fmt::Display for StorageBackendType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1020,8 +1017,11 @@ mod tests {
 
     #[test]
     fn test_config_validate_invalid_memory() {
-        let mut config = Config::default();
-        config.memory_limit = 100; // Too small
+        // Too small
+        let config = Config {
+            memory_limit: 100,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

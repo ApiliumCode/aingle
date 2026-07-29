@@ -93,9 +93,7 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
             checksum: String::new(),
         };
 
-        let data = snapshot
-            .to_bytes()
-            .map_err(io::Error::other)?;
+        let data = snapshot.to_bytes().map_err(io::Error::other)?;
 
         let snapshot_id = format!("snap-{}-{}", last_applied_term, last_applied_index);
 

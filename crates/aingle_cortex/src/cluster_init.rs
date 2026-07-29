@@ -103,11 +103,10 @@ impl ClusterConfig {
                         i += 1;
                     }
                 }
-                "--cluster-tls-key"
-                    if i + 1 < args.len() => {
-                        cfg.tls_key = Some(args[i + 1].clone());
-                        i += 1;
-                    }
+                "--cluster-tls-key" if i + 1 < args.len() => {
+                    cfg.tls_key = Some(args[i + 1].clone());
+                    i += 1;
+                }
                 _ => {}
             }
             i += 1;

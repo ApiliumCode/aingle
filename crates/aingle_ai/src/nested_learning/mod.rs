@@ -275,8 +275,11 @@ mod tests {
 
     #[test]
     fn test_meta_level_update() {
-        let mut config = NestedConfig::default();
-        config.meta_update_interval = 5; // Update every 5 blocks
+        // Update every 5 blocks
+        let config = NestedConfig {
+            meta_update_interval: 5,
+            ..Default::default()
+        };
         let mut nested = NestedLearning::new(config);
 
         let stats = BlockStats::default();

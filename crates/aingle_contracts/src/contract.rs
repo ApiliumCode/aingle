@@ -13,8 +13,7 @@ use crate::error::{ContractError, Result};
 use crate::types::{Address, ContractId};
 
 /// Function visibility/mutability
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FunctionType {
     /// Read-only function (view)
     View,
@@ -28,7 +27,6 @@ pub enum FunctionType {
     /// Constructor (called once on deploy)
     Constructor,
 }
-
 
 /// Contract function definition
 #[derive(Debug, Clone, Serialize, Deserialize)]

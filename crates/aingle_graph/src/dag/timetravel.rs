@@ -49,6 +49,7 @@ pub struct DagDiff {
 /// Errors from individual insert/delete operations are intentionally ignored:
 /// - Duplicate inserts are expected (same triple in multiple actions).
 /// - Deletes of already-deleted triples are expected after pruning.
+///
 /// These are not failures — they're inherent to replaying a DAG.
 pub(crate) fn replay_payload(db: &crate::GraphDB, payload: &DagPayload) -> crate::Result<()> {
     match payload {

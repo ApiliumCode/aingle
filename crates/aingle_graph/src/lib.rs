@@ -1108,10 +1108,9 @@ impl GraphDB {
         let mut deleted = 0usize;
         for triple in all {
             if let Some(name) = triple.subject.as_name() {
-                if name.starts_with(prefix)
-                    && self.delete(&triple.id())? {
-                        deleted += 1;
-                    }
+                if name.starts_with(prefix) && self.delete(&triple.id())? {
+                    deleted += 1;
+                }
             }
         }
         Ok(deleted)

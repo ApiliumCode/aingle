@@ -13,8 +13,7 @@
 
 use kaneru::{
     ActionResult, ActionType, Goal, GoalSelectionStrategy, KaneruAgent, KaneruConfig,
-    LearningAlgorithm, LearningConfig, Observation, OperationMode, Outcome,
-    Priority,
+    LearningAlgorithm, LearningConfig, Observation, OperationMode, Outcome, Priority,
 };
 
 fn main() {
