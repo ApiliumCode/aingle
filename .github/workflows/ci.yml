@@ -3,8 +3,11 @@ name: AIngle CI
 on:
   push:
     branches: [ main, dev ]
+  # No branch filter on pull_request, on purpose. Filtering to [main, dev] meant
+  # a PR onto any other branch ran NO checks at all — so a stack of dependent
+  # PRs was invisible to CI until each one was retargeted, which is exactly when
+  # it is too late to learn something. Every PR gets the same gate.
   pull_request:
-    branches: [ main, dev ]
 
 env:
   CARGO_TERM_COLOR: always
