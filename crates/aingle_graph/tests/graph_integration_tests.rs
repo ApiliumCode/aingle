@@ -581,7 +581,7 @@ fn test_different_value_types() {
     db.insert(Triple::new(
         NodeId::named("node:1"),
         Predicate::named("float_val"),
-        Value::float(3.14),
+        Value::float(2.5),
     ))
     .unwrap();
 

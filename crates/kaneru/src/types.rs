@@ -293,8 +293,8 @@ mod tests {
 
     #[test]
     fn test_value_conversions() {
-        let v = Value::Float(3.14);
-        assert!((v.as_f64().unwrap() - 3.14).abs() < 0.001);
+        let v = Value::Float(2.5);
+        assert!((v.as_f64().unwrap() - 2.5).abs() < 0.001);
 
         let v = Value::Int(42);
         assert_eq!(v.as_i64().unwrap(), 42);
@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(Value::Bool(true).as_string(), "true");
         assert_eq!(Value::Bool(false).as_string(), "false");
         assert_eq!(Value::Int(42).as_string(), "42");
-        assert_eq!(Value::Float(3.14).as_string(), "3.14");
+        assert_eq!(Value::Float(2.5).as_string(), "2.5");
         assert_eq!(Value::String("test".to_string()).as_string(), "test");
     }
 
@@ -393,9 +393,9 @@ mod tests {
 
     #[test]
     fn test_value_from_f64() {
-        let v: Value = 3.14f64.into();
+        let v: Value = 2.5f64.into();
         if let Value::Float(f) = v {
-            assert!((f - 3.14).abs() < 0.001);
+            assert!((f - 2.5).abs() < 0.001);
         } else {
             panic!("Expected Float");
         }

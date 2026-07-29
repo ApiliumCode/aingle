@@ -590,9 +590,11 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
 
         let stats = pm.get_stats();
-        // At least one metric should be non-zero
-        assert!(stats.uptime_secs >= 0);
-        assert!(stats.time_in_balanced >= 0);
+        // These counters are unsigned, so the old `>= 0` pair held always. Assert
+        // the invariant that can actually break instead: time spent in one
+        // profile cannot exceed the total uptime, and energy is never negative.
+        assert!(stats.time_in_balanced <= stats.uptime_secs);
+        assert!(stats.energy_consumed_mwh >= 0.0);
     }
 
     #[test]

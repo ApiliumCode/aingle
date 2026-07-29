@@ -260,10 +260,11 @@ fn test_power_stats_tracking() {
     pm.set_power_profile(PowerProfile::LowPower);
     let stats = pm.get_stats();
 
-    // Stats should be valid (non-negative)
-    assert!(stats.uptime_secs >= 0);
-    assert!(stats.time_in_high_performance >= 0);
-    assert!(stats.time_in_low_power >= 0);
+    // These counters are unsigned, so "non-negative" was true by construction
+    // and asserted nothing. The real invariant: time attributed to the profiles
+    // this test drove cannot exceed the total uptime.
+    assert!(stats.time_in_high_performance <= stats.uptime_secs);
+    assert!(stats.time_in_low_power <= stats.uptime_secs);
 }
 
 #[test]
@@ -400,7 +401,9 @@ fn test_complete_iot_device_workflow() {
 
     // 8. Get statistics
     let power_stats = power_manager.get_stats();
-    assert!(power_stats.uptime_secs >= 0);
+    // `uptime_secs` is unsigned; the old `>= 0` asserted nothing. Energy is the
+    // figure this end-to-end run can actually get wrong.
+    assert!(power_stats.energy_consumed_mwh >= 0.0);
 
     let ota_stats = ota_manager.stats();
     assert_eq!(ota_stats.updates_applied, 0);
