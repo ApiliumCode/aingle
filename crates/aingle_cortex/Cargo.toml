@@ -10,8 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "api", "graphql", "sparql", "rest"]
 categories = ["web-programming", "database"]
 edition = "2021"
-rust-version = "1.83"
-
+rust-version.workspace = true
 [features]
 default = ["rest", "sparql", "auth", "dag"]
 rest = []
