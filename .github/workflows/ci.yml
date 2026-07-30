@@ -3,8 +3,11 @@ name: AIngle CI
 on:
   push:
     branches: [ main, dev ]
+  # No branch filter on pull_request, on purpose. Filtering to [main, dev] meant
+  # a PR onto any other branch ran NO checks at all — so a stack of dependent
+  # PRs was invisible to CI until each one was retargeted, which is exactly when
+  # it is too late to learn something. Every PR gets the same gate.
   pull_request:
-    branches: [ main, dev ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -86,8 +89,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
 
+      # The bar CLAUDE.md declares as `make lint`, which nothing enforced.
+      #
+      # This step used to read `-p aingle_minimal --features rest -- -W
+      # clippy::all`: one crate of seventeen, the library target only, and
+      # warnings that did not fail anything. It reported green while 54 lints
+      # accumulated across the workspace — among them a benchmark that had not
+      # compiled in months, and assertions that compared unsigned counters
+      # against zero and therefore passed no matter what the code did.
+      #
+      # `--all-targets` is load-bearing, not thoroughness for its own sake: it
+      # is what covers tests, benches and examples, and it is the only reason
+      # the dead benchmark was found at all.
       - name: Run Clippy
-        run: cargo clippy -p aingle_minimal --features rest -- -W clippy::all
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # No separate "did it really compile?" step: with `--workspace` and
+      # `-D warnings`, a member that fails to build makes THIS step exit
+      # non-zero. The companion-repo failure that inspired one was a job that
+      # went red for a lint and stayed red for a build script nobody read to
+      # the bottom of — a reading problem, not a missing check.
 
   # Build check
   build:

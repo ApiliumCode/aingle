@@ -41,8 +41,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut config = CortexConfig::default();
-    config.embed_model = std::env::var("AINGLE_EMBED_MODEL").ok();
+    let mut config = CortexConfig {
+        embed_model: std::env::var("AINGLE_EMBED_MODEL").ok(),
+        ..Default::default()
+    };
 
     // Simple argument parsing
     let mut i = 1;

@@ -42,6 +42,16 @@ pub enum ExportFormat {
 
 impl ExportFormat {
     /// Parse from string (case-insensitive).
+    ///
+    /// Shadows `std::str::FromStr::from_str`, which clippy rightly flags: a
+    /// caller writing `ExportFormat::from_str` cannot tell which one they get,
+    /// and this one returns `Option` where the trait returns `Result`.
+    ///
+    /// The fix is to implement `FromStr` properly with an error type and drop
+    /// this inherent method. It is cheap — there is exactly one caller outside
+    /// this module's own tests — but it changes a public signature, so it is a
+    /// deliberate change with its own review and not a line in a lint sweep.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "dot" | "graphviz" => Some(Self::Dot),

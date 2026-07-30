@@ -139,8 +139,10 @@ mod tests {
 
     #[test]
     fn rejects_invalid_port() {
-        let mut cfg = P2pConfig::default();
-        cfg.port = 0;
+        let mut cfg = P2pConfig {
+            port: 0,
+            ..Default::default()
+        };
         assert!(cfg.validate().is_err());
 
         cfg.port = 80;
@@ -175,8 +177,10 @@ mod tests {
 
     #[test]
     fn rejects_empty_seed() {
-        let mut cfg = P2pConfig::default();
-        cfg.seed = Some(String::new());
+        let cfg = P2pConfig {
+            seed: Some(String::new()),
+            ..Default::default()
+        };
         assert!(cfg.validate().is_err());
     }
 }

@@ -155,7 +155,10 @@ mod tests {
             .iter()
             .any(|t| t.predicate == "status" && t.object == ObjectValue::Text("done".into())));
         assert_eq!(
-            ex.triples.iter().filter(|t| t.predicate == "status").count(),
+            ex.triples
+                .iter()
+                .filter(|t| t.predicate == "status")
+                .count(),
             2,
             "exactly the two real tasks become task nodes"
         );
@@ -180,7 +183,10 @@ mod tests {
         // A `🔁 every …` task records its recurrence as a `recur` fact on the
         // same stable task node (encoded compactly, e.g. `1m`), so MCP/queries
         // can see the repeat cadence. The reschedule itself is app-side.
-        let ex = extract("todos.md", "- [ ] rent \u{1F4C5} 2026-08-01 \u{1F501} every month\n");
+        let ex = extract(
+            "todos.md",
+            "- [ ] rent \u{1F4C5} 2026-08-01 \u{1F501} every month\n",
+        );
         let recur = ex
             .triples
             .iter()
@@ -206,7 +212,10 @@ mod tests {
             .find(|t| t.predicate == "is_a" && t.object == ObjectValue::Text("card".into()))
             .expect("card is_a triple");
         let subj = isa.subject.clone();
-        assert_eq!(subj, "card:deck.md#cafef00dcafe", "id= in comment is sticky");
+        assert_eq!(
+            subj, "card:deck.md#cafef00dcafe",
+            "id= in comment is sticky"
+        );
         let has = |p: &str, o: ObjectValue| {
             ex.triples
                 .iter()
@@ -293,7 +302,10 @@ mod tests {
                   - [ ] another real task\n";
         let ex = extract("doc.md", md);
         assert_eq!(
-            ex.triples.iter().filter(|t| t.predicate == "status").count(),
+            ex.triples
+                .iter()
+                .filter(|t| t.predicate == "status")
+                .count(),
             2,
             "only the two real tasks become task nodes"
         );
@@ -305,9 +317,8 @@ mod tests {
             .triples
             .iter()
             .any(|t| t.predicate == "tagged" && t.object == ObjectValue::Text("notatag".into())));
-        assert!(!ex.triples.iter().any(
-            |t| t.predicate == "has_section" && t.object == ObjectValue::Text("not a heading".into())
-        ));
+        assert!(!ex.triples.iter().any(|t| t.predicate == "has_section"
+            && t.object == ObjectValue::Text("not a heading".into())));
         // The genuine heading outside the fence survives.
         assert!(ex
             .triples
@@ -326,7 +337,11 @@ mod tests {
             .filter(|t| t.predicate == "status")
             .map(|t| t.subject.clone())
             .collect();
-        assert_eq!(subjects.len(), 2, "identical task text must not collapse to one node");
+        assert_eq!(
+            subjects.len(),
+            2,
+            "identical task text must not collapse to one node"
+        );
         assert!(ex
             .triples
             .iter()
@@ -340,7 +355,10 @@ mod tests {
     #[test]
     fn task_lines_still_yield_note_links_and_tags() {
         // A task line's wikilinks/tags must still attach to the note itself.
-        let ex = extract("todos.md", "- [ ] Follow up on [[sled]] about #durability\n");
+        let ex = extract(
+            "todos.md",
+            "- [ ] Follow up on [[sled]] about #durability\n",
+        );
         assert!(ex.triples.iter().any(|t| t.subject == "todos.md"
             && t.predicate == "links_to"
             && t.object == ObjectValue::Node("sled".into())));
