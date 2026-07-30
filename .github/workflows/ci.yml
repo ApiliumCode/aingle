@@ -3,13 +3,33 @@ name: AIngle CI
 on:
   push:
     branches: [ main, dev ]
+  # No branch filter on pull_request, on purpose. Filtering to [main, dev] meant
+  # a PR onto any other branch ran NO checks at all — so a stack of dependent
+  # PRs was invisible to CI until each one was retargeted, which is exactly when
+  # it is too late to learn something. Every PR gets the same gate.
   pull_request:
-    branches: [ main, dev ]
 
 env:
+  # PINNED, not `stable`. On 2026-07-29 the runner moved to clippy 1.97, which
+  # added `question_mark`, and the lint gate went red with no commit behind it —
+  # a compiler release is not a change to this repository and must not be able
+  # to fail its CI.
+  #
+  # Pinning here rather than in a `rust-toolchain.toml`: the toolchain action
+  # exports RUSTUP_TOOLCHAIN, which takes precedence over that file, so the
+  # pin would be ignored in exactly the place it is needed. The file exists too,
+  # for local parity.
+  #
+  # To bump: raise this, run `cargo +<new> clippy --workspace --all-targets --
+  # -D warnings` and `cargo +<new> fmt --all -- --check` locally first, and fix
+  # whatever the new release added in the same commit.
+  RUST_VERSION: "1.97.0"
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  MSRV: "1.85"
+  # The version this project promises to build on, verified by the job below
+  # against the WHOLE workspace. Keep in step with `rust-version` in the root
+  # Cargo.toml, which is where consumers read it.
+  MSRV: "1.91"
 
 jobs:
   # MSRV (Minimum Supported Rust Version) check
@@ -40,8 +60,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-msrv-
 
+      # `-p aingle_minimal` before, which is the one member with no wasmer in
+      # its dependency tree — so it passed at 1.85 while the workspace could
+      # not build below 1.91. A promise nothing checks is not a promise.
       - name: Check MSRV
-        run: cargo check -p aingle_minimal
+        run: cargo check --workspace --all-targets
 
   # Format check
   fmt:
@@ -51,8 +74,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
 
       - name: Check formatting
@@ -66,8 +90,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: clippy
 
       - name: Install system dependencies
@@ -86,8 +111,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
 
+      # The bar CLAUDE.md declares as `make lint`, which nothing enforced.
+      #
+      # This step used to read `-p aingle_minimal --features rest -- -W
+      # clippy::all`: one crate of seventeen, the library target only, and
+      # warnings that did not fail anything. It reported green while 54 lints
+      # accumulated across the workspace — among them a benchmark that had not
+      # compiled in months, and assertions that compared unsigned counters
+      # against zero and therefore passed no matter what the code did.
+      #
+      # `--all-targets` is load-bearing, not thoroughness for its own sake: it
+      # is what covers tests, benches and examples, and it is the only reason
+      # the dead benchmark was found at all.
       - name: Run Clippy
-        run: cargo clippy -p aingle_minimal --features rest -- -W clippy::all
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # No separate "did it really compile?" step: with `--workspace` and
+      # `-D warnings`, a member that fails to build makes THIS step exit
+      # non-zero. The companion-repo failure that inspired one was a job that
+      # went red for a lint and stayed red for a build script nobody read to
+      # the bottom of — a reading problem, not a missing check.
 
   # Build check
   build:
@@ -97,7 +140,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -130,7 +175,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -162,7 +209,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -206,7 +255,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install cargo-audit
         run: cargo install cargo-audit
@@ -224,8 +275,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: llvm-tools-preview
 
       - name: Install system dependencies
@@ -267,7 +319,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -306,7 +360,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -335,7 +391,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |

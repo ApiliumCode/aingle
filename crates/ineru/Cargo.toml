@@ -1,6 +1,6 @@
 [package]
 name = "ineru"
-version = "0.7.5"
+version = "0.7.6"
 description = "Ineru: Neural-inspired memory system for AIngle AI agents"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -10,8 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "ai", "memory", "neural", "agents"]
 categories = ["science", "data-structures"]
 edition = "2021"
-rust-version = "1.83"
-
+rust-version.workspace = true
 [features]
 default = ["std"]
 std = []

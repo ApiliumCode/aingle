@@ -36,7 +36,7 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
         let triples = {
             let all = graph
                 .find(aingle_graph::TriplePattern::any())
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| io::Error::other(e.to_string()))?;
 
             all.into_iter()
                 .map(|t| TripleSnapshot {
@@ -49,7 +49,7 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
 
         let ineru_ltm = memory
             .export_snapshot()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         // Drop locks before serialization to reduce hold time
         drop(graph);
@@ -93,14 +93,12 @@ impl RaftSnapshotBuilder<C> for CortexSnapshotBuilder {
             checksum: String::new(),
         };
 
-        let data = snapshot
-            .to_bytes()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let data = snapshot.to_bytes().map_err(io::Error::other)?;
 
         let snapshot_id = format!("snap-{}-{}", last_applied_term, last_applied_index);
 
         let meta = SnapshotMeta {
-            last_log_id: self.last_applied.clone(),
+            last_log_id: self.last_applied,
             last_membership: self.last_membership.clone(),
             snapshot_id,
         };

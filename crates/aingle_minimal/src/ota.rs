@@ -558,7 +558,7 @@ mod hex {
     }
 
     pub fn decode(s: &str) -> Result<Vec<u8>, String> {
-        if s.len() % 2 != 0 {
+        if !s.len().is_multiple_of(2) {
             return Err("Invalid hex string length".to_string());
         }
 
@@ -711,7 +711,7 @@ mod tests {
         };
         let cloned = update.clone();
         assert_eq!(cloned.version, "2.0.0");
-        assert_eq!(cloned.critical, true);
+        assert!(cloned.critical);
 
         let debug = format!("{:?}", update);
         assert!(debug.contains("UpdateInfo"));

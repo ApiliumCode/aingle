@@ -348,7 +348,7 @@ impl RuleEngine {
     /// * `bindings` - Mutable `Bindings` to accumulate variable assignments.
     /// * `depth` - Current recursion depth to prevent stack overflow and enforce `max_depth`.
     /// * `visited` - A `HashSet` to keep track of goals already visited in the current proof path
-    ///               to detect and prevent inference loops.
+    ///   to detect and prevent inference loops.
     /// * `result` - The mutable `BackwardChainResult` to record proof steps.
     ///
     /// # Returns

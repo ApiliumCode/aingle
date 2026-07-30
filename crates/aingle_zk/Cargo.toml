@@ -1,6 +1,6 @@
 [package]
 name = "aingle_zk"
-version = "0.8.0"
+version = "0.9.0"
 description = "Zero-Knowledge Proofs for AIngle - privacy-preserving cryptographic primitives"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -10,8 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "zkp", "zero-knowledge", "privacy", "cryptography"]
 categories = ["cryptography"]
 edition = "2021"
-rust-version = "1.83"
-
+rust-version.workspace = true
 [features]
 default = ["std"]
 std = []

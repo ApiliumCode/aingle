@@ -96,7 +96,7 @@ fn test_executable_goals() {
     let executable = solver.get_executable_goals();
 
     // Only the simple task and subtask should be executable
-    assert!(executable.len() >= 1);
+    assert!(!executable.is_empty());
     assert!(executable.iter().any(|g| g.id == id1));
 }
 

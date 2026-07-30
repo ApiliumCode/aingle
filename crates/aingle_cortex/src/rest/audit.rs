@@ -63,11 +63,9 @@ impl AuditLog {
         // Read existing entries from JSONL file
         if let Ok(file) = std::fs::File::open(&path) {
             let reader = std::io::BufReader::new(file);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    if let Ok(entry) = serde_json::from_str::<AuditEntry>(&line) {
-                        entries.push(entry);
-                    }
+            for line in reader.lines().map_while(Result::ok) {
+                if let Ok(entry) = serde_json::from_str::<AuditEntry>(&line) {
+                    entries.push(entry);
                 }
             }
             // Keep only the last max_entries
@@ -190,6 +188,10 @@ impl AuditLog {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
 impl Default for AuditLog {
@@ -300,7 +302,7 @@ mod tests {
         }
         // Should have evicted some entries
         assert!(log.len() <= 15);
-        assert!(log.len() > 0);
+        assert!(!log.is_empty());
     }
 
     #[test]

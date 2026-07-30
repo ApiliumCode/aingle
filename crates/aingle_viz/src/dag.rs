@@ -45,6 +45,8 @@
 //! The [`DagView::to_d3_json`] method converts the DAG to a format compatible with
 //! D3.js force-directed graphs, making it easy to visualize in a web browser.
 
+use std::cmp::Reverse;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -662,7 +664,7 @@ impl DagView {
     /// ```
     pub fn recent_nodes(&self, limit: usize) -> Vec<&DagNode> {
         let mut nodes: Vec<_> = self.nodes.iter().collect();
-        nodes.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        nodes.sort_by_key(|n| Reverse(n.timestamp));
         nodes.into_iter().take(limit).collect()
     }
 

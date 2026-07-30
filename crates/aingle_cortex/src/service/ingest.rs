@@ -1358,19 +1358,37 @@ mod tests {
         let state = enabled_state().await;
 
         // Two open tasks.
-        write(dir.path(), "todos.md", "# Todos\n\n- [ ] Task A\n- [ ] Task B\n");
+        write(
+            dir.path(),
+            "todos.md",
+            "# Todos\n\n- [ ] Task A\n- [ ] Task B\n",
+        );
         ingest_path(&state, path, None).await.unwrap();
         let rows = list_tasks(&state, None).await;
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.status == "todo"));
 
         // Complete A, keep B — re-ingest the changed note.
-        write(dir.path(), "todos.md", "# Todos\n\n- [x] Task A\n- [ ] Task B\n");
+        write(
+            dir.path(),
+            "todos.md",
+            "# Todos\n\n- [x] Task A\n- [ ] Task B\n",
+        );
         ingest_path(&state, path, None).await.unwrap();
         let rows = list_tasks(&state, None).await;
-        assert_eq!(rows.len(), 2, "still exactly two tasks — no orphans or duplicates");
-        assert_eq!(rows.iter().find(|r| r.text == "Task A").unwrap().status, "done");
-        assert_eq!(rows.iter().find(|r| r.text == "Task B").unwrap().status, "todo");
+        assert_eq!(
+            rows.len(),
+            2,
+            "still exactly two tasks — no orphans or duplicates"
+        );
+        assert_eq!(
+            rows.iter().find(|r| r.text == "Task A").unwrap().status,
+            "done"
+        );
+        assert_eq!(
+            rows.iter().find(|r| r.text == "Task B").unwrap().status,
+            "todo"
+        );
 
         // The old `status=todo` triple for A must be gone (exactly one remains).
         {
@@ -1389,7 +1407,11 @@ mod tests {
                         .with_predicate(Predicate::named("status")),
                 )
                 .unwrap();
-            assert_eq!(statuses.len(), 1, "no stale status triple should remain for A");
+            assert_eq!(
+                statuses.len(),
+                1,
+                "no stale status triple should remain for A"
+            );
         }
 
         // Remove A from the note — its task node is retracted, B survives.
@@ -1425,9 +1447,10 @@ mod tests {
         assert_eq!(rows.len(), 2);
 
         // Snapshot Q2's `card_due` triple id — it must NOT change when only Q1 is reviewed.
-        let q2_due_id_before = card_field_triple_id(&state, "card:deck.md#bbbbbbbbbbbb", "card_due")
-            .await
-            .expect("Q2 card_due before");
+        let q2_due_id_before =
+            card_field_triple_id(&state, "card:deck.md#bbbbbbbbbbbb", "card_due")
+                .await
+                .expect("Q2 card_due before");
 
         // Review Q1: reschedule it (new due + ef), keep its front text and id.
         write(

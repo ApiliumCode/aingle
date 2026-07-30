@@ -174,8 +174,8 @@ impl AiTransaction {
 
         // Entry type hash features (first 4 bytes as float)
         let type_hash = pattern_id(self.entry_type.as_bytes());
-        for i in 0..4 {
-            features.push(type_hash[i] as f32 / 255.0);
+        for byte in type_hash.iter().take(4) {
+            features.push(*byte as f32 / 255.0);
         }
 
         // Agent features (first 4 bytes)
@@ -287,6 +287,6 @@ mod tests {
 
         let features = tx.extract_features();
         assert_eq!(features.len(), 16);
-        assert!(features.iter().all(|&f| f >= 0.0 && f <= 2.0));
+        assert!(features.iter().all(|&f| (0.0..=2.0).contains(&f)));
     }
 }

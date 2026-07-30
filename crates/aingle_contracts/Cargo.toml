@@ -1,6 +1,6 @@
 [package]
 name = "aingle_contracts"
-version = "0.7.1"
+version = "0.7.2"
 description = "Smart Contracts DSL and WASM Runtime for AIngle"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -10,8 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "smart-contracts", "wasm", "dsl", "blockchain"]
 categories = ["wasm", "database"]
 edition = "2021"
-rust-version = "1.83"
-
+rust-version.workspace = true
 [features]
 default = ["runtime"]
 runtime = ["dep:wasmer"]

@@ -93,7 +93,10 @@ impl NestedLearning {
         self.tx_count += 1;
 
         // 4. Check if optimizer-level update is needed
-        if self.tx_count % self.config.optimizer_update_interval == 0 {
+        if self
+            .tx_count
+            .is_multiple_of(self.config.optimizer_update_interval)
+        {
             debug!(
                 tx_count = self.tx_count,
                 "Triggering optimizer-level update"
@@ -114,7 +117,10 @@ impl NestedLearning {
         self.block_count += 1;
 
         // Check if meta-level update is needed
-        if self.block_count % self.config.meta_update_interval == 0 {
+        if self
+            .block_count
+            .is_multiple_of(self.config.meta_update_interval)
+        {
             debug!(
                 block_count = self.block_count,
                 "Triggering meta-level update"
@@ -259,7 +265,7 @@ mod tests {
         let tx = make_test_tx(1);
         let result = nested.process(&tx).unwrap();
 
-        assert!(result.processed.features.len() > 0);
+        assert!(!result.processed.features.is_empty());
     }
 
     #[test]
@@ -267,7 +273,7 @@ mod tests {
         let config = NestedConfig::default();
         let nested = NestedLearning::new(config);
 
-        let batch: Vec<_> = (0..10).map(|i| make_test_tx(i)).collect();
+        let batch: Vec<_> = (0..10).map(make_test_tx).collect();
         let plan = nested.get_validation_plan(&batch);
 
         assert_eq!(plan.order.len(), 10);
@@ -275,8 +281,11 @@ mod tests {
 
     #[test]
     fn test_meta_level_update() {
-        let mut config = NestedConfig::default();
-        config.meta_update_interval = 5; // Update every 5 blocks
+        // Update every 5 blocks
+        let config = NestedConfig {
+            meta_update_interval: 5,
+            ..Default::default()
+        };
         let mut nested = NestedLearning::new(config);
 
         let stats = BlockStats::default();

@@ -423,8 +423,10 @@ mod tests {
         };
         let result = agent.query(&query);
 
-        // Should have some results
-        assert!(result.relevant_contexts.len() > 0 || result.memory_matches.len() >= 0);
+        // Should have some results. The second half used to read
+        // `memory_matches.len() >= 0`, which is true for every usize — so the
+        // assertion passed even when the query returned nothing at all.
+        assert!(!result.relevant_contexts.is_empty() || !result.memory_matches.is_empty());
     }
 
     #[test]

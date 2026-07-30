@@ -872,10 +872,12 @@ impl Agent for SimpleAgent {
         self.stats.actions_executed += 1;
 
         // Store state-action pair for learning
-        if self.config.learning_enabled && self.last_observation.is_some() {
-            let state_id = StateId::from_observation(self.last_observation.as_ref().unwrap());
-            let action_id = ActionId::from_action(&action);
-            self.last_state_action = Some((state_id, action_id));
+        if self.config.learning_enabled {
+            if let Some(observation) = self.last_observation.as_ref() {
+                let state_id = StateId::from_observation(observation);
+                let action_id = ActionId::from_action(&action);
+                self.last_state_action = Some((state_id, action_id));
+            }
         }
 
         // Simple execution - just log and return success

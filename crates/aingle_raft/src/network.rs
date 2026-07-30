@@ -345,7 +345,7 @@ impl CortexNetworkConnection {
                 .as_millis()
         );
 
-        let num_chunks = (payload.len() + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        let num_chunks = payload.len().div_ceil(CHUNK_SIZE);
         tracing::info!(
             target_node = self.target,
             total_bytes = total_size,

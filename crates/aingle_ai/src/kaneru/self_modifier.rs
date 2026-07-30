@@ -359,8 +359,10 @@ mod tests {
 
     #[test]
     fn test_rule_evolution() {
-        let mut config = KaneruConfig::default();
-        config.max_rules = 10;
+        let config = KaneruConfig {
+            max_rules: 10,
+            ..Default::default()
+        };
         let mut modifier = SelfModifier::new(&config);
 
         // Simulate good outcomes to trigger rule creation

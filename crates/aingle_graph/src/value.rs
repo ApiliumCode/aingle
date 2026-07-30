@@ -481,8 +481,8 @@ mod tests {
         let int_val = Value::integer(42);
         assert_eq!(int_val.as_integer(), Some(42));
 
-        let float_val = Value::float(3.14);
-        assert_eq!(float_val.as_float(), Some(3.14));
+        let float_val = Value::float(2.5);
+        assert_eq!(float_val.as_float(), Some(2.5));
     }
 
     #[test]

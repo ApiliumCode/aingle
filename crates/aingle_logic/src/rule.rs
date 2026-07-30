@@ -6,6 +6,8 @@
 //! Rules are the fundamental building blocks of logical validation.
 //! They define conditions that must be met and actions to take.
 
+use std::cmp::Reverse;
+
 use aingle_graph::{NodeId, Predicate, Triple, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -623,7 +625,7 @@ impl RuleSet {
     /// Get all enabled rules sorted by priority
     pub fn enabled_sorted(&self) -> Vec<&Rule> {
         let mut rules: Vec<_> = self.rules.iter().filter(|r| r.enabled).collect();
-        rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+        rules.sort_by_key(|r| Reverse(r.priority));
         rules
     }
 

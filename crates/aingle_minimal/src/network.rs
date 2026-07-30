@@ -12,6 +12,8 @@
 //! - **QUIC**: Future support for reliable transport
 //! - **Mesh**: Future support for mesh networking
 
+use std::cmp::Reverse;
+
 use crate::config::{GossipConfig, TransportConfig};
 use crate::discovery::Discovery;
 use crate::error::{Error, Result};
@@ -565,7 +567,7 @@ impl Network {
     /// Get peers for gossip (best quality first)
     pub fn gossip_peers(&self) -> Vec<SocketAddr> {
         let mut peers: Vec<_> = self.active_peers().into_iter().collect();
-        peers.sort_by(|a, b| b.quality.cmp(&a.quality));
+        peers.sort_by_key(|p| Reverse(p.quality));
         peers
             .into_iter()
             .take(self.gossip_config.max_peers)
@@ -905,8 +907,10 @@ mod tests {
 
     #[test]
     fn test_gossip_timing() {
-        let mut config = GossipConfig::default();
-        config.loop_delay = Duration::from_millis(10);
+        let config = GossipConfig {
+            loop_delay: Duration::from_millis(10),
+            ..Default::default()
+        };
 
         let mut gossip = GossipManager::new(config);
         assert!(!gossip.should_gossip()); // Just created
@@ -1166,8 +1170,10 @@ mod tests {
     #[test]
     fn test_network_gossip_peers_sorting() {
         let config = TransportConfig::Memory;
-        let mut gossip = GossipConfig::default();
-        gossip.max_peers = 10;
+        let gossip = GossipConfig {
+            max_peers: 10,
+            ..Default::default()
+        };
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
         // Add multiple peers
@@ -1189,8 +1195,10 @@ mod tests {
     #[test]
     fn test_network_gossip_peers_limited() {
         let config = TransportConfig::Memory;
-        let mut gossip = GossipConfig::default();
-        gossip.max_peers = 2;
+        let gossip = GossipConfig {
+            max_peers: 2,
+            ..Default::default()
+        };
         let mut network = Network::new(config, gossip, "test-node".to_string());
 
         // Add more peers than limit
@@ -1260,8 +1268,10 @@ mod tests {
 
     #[test]
     fn test_gossip_manager_complete_failure() {
-        let mut config = GossipConfig::default();
-        config.loop_delay = Duration::from_millis(10);
+        let config = GossipConfig {
+            loop_delay: Duration::from_millis(10),
+            ..Default::default()
+        };
 
         let mut manager = GossipManager::new(config);
 
@@ -1589,9 +1599,11 @@ mod tests {
 
     #[test]
     fn test_gossip_manager_config() {
-        let mut config = GossipConfig::default();
-        config.loop_delay = Duration::from_millis(100);
-        config.max_peers = 5;
+        let config = GossipConfig {
+            loop_delay: Duration::from_millis(100),
+            max_peers: 5,
+            ..Default::default()
+        };
 
         let manager = GossipManager::new(config.clone());
 

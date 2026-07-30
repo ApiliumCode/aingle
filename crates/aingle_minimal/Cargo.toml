@@ -1,6 +1,6 @@
 [package]
 name = "aingle_minimal"
-version = "0.7.1"
+version = "0.7.2"
 description = "Ultra-light AIngle node for IoT devices (<1MB RAM)"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -10,8 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "iot", "dag", "embedded"]
 categories = ["embedded", "network-programming"]
 edition = "2021"
-rust-version = "1.85"
-
+rust-version.workspace = true
 [features]
 default = ["std", "coap", "sqlite"]
 std = []

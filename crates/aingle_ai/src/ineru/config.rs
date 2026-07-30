@@ -135,12 +135,16 @@ mod tests {
 
     #[test]
     fn test_validation() {
-        let mut config = IneruConfig::default();
-        config.window_size = 0;
+        let config = IneruConfig {
+            window_size: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config = IneruConfig::default();
-        config.surprise_threshold = 1.5;
+        let config = IneruConfig {
+            surprise_threshold: 1.5,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

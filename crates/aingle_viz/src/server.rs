@@ -729,8 +729,8 @@ mod tests {
         let mut dag = DagView::new();
         for i in 0..5 {
             dag.add_node(
-                DagNodeBuilder::new(&format!("node{}", i), NodeType::Entry)
-                    .label(&format!("Node {}", i))
+                DagNodeBuilder::new(format!("node{}", i), NodeType::Entry)
+                    .label(format!("Node {}", i))
                     .build(),
             );
         }

@@ -244,7 +244,11 @@ mod tests {
         vec![
             (format!("task:n.md#{id}"), "is_a".into(), "task".into()),
             (format!("task:n.md#{id}"), "status".into(), status.into()),
-            (format!("task:n.md#{id}"), "task_text".into(), id.to_uppercase()),
+            (
+                format!("task:n.md#{id}"),
+                "task_text".into(),
+                id.to_uppercase(),
+            ),
             (format!("task:n.md#{id}"), date_pred.into(), date.into()),
             (format!("task:n.md#{id}"), "in_note".into(), "n.md".into()),
         ]
@@ -258,7 +262,7 @@ mod tests {
         rows.extend(task("c", "todo", "deadline", "2026-07-28")); // upcoming (≤+7)
         rows.extend(task("d", "todo", "deadline", "2026-08-30")); // beyond horizon
         rows.extend(task("e", "done", "deadline", "2026-07-20")); // excluded (done)
-        // f: open but undated → excluded from agenda
+                                                                  // f: open but undated → excluded from agenda
         rows.push(("task:n.md#f".into(), "is_a".into(), "task".into()));
         rows.push(("task:n.md#f".into(), "status".into(), "todo".into()));
         rows.push(("task:n.md#f".into(), "task_text".into(), "F".into()));
@@ -270,9 +274,24 @@ mod tests {
         let state = graph_with(&refs).await;
 
         let ag = super::agenda(&state, "2026-07-24", 7).await;
-        assert_eq!(ag.overdue.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), ["A"]);
-        assert_eq!(ag.today.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), ["B"]);
-        assert_eq!(ag.upcoming.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), ["C"]);
+        assert_eq!(
+            ag.overdue
+                .iter()
+                .map(|t| t.text.as_str())
+                .collect::<Vec<_>>(),
+            ["A"]
+        );
+        assert_eq!(
+            ag.today.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+            ["B"]
+        );
+        assert_eq!(
+            ag.upcoming
+                .iter()
+                .map(|t| t.text.as_str())
+                .collect::<Vec<_>>(),
+            ["C"]
+        );
     }
 
     #[tokio::test]
@@ -290,7 +309,10 @@ mod tests {
         let all = super::list_tasks(&state, None).await;
         assert_eq!(all.len(), 3);
         // sorted by due date: b(07-10) < a(07-20) < c(07-25)
-        assert_eq!(all.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), ["B", "A", "C"]);
+        assert_eq!(
+            all.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+            ["B", "A", "C"]
+        );
 
         let doing = super::list_tasks(&state, Some("doing")).await;
         assert_eq!(doing.len(), 1);
@@ -311,7 +333,10 @@ mod tests {
         ])
         .await;
         let ag = super::agenda(&state, "2026-07-24", 7).await;
-        assert!(ag.today.iter().any(|t| t.text == "Z"), "scheduled-today belongs in today");
+        assert!(
+            ag.today.iter().any(|t| t.text == "Z"),
+            "scheduled-today belongs in today"
+        );
         assert!(!ag.upcoming.iter().any(|t| t.text == "Z"));
     }
 

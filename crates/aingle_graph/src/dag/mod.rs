@@ -29,13 +29,11 @@ pub mod tips;
 pub use action::{
     DagAction, DagActionHash, DagPayload, MemoryOpKind, Provenance, TripleInsertPayload,
 };
-pub use canonical::{
-    CanonicalAction, CANONICAL_SPEC, HASH_ALG, SIGNATURE_ALG, SIGNED_MESSAGE,
-};
 #[cfg(feature = "sled-backend")]
 pub use backend::SledDagBackend;
 pub use backend::{DagBackend, MemoryDagBackend};
-pub use export::{DagGraph, ExportFormat};
+pub use canonical::{CanonicalAction, CANONICAL_SPEC, HASH_ALG, SIGNATURE_ALG, SIGNED_MESSAGE};
+pub use export::{DagGraph, ExportFormat, UnknownExportFormat};
 pub use pruning::{PruneResult, RetentionPolicy};
 #[cfg(feature = "dag-sign")]
 pub use signing::{DagSigningKey, DagVerifyingKey, VerifyResult};

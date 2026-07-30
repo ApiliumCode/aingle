@@ -191,16 +191,29 @@ impl TransactionClassifier {
             return 0.5;
         }
 
-        // Find min and second min distance
+        // Find min and second min distance.
+        //
+        // `total_cmp`, not `partial_cmp().unwrap()`: the latter PANICS on a NaN
+        // distance, which `l2_distance` yields from a centroid holding one. A
+        // total order also sorts NaN last, so a corrupt centroid cannot pass
+        // itself off as the nearest one.
         let mut sorted = distances.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(f32::total_cmp);
 
         let min_dist = sorted.first().copied().unwrap_or(1.0);
         let second_dist = sorted.get(1).copied().unwrap_or(min_dist);
 
+        // Nothing usable to measure a separation with. Answer what this function
+        // already answers when there are no centroids at all, rather than let
+        // the `> 0.0` test below fall through to 1.0 — which would report FULL
+        // confidence precisely when there is no information.
+        if !min_dist.is_finite() || !second_dist.is_finite() {
+            return 0.5;
+        }
+
         // Confidence based on separation
         if second_dist > 0.0 {
-            (1.0 - min_dist / second_dist).max(0.0).min(1.0)
+            (1.0 - min_dist / second_dist).clamp(0.0, 1.0)
         } else {
             1.0
         }
@@ -294,7 +307,7 @@ mod tests {
 
         // Process and update
         let tx = make_tx(1);
-        let processed = tl.process(tx.clone());
+        let _processed = tl.process(tx.clone());
 
         let outcome = ValidationOutcome {
             valid: true,
@@ -306,5 +319,35 @@ mod tests {
         // Subsequent processing should have updated classifier
         let processed2 = tl.process(tx);
         assert!(processed2.confidence > 0.0);
+    }
+
+    #[test]
+    fn a_nan_centroid_does_not_panic_and_does_not_win() {
+        // `partial_cmp().unwrap()` panicked here on any NaN distance, taking the
+        // process down from inside a confidence calculation.
+        let mut classifier = TransactionClassifier::new();
+        classifier.centroids.clear();
+        classifier.centroids.insert("good".into(), vec![0.0; 16]);
+        classifier
+            .centroids
+            .insert("corrupt".into(), vec![f32::NAN; 16]);
+
+        let c = classifier.confidence(&[0.5; 16]);
+
+        assert!(c.is_finite(), "confidence was {c}");
+        assert!((0.0..=1.0).contains(&c), "confidence {c} left its range");
+    }
+
+    #[test]
+    fn no_measurable_separation_reports_neutral_confidence_not_full() {
+        // With every distance unusable the old code fell through the
+        // `second_dist > 0.0` test and returned 1.0 — maximum confidence at the
+        // exact moment there was no information at all.
+        let mut classifier = TransactionClassifier::new();
+        classifier.centroids.clear();
+        classifier.centroids.insert("a".into(), vec![f32::NAN; 16]);
+        classifier.centroids.insert("b".into(), vec![f32::NAN; 16]);
+
+        assert_eq!(classifier.confidence(&[0.5; 16]), 0.5);
     }
 }

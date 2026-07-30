@@ -662,15 +662,15 @@ fn test_ring_topology_simulation() {
     let mut nodes_with_peers: Vec<_> = nodes.into_iter().collect();
 
     // Add peers in ring fashion
-    for i in 0..RING_SIZE {
+    for (i, node) in nodes_with_peers.iter_mut().enumerate() {
         let prev = if i == 0 { RING_SIZE - 1 } else { i - 1 };
         let next = (i + 1) % RING_SIZE;
 
         let prev_addr: SocketAddr = format!("192.168.1.{}:5683", prev + 1).parse().unwrap();
         let next_addr: SocketAddr = format!("192.168.1.{}:5683", next + 1).parse().unwrap();
 
-        nodes_with_peers[i].add_peer(prev_addr);
-        nodes_with_peers[i].add_peer(next_addr);
+        node.add_peer(prev_addr);
+        node.add_peer(next_addr);
     }
 
     // Verify each node has exactly 2 peers

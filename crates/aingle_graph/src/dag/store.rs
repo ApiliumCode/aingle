@@ -7,6 +7,8 @@
 //! In-memory indexes (author chain, affected triples) are rebuilt on startup
 //! from the backend, ensuring zero data loss across restarts.
 
+use std::cmp::Reverse;
+
 use super::action::{DagAction, DagActionHash, DagPayload, TripleInsertPayload};
 use super::backend::DagBackend;
 use super::pruning::{PruneResult, RetentionPolicy};
@@ -369,7 +371,7 @@ impl DagStore {
             .collect();
 
         // Sort by seq descending (most recent first)
-        entries.sort_by(|a, b| b.0.cmp(&a.0));
+        entries.sort_by_key(|e| Reverse(e.0));
         entries.truncate(limit);
         drop(idx);
 
@@ -407,7 +409,7 @@ impl DagStore {
         }
 
         // Sort by timestamp descending
-        result.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        result.sort_by_key(|a| Reverse(a.timestamp));
         result.truncate(limit);
 
         Ok(result)
@@ -440,7 +442,7 @@ impl DagStore {
             }
         }
 
-        result.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        result.sort_by_key(|a| Reverse(a.timestamp));
         result.truncate(limit);
 
         Ok(result)
@@ -713,10 +715,10 @@ impl DagStore {
             hash.copy_from_slice(&key[2..]);
 
             if let Some(action) = DagAction::from_bytes(value) {
-                if action.timestamp <= *ts {
-                    if best.as_ref().map_or(true, |(_, t)| action.timestamp > *t) {
-                        best = Some((DagActionHash(hash), action.timestamp));
-                    }
+                if action.timestamp <= *ts
+                    && best.as_ref().is_none_or(|(_, t)| action.timestamp > *t)
+                {
+                    best = Some((DagActionHash(hash), action.timestamp));
                 }
             }
         }
@@ -1044,10 +1046,9 @@ fn topo_sort(mut collected: HashMap<[u8; 32], DagAction>) -> crate::Result<Vec<D
 /// Extract triple IDs affected by a payload (for the affected index).
 fn extract_affected_triple_ids(payload: &DagPayload) -> Vec<[u8; 32]> {
     match payload {
-        DagPayload::TripleInsert { triples } => triples
-            .iter()
-            .map(|t| compute_triple_id_from_payload(t))
-            .collect(),
+        DagPayload::TripleInsert { triples } => {
+            triples.iter().map(compute_triple_id_from_payload).collect()
+        }
         DagPayload::TripleDelete { triple_ids, .. } => triple_ids.clone(),
         DagPayload::Batch { ops } => ops.iter().flat_map(extract_affected_triple_ids).collect(),
         _ => vec![],

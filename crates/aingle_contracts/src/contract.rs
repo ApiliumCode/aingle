@@ -13,11 +13,12 @@ use crate::error::{ContractError, Result};
 use crate::types::{Address, ContractId};
 
 /// Function visibility/mutability
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FunctionType {
     /// Read-only function (view)
     View,
     /// State-mutating function
+    #[default]
     Mutate,
     /// Payable function (can receive value)
     Payable,
@@ -25,12 +26,6 @@ pub enum FunctionType {
     Internal,
     /// Constructor (called once on deploy)
     Constructor,
-}
-
-impl Default for FunctionType {
-    fn default() -> Self {
-        Self::Mutate
-    }
 }
 
 /// Contract function definition

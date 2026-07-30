@@ -152,7 +152,7 @@ fn test_batch_insertion_large() {
     let triples: Vec<Triple> = (0..100)
         .map(|i| {
             Triple::new(
-                NodeId::named(&format!("node:{}", i)),
+                NodeId::named(format!("node:{}", i)),
                 Predicate::named("has_id"),
                 Value::integer(i as i64),
             )
@@ -247,7 +247,7 @@ fn test_query_with_limit() {
     // Insert 10 triples
     for i in 0..10 {
         db.insert(Triple::new(
-            NodeId::named(&format!("node:{}", i)),
+            NodeId::named(format!("node:{}", i)),
             Predicate::named("type"),
             Value::literal("test"),
         ))
@@ -581,7 +581,7 @@ fn test_different_value_types() {
     db.insert(Triple::new(
         NodeId::named("node:1"),
         Predicate::named("float_val"),
-        Value::float(3.14),
+        Value::float(2.5),
     ))
     .unwrap();
 

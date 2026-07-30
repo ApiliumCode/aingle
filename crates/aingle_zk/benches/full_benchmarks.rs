@@ -11,7 +11,7 @@
 //! - Memory usage
 
 use aingle_zk::{
-    aggregation::{aggregate_proofs, ProofAggregator},
+    aggregation::aggregate_proofs,
     batch::{verify_schnorr_batch, BatchVerifier},
     commitment::{HashCommitment, PedersenCommitment},
     merkle::{MerkleTree, SparseMerkleTree},
@@ -442,12 +442,16 @@ fn benchmark_serialization(c: &mut Criterion) {
 
 /// Benchmark memory usage
 fn benchmark_memory(c: &mut Criterion) {
-    let mut group = c.benchmark_group("memory");
+    // Not `mut`: this group records no measurements, it only prints sizes.
+    let group = c.benchmark_group("memory");
 
     // Measure proof sizes
     let secret = Scalar::random(&mut OsRng);
     let public = RISTRETTO_BASEPOINT_POINT * secret;
-    let schnorr = SchnorrProof::prove_knowledge(&secret, b"test", &public);
+    // Argument order follows `prove_knowledge(secret, public_point, message)`.
+    // It was called with the last two swapped, so this benchmark had not
+    // compiled since that signature settled — invisible until `--all-targets`.
+    let schnorr = SchnorrProof::prove_knowledge(&secret, &public, b"test");
     let schnorr_size = std::mem::size_of_val(&schnorr);
     println!("Schnorr proof in-memory size: {} bytes", schnorr_size);
 

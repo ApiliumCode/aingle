@@ -844,8 +844,8 @@ mod tests {
 
         // Add test data
         for i in 0..5 {
-            let node = DagNodeBuilder::new(&format!("node{}", i), NodeType::Entry)
-                .label(&format!("Node {}", i))
+            let node = DagNodeBuilder::new(format!("node{}", i), NodeType::Entry)
+                .label(format!("Node {}", i))
                 .build();
             state.add_node(node).await.unwrap();
         }
