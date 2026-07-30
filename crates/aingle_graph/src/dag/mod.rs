@@ -33,7 +33,7 @@ pub use action::{
 pub use backend::SledDagBackend;
 pub use backend::{DagBackend, MemoryDagBackend};
 pub use canonical::{CanonicalAction, CANONICAL_SPEC, HASH_ALG, SIGNATURE_ALG, SIGNED_MESSAGE};
-pub use export::{DagGraph, ExportFormat};
+pub use export::{DagGraph, ExportFormat, UnknownExportFormat};
 pub use pruning::{PruneResult, RetentionPolicy};
 #[cfg(feature = "dag-sign")]
 pub use signing::{DagSigningKey, DagVerifyingKey, VerifyResult};

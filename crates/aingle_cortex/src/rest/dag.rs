@@ -387,12 +387,10 @@ pub async fn get_dag_export(
 ) -> Result<axum::response::Response> {
     use axum::response::IntoResponse;
 
-    let format = aingle_graph::dag::ExportFormat::from_str(&query.format).ok_or_else(|| {
-        Error::InvalidInput(format!(
-            "Unknown format '{}'. Use: dot, mermaid, json",
-            query.format
-        ))
-    })?;
+    let format: aingle_graph::dag::ExportFormat = query
+        .format
+        .parse()
+        .map_err(|e: aingle_graph::dag::UnknownExportFormat| Error::InvalidInput(e.to_string()))?;
 
     let graph = state.graph.read().await;
     let dag_graph = graph
