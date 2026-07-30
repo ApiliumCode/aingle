@@ -40,14 +40,41 @@ pub enum ExportFormat {
     Json,
 }
 
-impl ExportFormat {
-    /// Parse from string (case-insensitive).
-    pub fn from_str(s: &str) -> Option<Self> {
+/// The string offered to [`ExportFormat`]'s `FromStr` named no known format.
+///
+/// Carries the offending input and knows the accepted spellings, so a caller
+/// does not have to keep its own copy of the list — which is how a REST handler
+/// ends up advertising formats the parser no longer accepts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownExportFormat(pub String);
+
+impl std::fmt::Display for UnknownExportFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown export format '{}'. Use: dot (or graphviz), mermaid (or md), json",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnknownExportFormat {}
+
+/// Parse from string (case-insensitive).
+///
+/// This was an inherent `from_str` returning `Option`, which shadowed
+/// `std::str::FromStr::from_str` and returned a different shape from it: a
+/// caller reading `ExportFormat::from_str(..)` could not tell which one they
+/// were getting, and got no reason for the failure either way.
+impl std::str::FromStr for ExportFormat {
+    type Err = UnknownExportFormat;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "dot" | "graphviz" => Some(Self::Dot),
-            "mermaid" | "md" => Some(Self::Mermaid),
-            "json" => Some(Self::Json),
-            _ => None,
+            "dot" | "graphviz" => Ok(Self::Dot),
+            "mermaid" | "md" => Ok(Self::Mermaid),
+            "json" => Ok(Self::Json),
+            _ => Err(UnknownExportFormat(s.to_string())),
         }
     }
 }
@@ -309,15 +336,28 @@ mod tests {
 
     #[test]
     fn test_export_format_parsing() {
-        assert_eq!(ExportFormat::from_str("dot"), Some(ExportFormat::Dot));
-        assert_eq!(ExportFormat::from_str("DOT"), Some(ExportFormat::Dot));
-        assert_eq!(ExportFormat::from_str("graphviz"), Some(ExportFormat::Dot));
+        assert_eq!("dot".parse(), Ok(ExportFormat::Dot));
+        assert_eq!("DOT".parse(), Ok(ExportFormat::Dot));
+        assert_eq!("graphviz".parse(), Ok(ExportFormat::Dot));
+        assert_eq!("mermaid".parse(), Ok(ExportFormat::Mermaid));
+        assert_eq!("md".parse(), Ok(ExportFormat::Mermaid));
+        assert_eq!("json".parse(), Ok(ExportFormat::Json));
         assert_eq!(
-            ExportFormat::from_str("mermaid"),
-            Some(ExportFormat::Mermaid)
+            "xml".parse::<ExportFormat>(),
+            Err(UnknownExportFormat("xml".to_string()))
         );
-        assert_eq!(ExportFormat::from_str("json"), Some(ExportFormat::Json));
-        assert_eq!(ExportFormat::from_str("xml"), None);
+    }
+
+    #[test]
+    fn an_unknown_format_says_what_it_would_have_accepted() {
+        // The list used to live in the REST handler, where it could drift away
+        // from the parser without anything noticing.
+        let e = "xml".parse::<ExportFormat>().unwrap_err();
+        let msg = e.to_string();
+        assert!(msg.contains("xml"), "{msg}");
+        for accepted in ["dot", "graphviz", "mermaid", "md", "json"] {
+            assert!(msg.contains(accepted), "{accepted} missing from: {msg}");
+        }
     }
 
     #[test]

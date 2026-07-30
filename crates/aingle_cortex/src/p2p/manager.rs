@@ -1057,10 +1057,12 @@ mod tests {
 
     #[tokio::test]
     async fn manager_starts_and_stops() {
-        let mut config = P2pConfig::default();
-        config.enabled = true;
-        config.port = 0; // OS-assigned
-        config.data_dir = tempfile::TempDir::new().unwrap().into_path();
+        let config = P2pConfig {
+            enabled: true,
+            port: 0, // OS-assigned
+            data_dir: tempfile::TempDir::new().unwrap().keep(),
+            ..Default::default()
+        };
 
         let state = AppState::new().unwrap();
         let manager = P2pManager::start(config, state).await.unwrap();

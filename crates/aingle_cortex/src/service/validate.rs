@@ -262,7 +262,7 @@ mod tests {
         let s = v
             .as_str()
             .unwrap_or_else(|| panic!("expected hex, got {v}"));
-        assert!(s.len() % 2 == 0, "hex must be byte-aligned: {s:?}");
+        assert!(s.len().is_multiple_of(2), "hex must be byte-aligned: {s:?}");
         (0..s.len() / 2)
             .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("hex digit"))
             .collect()

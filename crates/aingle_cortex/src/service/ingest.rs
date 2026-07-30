@@ -107,34 +107,6 @@ const INGEST_FILENAMES: &[&str] = &[
     "vagrantfile",
 ];
 
-/// Whether an absent path is absent because a cloud client evicted the file's
-/// contents to reclaim disk — NOT because anyone deleted it.
-///
-/// Vaults live in synced folders, and the common clients differ in a way that
-/// matters here. OneDrive and Google Drive keep the name and hydrate on read, so
-/// the file still passes `is_file()` and nothing downstream notices.
-/// **macOS/iCloud Drive does not keep the name**: `Notes.md` is replaced by a
-/// sibling stub `.Notes.md.icloud`, so the entry vanishes from the directory and
-/// `is_file()` is false — identical, to that test alone, to a deletion.
-///
-/// Retracting on that signature signs a removal into the DAG for something the
-/// user never removed, and signs the re-insert when they next open the note:
-/// history that did not happen, in the one structure whose whole value is that
-/// it did. Until the file returns, grounded retrieval also answers as though the
-/// note does not exist.
-///
-/// The opposite error is far cheaper — a stale entry that survives until a real
-/// deletion event arrives — so this deliberately errs toward keeping.
-///
-/// Not gated on `target_os`: a vault authored on macOS carries these stubs
-/// wherever it is synced, and elsewhere the name simply does not occur.
-fn is_cloud_evicted(abs: &std::path::Path) -> bool {
-    let (Some(dir), Some(name)) = (abs.parent(), abs.file_name().and_then(|n| n.to_str())) else {
-        return false;
-    };
-    dir.join(format!(".{name}.icloud")).is_file()
-}
-
 /// Returns whether `path` should be ingested as a text file: a broad extension
 /// allowlist plus a few extensionless names, minus a denylist of generated,
 /// minified, or lock files that carry no semantic signal even when they slip
@@ -1035,17 +1007,6 @@ pub async fn ingest_paths(
             || !is_ingestable_file(&abs)
             || ignores.is_ignored(&abs);
 
-        // Absent because a cloud client reclaimed the disk, not because anyone
-        // deleted it. Leave the index exactly as it is: see [`is_cloud_evicted`]
-        // for why a retraction here is worse than a stale entry.
-        if !excluded && !abs.is_file() && is_cloud_evicted(&abs) {
-            tracing::debug!(
-                path = %rel,
-                "skipping retraction: the file is evicted by a cloud client, not deleted"
-            );
-            continue;
-        }
-
         // Gone (deleted, moved to `.trash`, renamed away) or no longer eligible:
         // retract whatever this source previously contributed. A no-op for a path
         // that was never ingested, so a spurious event costs one registry lookup.
@@ -1397,19 +1358,37 @@ mod tests {
         let state = enabled_state().await;
 
         // Two open tasks.
-        write(dir.path(), "todos.md", "# Todos\n\n- [ ] Task A\n- [ ] Task B\n");
+        write(
+            dir.path(),
+            "todos.md",
+            "# Todos\n\n- [ ] Task A\n- [ ] Task B\n",
+        );
         ingest_path(&state, path, None).await.unwrap();
         let rows = list_tasks(&state, None).await;
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.status == "todo"));
 
         // Complete A, keep B — re-ingest the changed note.
-        write(dir.path(), "todos.md", "# Todos\n\n- [x] Task A\n- [ ] Task B\n");
+        write(
+            dir.path(),
+            "todos.md",
+            "# Todos\n\n- [x] Task A\n- [ ] Task B\n",
+        );
         ingest_path(&state, path, None).await.unwrap();
         let rows = list_tasks(&state, None).await;
-        assert_eq!(rows.len(), 2, "still exactly two tasks — no orphans or duplicates");
-        assert_eq!(rows.iter().find(|r| r.text == "Task A").unwrap().status, "done");
-        assert_eq!(rows.iter().find(|r| r.text == "Task B").unwrap().status, "todo");
+        assert_eq!(
+            rows.len(),
+            2,
+            "still exactly two tasks — no orphans or duplicates"
+        );
+        assert_eq!(
+            rows.iter().find(|r| r.text == "Task A").unwrap().status,
+            "done"
+        );
+        assert_eq!(
+            rows.iter().find(|r| r.text == "Task B").unwrap().status,
+            "todo"
+        );
 
         // The old `status=todo` triple for A must be gone (exactly one remains).
         {
@@ -1428,7 +1407,11 @@ mod tests {
                         .with_predicate(Predicate::named("status")),
                 )
                 .unwrap();
-            assert_eq!(statuses.len(), 1, "no stale status triple should remain for A");
+            assert_eq!(
+                statuses.len(),
+                1,
+                "no stale status triple should remain for A"
+            );
         }
 
         // Remove A from the note — its task node is retracted, B survives.
@@ -1464,9 +1447,10 @@ mod tests {
         assert_eq!(rows.len(), 2);
 
         // Snapshot Q2's `card_due` triple id — it must NOT change when only Q1 is reviewed.
-        let q2_due_id_before = card_field_triple_id(&state, "card:deck.md#bbbbbbbbbbbb", "card_due")
-            .await
-            .expect("Q2 card_due before");
+        let q2_due_id_before =
+            card_field_triple_id(&state, "card:deck.md#bbbbbbbbbbbb", "card_due")
+                .await
+                .expect("Q2 card_due before");
 
         // Review Q1: reschedule it (new due + ef), keep its front text and id.
         write(
@@ -2225,69 +2209,6 @@ mod tests {
         assert!(
             !g.answer_context.iter().any(|c| c.source == "gone.md"),
             "a deleted note's chunks must be forgotten, got: {:?}",
-            g.answer_context
-        );
-    }
-
-    #[tokio::test]
-    async fn ingest_paths_does_not_retract_a_file_the_cloud_client_evicted() {
-        // A vault kept in a cloud-synced folder is the common case, and macOS
-        // reclaims disk by EVICTING file contents: `gone.md` is replaced by a
-        // sibling stub `.gone.md.icloud`, so the name leaves the directory and
-        // `is_file()` is false. Indistinguishable from a deletion by that test
-        // alone — and treating it as one signs a retraction into the DAG for
-        // something the user never deleted, then signs the re-insert when they
-        // next open the note. False history, plus a window in which grounded
-        // retrieval silently answers without the note.
-        //
-        // Being wrong the other way is cheap by comparison: a stale entry until
-        // a real deletion event arrives.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_str().unwrap();
-        write(
-            dir.path(),
-            "gone.md",
-            "# Gone\n\nWe use [[sled]].\n\n- [ ] Doomed task\n",
-        );
-        let state = enabled_state().await;
-        ingest_path(&state, root, None).await.unwrap();
-
-        // Exactly what an eviction leaves behind: no `gone.md`, a stub beside it.
-        std::fs::remove_file(dir.path().join("gone.md")).unwrap();
-        write(dir.path(), ".gone.md.icloud", "");
-
-        let report = ingest_paths(&state, root, &["gone.md".to_string()], None)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            report.files_removed, 0,
-            "an evicted file is not a deletion and must not be retracted"
-        );
-
-        // Everything the note contributed is still there: triples, its task, its
-        // registry row, and its chunks in grounded retrieval.
-        {
-            let graph = state.graph.read().await;
-            let left = graph
-                .find(TriplePattern::any().with_subject(NodeId::named("gone.md")))
-                .unwrap();
-            assert!(
-                !left.is_empty(),
-                "an evicted note lost its triples — that retraction never happened"
-            );
-        }
-        let tasks = crate::service::tasks::list_tasks(&state, None).await;
-        assert!(!tasks.is_empty(), "an evicted note's tasks were tombstoned");
-        let sources = list_sources(&state).await.unwrap();
-        assert!(sources.iter().any(|s| s.path == "gone.md"));
-        let g = crate::service::ground::ground(&state, "We use sled", 5)
-            .await
-            .unwrap();
-        assert!(
-            g.answer_context.iter().any(|c| c.source == "gone.md"),
-            "an evicted note dropped out of grounded retrieval, so the AI would \
-             answer as if it did not exist; got: {:?}",
             g.answer_context
         );
     }

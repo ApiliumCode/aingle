@@ -569,7 +569,7 @@ impl MinimalNode {
         while self.running.load(Ordering::SeqCst) {
             // Sync discovered peers periodically (every 100 iterations = ~1 second)
             discovery_sync_counter = discovery_sync_counter.wrapping_add(1);
-            if discovery_sync_counter % 100 == 0 {
+            if discovery_sync_counter.is_multiple_of(100) {
                 self.network.sync_discovered_peers();
             }
 

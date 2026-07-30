@@ -106,10 +106,9 @@ pub fn parse_task(line: &str) -> Option<ParsedTask> {
         let ch = c[1].chars().next().unwrap();
         let rest = c.get(2).map_or(String::new(), |m| m.as_str().to_string());
         (status_from_checkbox(ch), rest)
-    } else if let Some(c) = KEYWORD.captures(line) {
-        (status_from_keyword(&c[1]), c[2].to_string())
     } else {
-        return None;
+        let c = KEYWORD.captures(line)?;
+        (status_from_keyword(&c[1]), c[2].to_string())
     };
 
     let priority = PRIORITY.captures(&rest).and_then(|c| c[1].chars().next());
@@ -123,7 +122,11 @@ pub fn parse_task(line: &str) -> Option<ParsedTask> {
         .filter(|d| valid_date(d));
     // Recurrence: encode `every <n> <unit>` as `<n><unit-letter>` (e.g. `3d`).
     let recur = RECUR.captures(&rest).map(|c| {
-        let n: u32 = c.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(1).max(1);
+        let n: u32 = c
+            .get(1)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(1)
+            .max(1);
         let unit = match c[2].to_ascii_lowercase().as_str() {
             "day" => 'd',
             "week" => 'w',
@@ -227,9 +230,15 @@ mod tests {
         assert_eq!(q.text, "standup");
 
         // Week / year encodings; `every` optional.
-        assert_eq!(t("- [ ] x \u{1F501} every week").recur.as_deref(), Some("1w"));
+        assert_eq!(
+            t("- [ ] x \u{1F501} every week").recur.as_deref(),
+            Some("1w")
+        );
         assert_eq!(t("- [ ] x \u{1F501} 2 weeks").recur.as_deref(), Some("2w"));
-        assert_eq!(t("- [ ] x \u{1F501} every 5 years").recur.as_deref(), Some("5y"));
+        assert_eq!(
+            t("- [ ] x \u{1F501} every 5 years").recur.as_deref(),
+            Some("5y")
+        );
 
         // No recurrence → None.
         assert_eq!(t("- [ ] plain task").recur, None);
@@ -249,7 +258,11 @@ mod tests {
         // visible in the text (nothing silently lost).
         let p = t("- [ ] file taxes \u{1F4C5} 2026-13-45");
         assert_eq!(p.deadline, None);
-        assert!(p.text.contains("2026-13-45"), "invalid date stays in text: {}", p.text);
+        assert!(
+            p.text.contains("2026-13-45"),
+            "invalid date stays in text: {}",
+            p.text
+        );
         // A valid date still parses and is stripped.
         let q = t("- [ ] pay \u{1F4C5} 2026-02-15 \u{23F3} 2026-02-01");
         assert_eq!(q.deadline.as_deref(), Some("2026-02-15"));

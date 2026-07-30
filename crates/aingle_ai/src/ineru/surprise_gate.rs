@@ -75,7 +75,17 @@ impl SurpriseGate {
     }
 
     /// Record a surprise value for calibration
+    ///
+    /// Non-finite samples are dropped. Welford's algorithm has no way back from
+    /// one: `mean += delta / n` with a NaN delta makes the mean NaN, every
+    /// later update keeps it NaN, and `adaptive_threshold` inherits it. A NaN
+    /// threshold is worse than any number, because every comparison against it
+    /// is false — the gate stops firing and nothing says so.
     pub fn record_surprise(&mut self, surprise: f32) {
+        if !surprise.is_finite() {
+            return;
+        }
+
         // Add to recent window
         self.recent_surprises.push_back(surprise);
         if self.recent_surprises.len() > self.calibration_window {
@@ -130,10 +140,23 @@ impl SurpriseGate {
     }
 
     /// Get adaptive threshold based on recent statistics
+    ///
+    /// Falls back to the configured [`Self::set_threshold`] value when the
+    /// running statistics cannot produce a usable number. `record_surprise`
+    /// already refuses non-finite samples, so this should be unreachable — but
+    /// it is the difference between a wrong threshold and a NaN one, and a NaN
+    /// threshold disables the gate silently. Deserialised state is not covered
+    /// by the entry guard either.
     pub fn adaptive_threshold(&self) -> f32 {
         // Use mean + 1 std as adaptive threshold
         let std = self.get_std();
-        (self.mean_surprise + std).min(1.0).max(0.1)
+        let adaptive = self.mean_surprise + std;
+
+        if !adaptive.is_finite() {
+            return self.threshold.clamp(0.1, 1.0);
+        }
+
+        adaptive.clamp(0.1, 1.0)
     }
 
     /// Get statistics
@@ -239,5 +262,56 @@ mod tests {
 
         let adaptive = gate.adaptive_threshold();
         assert!(adaptive > 0.0 && adaptive < 1.0);
+    }
+
+    #[test]
+    fn a_non_finite_sample_cannot_poison_the_running_statistics() {
+        // Welford has no way back from a NaN: `mean += delta / n` with a NaN
+        // delta makes the mean NaN and every later update keeps it that way.
+        let mut gate = SurpriseGate::new(0.5);
+        for _ in 0..20 {
+            gate.record_surprise(0.4);
+        }
+        let before = gate.adaptive_threshold();
+
+        gate.record_surprise(f32::NAN);
+        gate.record_surprise(f32::INFINITY);
+        gate.record_surprise(f32::NEG_INFINITY);
+
+        assert_eq!(
+            gate.adaptive_threshold(),
+            before,
+            "a non-finite sample must be dropped, not folded into the mean"
+        );
+    }
+
+    #[test]
+    fn the_adaptive_threshold_is_always_a_usable_number() {
+        // The failure this guards is silent: every comparison against a NaN
+        // threshold is false, so `should_update` would stop firing and the
+        // memory would quietly stop learning.
+        let mut gate = SurpriseGate::new(0.5);
+        gate.record_surprise(f32::NAN);
+        for s in [0.0, 1.0, 0.5, f32::NAN, 0.9] {
+            gate.record_surprise(s);
+        }
+
+        let t = gate.adaptive_threshold();
+        assert!(t.is_finite(), "threshold was {t}");
+        assert!(
+            (0.1..=1.0).contains(&t),
+            "threshold {t} left its documented range"
+        );
+    }
+
+    #[test]
+    fn unusable_statistics_fall_back_to_the_configured_threshold() {
+        // Not to an invented constant: the value the caller set is the
+        // non-adaptive baseline this gate already has.
+        let mut gate = SurpriseGate::new(0.5);
+        gate.set_threshold(0.7);
+        gate.mean_surprise = f32::NAN;
+
+        assert!((gate.adaptive_threshold() - 0.7).abs() < 1e-6);
     }
 }

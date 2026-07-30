@@ -93,7 +93,10 @@ impl NestedLearning {
         self.tx_count += 1;
 
         // 4. Check if optimizer-level update is needed
-        if self.tx_count % self.config.optimizer_update_interval == 0 {
+        if self
+            .tx_count
+            .is_multiple_of(self.config.optimizer_update_interval)
+        {
             debug!(
                 tx_count = self.tx_count,
                 "Triggering optimizer-level update"
@@ -114,7 +117,10 @@ impl NestedLearning {
         self.block_count += 1;
 
         // Check if meta-level update is needed
-        if self.block_count % self.config.meta_update_interval == 0 {
+        if self
+            .block_count
+            .is_multiple_of(self.config.meta_update_interval)
+        {
             debug!(
                 block_count = self.block_count,
                 "Triggering meta-level update"
