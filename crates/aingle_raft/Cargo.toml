@@ -1,6 +1,6 @@
 [package]
 name = "aingle_raft"
-version = "0.7.1"
+version = "0.7.2"
 description = "Raft consensus for AIngle clustering"
 license = "Apache-2.0 OR LicenseRef-Commercial"
 repository = "https://github.com/ApiliumCode/aingle"
@@ -27,7 +27,7 @@ tracing = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 anyerror = "0.1"
-aingle_graph = { version = "0.8", path = "../aingle_graph", features = ["sled-backend"] }
+aingle_graph = { version = "0.9", path = "../aingle_graph", features = ["sled-backend"] }
 ineru = { version = "0.7", path = "../ineru" }
 
 [dev-dependencies]
