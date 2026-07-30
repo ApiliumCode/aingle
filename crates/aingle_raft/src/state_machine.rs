@@ -428,7 +428,7 @@ impl CortexStateMachine {
     /// Get the last applied log ID.
     pub async fn last_applied(&self) -> Option<LogId> {
         let guard = self.last_applied.read().await;
-        guard.clone()
+        *guard
     }
 
     /// Get the count of applied mutations.
@@ -447,7 +447,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
     async fn applied_state(&mut self) -> Result<(Option<LogId>, StoredMembershipOf<C>), io::Error> {
         let la = self.last_applied.read().await;
         let membership = self.last_membership.read().await;
-        Ok((la.clone(), membership.clone()))
+        Ok((*la, membership.clone()))
     }
 
     async fn apply<Strm>(&mut self, mut entries: Strm) -> Result<(), io::Error>
@@ -460,7 +460,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
             // Check for membership change
             if let Some(membership) = entry.get_membership() {
                 let mut lm = self.last_membership.write().await;
-                *lm = StoredMembership::new(Some(entry.log_id.clone()), membership.clone());
+                *lm = StoredMembership::new(Some(entry.log_id), membership.clone());
             }
 
             // Apply the business logic
@@ -482,7 +482,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
             // marking entries as applied before they actually are (#1).
             {
                 let mut la = self.last_applied.write().await;
-                *la = Some(entry.log_id.clone());
+                *la = Some(entry.log_id);
             }
 
             // Send response to client if waiting (leader only)
@@ -500,7 +500,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
         CortexSnapshotBuilder {
             graph: Arc::clone(&self.graph),
             memory: Arc::clone(&self.memory),
-            last_applied: la.clone(),
+            last_applied: *la,
             last_membership: membership.clone(),
             proof_provider: self.proof_provider.clone(),
         }
@@ -521,8 +521,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
 
         // Build both new graph and new memory into temporaries FIRST,
         // then swap atomically only if both succeed (#7).
-        let new_graph =
-            GraphDB::memory().map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        let new_graph = GraphDB::memory().map_err(|e| io::Error::other(e.to_string()))?;
         for ts in &cluster_snap.triples {
             let value = json_to_value(&ts.object);
             let triple = aingle_graph::Triple::new(
@@ -532,7 +531,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
             );
             new_graph
                 .insert(triple)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| io::Error::other(e.to_string()))?;
         }
 
         let new_memory = if !cluster_snap.ineru_ltm.is_empty() {
@@ -597,7 +596,7 @@ impl RaftStateMachine<C> for Arc<CortexStateMachine> {
         // Update metadata
         {
             let mut la = self.last_applied.write().await;
-            *la = meta.last_log_id.clone();
+            *la = meta.last_log_id;
         }
         {
             let mut lm = self.last_membership.write().await;

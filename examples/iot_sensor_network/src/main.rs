@@ -166,7 +166,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let reading: SensorReading = serde_json::from_slice(&entry.content)?;
             println!(
                 "  {} - {} {:.2} {} at {}",
-                hash.to_string()[..8].to_string(),
+                &hash.to_string()[..8],
                 reading.sensor_id,
                 reading.value,
                 reading.unit,

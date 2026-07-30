@@ -73,12 +73,10 @@ impl WalWriter {
         let timestamp = Utc::now();
 
         let prev_hash = {
-            let guard = self.last_hash.lock().map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("WAL last_hash lock poisoned: {e}"),
-                )
-            })?;
+            let guard = self
+                .last_hash
+                .lock()
+                .map_err(|e| io::Error::other(format!("WAL last_hash lock poisoned: {e}")))?;
             *guard
         };
 
@@ -93,12 +91,10 @@ impl WalWriter {
         };
 
         {
-            let mut seg = self.current_segment.lock().map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("WAL segment lock poisoned: {e}"),
-                )
-            })?;
+            let mut seg = self
+                .current_segment
+                .lock()
+                .map_err(|e| io::Error::other(format!("WAL segment lock poisoned: {e}")))?;
             seg.append(&entry)?;
             seg.sync()?;
 
@@ -112,12 +108,10 @@ impl WalWriter {
 
         // Update last_hash
         {
-            let mut guard = self.last_hash.lock().map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("WAL last_hash lock poisoned: {e}"),
-                )
-            })?;
+            let mut guard = self
+                .last_hash
+                .lock()
+                .map_err(|e| io::Error::other(format!("WAL last_hash lock poisoned: {e}")))?;
             *guard = entry.hash;
         }
 
@@ -126,12 +120,10 @@ impl WalWriter {
 
     /// Flush the current segment to disk.
     pub fn sync(&self) -> io::Result<()> {
-        let mut seg = self.current_segment.lock().map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("WAL segment lock poisoned: {e}"),
-            )
-        })?;
+        let mut seg = self
+            .current_segment
+            .lock()
+            .map_err(|e| io::Error::other(format!("WAL segment lock poisoned: {e}")))?;
         seg.sync()
     }
 

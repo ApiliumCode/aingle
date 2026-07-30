@@ -939,7 +939,7 @@ mod tests {
 
         // Compute challenge c = H(R || P)
         let mut hasher = Sha256::new();
-        hasher.update(&r_bytes);
+        hasher.update(r_bytes);
         hasher.update(public.compress().as_bytes());
         let challenge: [u8; 32] = hasher.finalize().into();
         let c = Scalar::from_bytes_mod_order(challenge);

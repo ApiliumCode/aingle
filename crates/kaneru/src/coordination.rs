@@ -36,6 +36,7 @@
 
 use crate::{Action, AgentId, KaneruAgent, Observation, Outcome};
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::collections::{HashMap, VecDeque};
 
 /// A unique identifier for a `Message`.
@@ -301,7 +302,7 @@ impl MessageBus {
         }
 
         self.queue = remaining;
-        messages.sort_by(|a, b| b.priority.cmp(&a.priority));
+        messages.sort_by_key(|m| Reverse(m.priority));
         messages
     }
 

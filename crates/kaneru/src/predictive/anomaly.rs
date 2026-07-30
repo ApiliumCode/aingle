@@ -279,7 +279,7 @@ mod tests {
         detector.update(&Observation::sensor("flag", true));
         detector.update(&Observation::sensor("flag", false));
 
-        assert!(detector.history.len() > 0);
+        assert!(!detector.history.is_empty());
     }
 
     #[test]

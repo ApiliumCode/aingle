@@ -423,7 +423,7 @@ mod tests {
 
         // Should have some size savings from aggregation
         let savings = agg.size_savings();
-        assert!(savings >= 0.0 && savings <= 1.0);
+        assert!((0.0..=1.0).contains(&savings));
 
         let ratio = agg.compression_ratio();
         // Ratio could be < 1.0 if aggregated format has overhead
@@ -506,8 +506,9 @@ mod tests {
         assert!(result.all_valid);
         assert_eq!(result.success_rate(), 1.0);
         assert!(result.avg_time_per_proof() >= 0.0);
-        // Verification time may be 0 if very fast (< 1ms)
-        assert!(result.verification_time_ms >= 0);
+        // No assertion on `verification_time_ms`: it is unsigned and legitimately
+        // 0 for a batch that verifies in under a millisecond, so every bound
+        // that could be written here is either always true or flaky.
     }
 
     #[test]

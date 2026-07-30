@@ -178,7 +178,7 @@ pub async fn create_triple(
     #[cfg(feature = "dag")]
     if let Some(ref raft) = state.raft {
         let dag_author = state.dag_author.clone().unwrap_or_else(|| {
-            aingle_graph::NodeId::named(&format!("node:{}", state.cluster_node_id.unwrap_or(0)))
+            aingle_graph::NodeId::named(format!("node:{}", state.cluster_node_id.unwrap_or(0)))
         });
         // Get current tips, and a sequence number that continues this author's
         // recorded chain rather than restarting at 1 and evicting its own history
@@ -457,7 +457,7 @@ pub async fn delete_triple(
     #[cfg(feature = "dag")]
     if let Some(ref raft) = state.raft {
         let dag_author = state.dag_author.clone().unwrap_or_else(|| {
-            aingle_graph::NodeId::named(&format!("node:{}", state.cluster_node_id.unwrap_or(0)))
+            aingle_graph::NodeId::named(format!("node:{}", state.cluster_node_id.unwrap_or(0)))
         });
         let (parents, subject_for_dag, dag_seq) = {
             let graph = state.graph.read().await;

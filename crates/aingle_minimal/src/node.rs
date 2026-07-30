@@ -1037,9 +1037,11 @@ mod tests {
         let addr: std::net::SocketAddr = "192.168.1.100:5683".parse().unwrap();
         node.add_peer(addr);
 
-        // Verify peer was added via stats
+        // Verify peer was added via stats. `peer_count` is unsigned, so the
+        // old `>= 0` here held for every possible value including "nothing was
+        // added" — the one outcome this test exists to rule out.
         let stats = node.stats().unwrap();
-        assert!(stats.peer_count >= 0); // At least no error
+        assert_eq!(stats.peer_count, 1);
     }
 
     #[test]
@@ -1052,9 +1054,9 @@ mod tests {
         node.add_peer("192.168.1.101:5683".parse().unwrap());
         node.add_peer("192.168.1.102:5683".parse().unwrap());
 
-        // Stats should work
+        // Stats should work, and report all three.
         let stats = node.stats().unwrap();
-        assert!(stats.peer_count >= 0);
+        assert_eq!(stats.peer_count, 3);
     }
 
     #[test]
@@ -1126,9 +1128,11 @@ mod tests {
         // Sleep a bit to ensure uptime is measurable
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        let stats = node.stats().unwrap();
-        // Uptime should be at least 0 (could be 0 if very fast)
-        assert!(stats.uptime_secs >= 0);
+        // Uptime is whole seconds, so a node this young legitimately reports 0
+        // and there is no lower bound to assert: `>= 0` on a u64 was always
+        // true. What this test does establish is that `stats()` succeeds on a
+        // freshly started node, which is the `unwrap` below.
+        let _stats = node.stats().unwrap();
     }
 
     #[test]

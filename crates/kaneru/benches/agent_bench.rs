@@ -5,7 +5,7 @@
 //!
 //! Run with: cargo bench -p kaneru
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use kaneru::{Action, Agent, AgentConfig, Condition, Goal, Observation, Rule, SimpleAgent};
 
 /// Benchmark agent creation
