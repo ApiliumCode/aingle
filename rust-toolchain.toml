@@ -1,0 +1,10 @@
+# Local parity with CI, which pins `RUST_VERSION` in .github/workflows/ci.yml —
+# see the note there for why the pin lives in the workflow rather than only here.
+#
+# CI overrides this file (the toolchain action exports RUSTUP_TOOLCHAIN), so the
+# two must be bumped together or a developer will verify against a version the
+# runner does not use. That is how a lint gate goes red on a machine that
+# reported it green.
+[toolchain]
+channel = "1.97.0"
+components = ["clippy", "rustfmt"]

@@ -10,9 +10,26 @@ on:
   pull_request:
 
 env:
+  # PINNED, not `stable`. On 2026-07-29 the runner moved to clippy 1.97, which
+  # added `question_mark`, and the lint gate went red with no commit behind it —
+  # a compiler release is not a change to this repository and must not be able
+  # to fail its CI.
+  #
+  # Pinning here rather than in a `rust-toolchain.toml`: the toolchain action
+  # exports RUSTUP_TOOLCHAIN, which takes precedence over that file, so the
+  # pin would be ignored in exactly the place it is needed. The file exists too,
+  # for local parity.
+  #
+  # To bump: raise this, run `cargo +<new> clippy --workspace --all-targets --
+  # -D warnings` and `cargo +<new> fmt --all -- --check` locally first, and fix
+  # whatever the new release added in the same commit.
+  RUST_VERSION: "1.97.0"
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  MSRV: "1.85"
+  # The version this project promises to build on, verified by the job below
+  # against the WHOLE workspace. Keep in step with `rust-version` in the root
+  # Cargo.toml, which is where consumers read it.
+  MSRV: "1.91"
 
 jobs:
   # MSRV (Minimum Supported Rust Version) check
@@ -43,8 +60,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-msrv-
 
+      # `-p aingle_minimal` before, which is the one member with no wasmer in
+      # its dependency tree — so it passed at 1.85 while the workspace could
+      # not build below 1.91. A promise nothing checks is not a promise.
       - name: Check MSRV
-        run: cargo check -p aingle_minimal
+        run: cargo check --workspace --all-targets
 
   # Format check
   fmt:
@@ -54,8 +74,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
 
       - name: Check formatting
@@ -69,8 +90,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: clippy
 
       - name: Install system dependencies
@@ -118,7 +140,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -151,7 +175,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -183,7 +209,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -227,7 +255,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install cargo-audit
         run: cargo install cargo-audit
@@ -245,8 +275,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: llvm-tools-preview
 
       - name: Install system dependencies
@@ -288,7 +319,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -327,7 +360,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |
@@ -356,7 +391,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install system dependencies
         run: |

@@ -17,6 +17,8 @@ on:
   workflow_dispatch:
 
 env:
+  # Pinned on purpose: see the note in ci.yml.
+  RUST_VERSION: "1.97.0"
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -28,7 +30,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install cargo-audit
         run: cargo install cargo-audit
@@ -60,7 +64,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install cargo-deny
         run: cargo install cargo-deny
@@ -109,7 +115,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install cargo-vet
         run: cargo install cargo-vet

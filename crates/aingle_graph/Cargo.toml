@@ -10,8 +10,7 @@ authors = ["Apilium Technologies <hello@apilium.com>"]
 keywords = ["aingle", "graph", "rdf", "semantic", "triplestore"]
 categories = ["database", "data-structures"]
 edition = "2021"
-rust-version = "1.83"
-
+rust-version.workspace = true
 [features]
 default = ["sled-backend"]
 # Storage backends

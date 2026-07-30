@@ -383,7 +383,7 @@ impl KaneruAgent {
         self.learning.add_experience(exp);
 
         // 5. Perform experience replay
-        if self.stats.total_steps % 10 == 0 {
+        if self.stats.total_steps.is_multiple_of(10) {
             self.learning.replay_batch(32, &self.available_actions);
         }
 

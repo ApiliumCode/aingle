@@ -1,3 +1,17 @@
+[workspace.package]
+# The MSRV, declared ONCE. It said 1.83 in twelve crates, 1.85 in the CI
+# environment and 1.83 in CLAUDE.md, and the truth was none of those: the
+# workspace needs 1.91, because `wasmer` (via aingle_contracts) requires it
+# and `cranelift` under it requires 1.90. Verified by bisection — 1.85 and
+# 1.90 both fail, 1.91 builds. Nothing had ever checked, because the MSRV job
+# ran `cargo check -p aingle_minimal`: the one member with no wasmer in its
+# tree.
+#
+# Uniform rather than per-crate on purpose: a lower number on a crate that
+# has not been built at that version is the same unverified promise this is
+# replacing. Refine per crate only with a run behind each figure.
+rust-version = "1.91"
+
 [workspace]
 resolver = "2"
 members = [

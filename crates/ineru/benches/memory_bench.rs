@@ -187,7 +187,7 @@ fn bench_iot_mode(c: &mut Criterion) {
             let recent = memory.recall_recent(5);
 
             // 3. Periodic maintenance (every 100 readings)
-            if counter % 100 == 0 {
+            if counter.is_multiple_of(100) {
                 let _ = memory.decay();
             }
 
