@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-08-01
+
+### Changed
+- **A grounded verdict now corroborates itself with the question's own words.**
+  `groundedness` tells a caller how much confidence a retrieval deserves, and it
+  earned that from semantic similarity alone. Similarity is a strong signal for
+  what a passage is *about* — it finds the note that answers a question phrased
+  in words the note never uses, which is most of the value of a semantic index —
+  but with sentence embedders the scores of same-corpus text sit in a narrow
+  band, so it ranks candidates well and separates populations poorly. A result is
+  now `grounded` when the passages are semantically close **and** at least 60% of
+  the question's content words are present in them. On a 24-question labelled
+  set the verdict goes from agreeing with retrieval quality about two thirds of
+  the time to agreeing nearly always. What no longer clears the higher bar
+  becomes `weak`: the same passages are returned and the evidence is reported as
+  thin, so nothing is withheld — only the confidence attached to it changes.
+  Terms split on Unicode alphanumerics, so accented and non-Latin questions keep
+  their words whole; matching is by substring, so an inflected form corroborates
+  without a per-language stemmer; a question made only of function words abstains
+  and leaves the decision to similarity alone.
+
+  A cross-encoder that scores whether a passage *answers* a question is the
+  stronger form of the same idea. This is the part of it that needs no model, no
+  download and no added latency.
+
 ## [0.8.0] - 2026-07-28
 
 ### Added
