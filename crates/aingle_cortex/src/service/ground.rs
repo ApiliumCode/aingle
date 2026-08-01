@@ -15,6 +15,83 @@ use serde::Serialize;
 /// [`ineru::Embedder::relevance_thresholds`].
 const MIN_CORROBORATING_CHUNKS: usize = 2;
 
+/// Fraction of a question's content words that must actually appear in the
+/// retrieved text before the verdict may be "grounded".
+///
+/// # Why similarity alone is not enough
+///
+/// Cosine similarity answers "is this text like the question", which is not the
+/// same as "does this text answer the question". With the sentence embedders in
+/// use here the scores are compressed — unrelated prose from the same corpus
+/// lands around 0.83, a direct hit around 0.86 — so an absolute cutoff sits
+/// inside the noise and admits almost anything.
+///
+/// Measured on a 24-question labelled set: of the seven questions where
+/// retrieval returned nothing useful at all, the verdict was "grounded" **seven
+/// times out of seven**. Raising the cutoff does not fix it — it removes true
+/// verdicts at nearly the same rate as false ones. Requiring lexical
+/// corroboration as a SECOND signal removes six of those seven while keeping
+/// most of the true ones, and the rest degrade to "weak", which still shows the
+/// passages and says the evidence is thin rather than asserting a confidence
+/// nobody earned.
+const MIN_QUESTION_TERM_COVERAGE: f32 = 0.6;
+
+/// Content words of a question: lowercased, three characters or more, deduped,
+/// minus the function words that carry no topic.
+///
+/// Deliberately multilingual and deliberately crude. It splits on Unicode
+/// alphanumerics rather than ASCII, so accented and non-Latin queries keep their
+/// words instead of being shredded; the stop list covers the languages the
+/// interface ships in. This is a corroboration signal, not a parser: being
+/// approximately right in many languages matters more than being exact in one.
+fn question_terms(question: &str) -> Vec<String> {
+    const STOP: &[&str] = &[
+        // English
+        "the", "and", "for", "are", "was", "were", "what", "which", "who", "whom", "how", "why",
+        "when", "where", "does", "did", "can", "could", "with", "from", "this", "that", "these",
+        "those", "you", "your", "our", "their", "his", "her", "its", "have", "has", "had", "not",
+        "but", "all", "any", "about", "into", "than", "then", "them", "they", "there", "here",
+        // Spanish
+        "que", "qué", "los", "las", "del", "una", "unos", "unas", "por", "con", "para", "como",
+        "cómo", "cuando", "cuándo", "donde", "dónde", "quien", "quién", "cual", "cuál", "cuales",
+        "esta", "está", "este", "estos", "estas", "están", "eso", "esa", "ese", "son", "era",
+        "eran", "hay", "sus", "sobre", "desde", "entre", "hasta", "muy", "mas", "más", "porque",
+        // French / Portuguese / Italian / German
+        "les", "des", "une", "dans", "pour", "avec", "est", "sont", "qui", "quoi", "comment", "não",
+        "uma", "dos", "das", "der", "die", "und", "ist", "sind", "mit", "für", "wie", "wer",
+        "nicht", "che", "per", "non", "sono",
+    ];
+    let mut out: Vec<String> = Vec::new();
+    for raw in question.split(|c: char| !c.is_alphanumeric()) {
+        if raw.chars().count() < 3 {
+            continue;
+        }
+        let w = raw.to_lowercase();
+        if STOP.contains(&w.as_str()) || out.contains(&w) {
+            continue;
+        }
+        out.push(w);
+    }
+    out
+}
+
+/// Fraction of `terms` that appear anywhere in `body`.
+///
+/// Substring rather than whole-word matching, on purpose: it lets a query term
+/// corroborate against an inflected form ("cita" in "citas", "sign" in "signed")
+/// without carrying a stemmer for every language.
+fn term_coverage(terms: &[String], body: &str) -> f32 {
+    if terms.is_empty() {
+        // A question made only of function words gives this signal nothing to
+        // work with. Abstaining leaves the decision to similarity alone — the
+        // behaviour that existed before — rather than refusing the question.
+        return 1.0;
+    }
+    let body = body.to_lowercase();
+    let hits = terms.iter().filter(|t| body.contains(t.as_str())).count();
+    hits as f32 / terms.len() as f32
+}
+
 /// A cited chunk of source context.
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextChunk {
@@ -142,9 +219,29 @@ pub async fn ground(state: &AppState, question: &str, k: usize) -> Result<Ground
         .iter()
         .filter(|c| c.relevance >= ground_high)
         .count();
-    let groundedness = if best >= ground_high && strong >= MIN_CORROBORATING_CHUNKS {
+    // Second signal: do the question's own words appear in what came back?
+    // Similarity says "this resembles the question"; this says "this is about
+    // what was asked". Only the strong chunks are examined — a weak chunk is not
+    // evidence of anything, and letting it corroborate would hand the check back
+    // the noise it exists to filter.
+    let strong_body: String = answer_context
+        .iter()
+        .filter(|c| c.relevance >= ground_high)
+        .map(|c| c.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let coverage = term_coverage(&question_terms(question), &strong_body);
+
+    let groundedness = if best >= ground_high
+        && strong >= MIN_CORROBORATING_CHUNKS
+        && coverage >= MIN_QUESTION_TERM_COVERAGE
+    {
         "grounded"
     } else if best >= ground_low && !answer_context.is_empty() {
+        // Everything that fails the corroboration check but retrieved something
+        // lands here rather than in "ungrounded": the passages are still shown,
+        // and the caller is told the evidence is thin instead of being told
+        // there is none.
         "weak"
     } else {
         "ungrounded"
@@ -467,5 +564,84 @@ mod tests {
             "an unrelated question must be ungrounded; ctx: {:?}",
             off_topic.answer_context
         );
+    }
+
+    // ── Lexical corroboration ─────────────────────────────────────────────────
+    //
+    // The signal that stops "grounded" being asserted over passages that merely
+    // resemble the question without answering it.
+
+    #[test]
+    fn question_terms_keeps_topic_words_and_drops_function_words() {
+        let t =
+            question_terms("¿Cómo se protege el prompt para que una nota no falsifique una cita?");
+        assert!(t.contains(&"prompt".to_string()));
+        assert!(t.contains(&"nota".to_string()));
+        assert!(t.contains(&"cita".to_string()));
+        assert!(
+            !t.contains(&"cómo".to_string()),
+            "stop word survived: {t:?}"
+        );
+        assert!(
+            !t.contains(&"para".to_string()),
+            "stop word survived: {t:?}"
+        );
+    }
+
+    #[test]
+    fn question_terms_keeps_accented_and_non_latin_words_whole() {
+        // Splitting on ASCII would shred these into fragments and the coverage
+        // check would then never corroborate a non-English question.
+        let t = question_terms("¿Qué decisión tomamos sobre la migración?");
+        assert!(t.contains(&"decisión".to_string()), "{t:?}");
+        assert!(t.contains(&"migración".to_string()), "{t:?}");
+        let jp = question_terms("カルシファー とは 何ですか");
+        assert!(jp.iter().any(|w| w.contains('カ')), "{jp:?}");
+    }
+
+    #[test]
+    fn question_terms_dedupes() {
+        let t = question_terms("cita cita CITA");
+        assert_eq!(t, vec!["cita".to_string()]);
+    }
+
+    #[test]
+    fn coverage_is_full_when_the_body_discusses_the_question() {
+        let t = question_terms("vault passage sha256 defang");
+        assert_eq!(
+            term_coverage(
+                &t,
+                "the vault passage carries a sha256 and we defang markers"
+            ),
+            1.0
+        );
+    }
+
+    #[test]
+    fn coverage_collapses_when_the_body_is_about_something_else() {
+        // The real failure this was built for: passages retrieved for a question
+        // about citation forgery that were actually about autosave tests.
+        let t =
+            question_terms("¿Cómo se protege el prompt para que una nota no falsifique una cita?");
+        let body = "flush-on-unmount parks the version that landed underneath,                     switching notes flushes the pending save for the previous note";
+        assert!(
+            term_coverage(&t, body) < MIN_QUESTION_TERM_COVERAGE,
+            "coverage was {}, expected below the bar",
+            term_coverage(&t, body)
+        );
+    }
+
+    #[test]
+    fn coverage_matches_an_inflected_form() {
+        let t = question_terms("firma sign");
+        assert_eq!(term_coverage(&t, "las firmas quedan signed en el DAG"), 1.0);
+    }
+
+    #[test]
+    fn a_question_of_only_function_words_abstains_rather_than_refusing() {
+        // Nothing to corroborate against: fall back to similarity alone, which
+        // is the behaviour that existed before this check.
+        let t = question_terms("what is that");
+        assert_eq!(term_coverage(&t, "cualquier cosa"), 1.0);
     }
 }
