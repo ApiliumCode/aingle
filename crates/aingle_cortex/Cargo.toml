@@ -86,7 +86,7 @@ subtle = "2.6"
 # Proof replay material: the public parameters published with a ZK proof (curve
 # generators, challenge hashes) are computed here so the response carries the
 # same values the verifier used, not a transcription of them.
-curve25519-dalek = { version = "4.1", features = ["serde"] }
+curve25519-dalek = { version = "5.0", features = ["serde"] }
 sha2 = "0.10"
 
 # Streaming
