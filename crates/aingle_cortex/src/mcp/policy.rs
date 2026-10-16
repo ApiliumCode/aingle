@@ -50,6 +50,18 @@ impl McpPolicy {
         if norm.is_empty() {
             return false;
         }
+        // An archived folder is out of every AI surface whatever the user's
+        // excluded-folder list says. Ingest already skips it; this catches an
+        // entry indexed under the path the folder had before it was archived.
+        // Every segment is checked, the last included, because callers pass
+        // folder paths too; a note FILE never ends in the bare suffix (it ends
+        // in its extension), so `plan-archived.md` stays visible.
+        if norm
+            .split('/')
+            .any(crate::service::ingest::is_archived_dir_name)
+        {
+            return true;
+        }
         self.excluded_folders.iter().any(|f| {
             let f = Self::normalize(f);
             !f.is_empty() && (norm == f || norm.starts_with(&format!("{f}/")))
@@ -225,6 +237,17 @@ pub fn gate_tool_call(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn archived_folders_are_hidden_without_being_listed() {
+        let p = McpPolicy::default();
+        assert!(p.is_hidden("Jira/PROJ-1 Release-archived/PROJ-7.md"));
+        assert!(p.is_hidden("<Jira/PROJ-1 Release-archived>"));
+        assert!(p.is_hidden(r"Confluence\Dev-ARCHIVED\a.md"));
+        assert!(p.is_hidden("Jira/PROJ-1/_out-of-scope/PROJ-9.md"));
+        assert!(!p.is_hidden("notes/plan-archived.md"));
+        assert!(!p.is_hidden("Jira/PROJ-1 Release/PROJ-7.md"));
+    }
+
     use super::*;
 
     #[test]
