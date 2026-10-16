@@ -379,6 +379,32 @@ pub const SKIPPED_TOP_LEVEL_DIRS: &[&str] = &["_inbox", ".trash"];
 pub const DOCUMENTED_HIDDEN_DIRS: &[&str] =
     &[".github", ".gitlab", ".circleci", ".vscode", ".idea"];
 
+/// Suffix that archives a folder: `Epic 2.3-archived/` keeps its notes on disk
+/// and in signed history, but out of the index — and so out of search, grounded
+/// retrieval and every MCP read.
+///
+/// It is a folder-name convention rather than a setting so that archiving a
+/// scope of three hundred notes is one rename, in Altretta or in any file
+/// manager, and un-archiving is the rename back. Compared case-insensitively
+/// (a user typing `-Archived` means the same thing) and only as a suffix of a
+/// longer name: a folder called just `-archived` names nothing.
+pub const ARCHIVED_DIR_SUFFIX: &str = "-archived";
+
+/// Folder a linked source moves notes into when their upstream page or issue
+/// left the scope (deleted, moved elsewhere). Excluded like an archived folder:
+/// kept for the record, never answered from.
+pub const OUT_OF_SCOPE_DIR: &str = "_out-of-scope";
+
+/// True when a single directory NAME archives its subtree (see
+/// [`ARCHIVED_DIR_SUFFIX`] and [`OUT_OF_SCOPE_DIR`]).
+pub fn is_archived_dir_name(name: &str) -> bool {
+    if name == OUT_OF_SCOPE_DIR {
+        return true;
+    }
+    let lower = name.to_ascii_lowercase();
+    lower.len() > ARCHIVED_DIR_SUFFIX.len() && lower.ends_with(ARCHIVED_DIR_SUFFIX)
+}
+
 /// A progress reporter invoked once per candidate file as `(processed, total)`.
 /// `Sync` so it can be held across the ingest's `.await` points.
 pub type IngestProgress<'a> = &'a (dyn Fn(usize, usize) + Sync);
@@ -799,6 +825,9 @@ fn has_excluded_segment(rel: &std::path::Path, skip_last: bool) -> bool {
         // Whole-segment allowlist match: `.github-backup` merely *extends* an
         // allowlisted name and is not allowlisted.
         if name.starts_with('.') && !DOCUMENTED_HIDDEN_DIRS.contains(&name.as_ref()) {
+            return true;
+        }
+        if is_archived_dir_name(&name) {
             return true;
         }
     }
@@ -1729,6 +1758,35 @@ mod tests {
         // a visible folder is judged by the ingestable-file allowlist alone.
         assert!(!is_excluded_rel(Path::new(".gitignore")));
         assert!(!is_excluded_rel(Path::new("docs/.gitignore-backup")));
+    }
+
+    /// An archived folder takes its whole subtree out of the index; the suffix is
+    /// a directory rule (a FILE named `x-archived.md` is ordinary content) and is
+    /// matched case-insensitively on whole segments.
+    #[test]
+    fn archived_and_out_of_scope_folders_are_excluded() {
+        use std::path::Path;
+
+        assert!(is_excluded_rel(Path::new(
+            "Jira/PROJ-1 Release 2.3-archived/PROJ-7.md"
+        )));
+        assert!(is_excluded_rel(Path::new(
+            "Confluence/Dev 330-Archived/a/b/c.md"
+        )));
+        assert!(is_excluded_rel(Path::new(
+            "Jira/PROJ-1 Release/_out-of-scope/PROJ-9.md"
+        )));
+        assert!(is_excluded_dir_rel(Path::new(
+            "Jira/PROJ-1 Release-archived"
+        )));
+
+        // Not archived: the suffix on a file, a bare suffix, a near miss, and a
+        // folder whose name only contains the word.
+        assert!(!is_excluded_rel(Path::new("notes/plan-archived.md")));
+        assert!(!is_excluded_rel(Path::new("-archived/x.md")));
+        assert!(!is_excluded_rel(Path::new("old-archive/x.md")));
+        assert!(!is_excluded_rel(Path::new("archived-notes/x.md")));
+        assert!(!is_excluded_rel(Path::new("_out-of-scope-not/x.md")));
     }
 
     /// The hidden-directory rule has a narrow, explicit allowlist for the
